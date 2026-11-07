@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HS2Manager.App/HS2Manager.App.csproj" />
+    <Project Path="src/HS2Manager.Bridge/HS2Manager.Bridge.csproj" />
+    <Project Path="src/HS2Manager.Core/HS2Manager.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HS2Manager.Checks/HS2Manager.Checks.csproj" />
+    <Project Path="tests/HS2Manager.UiChecks/HS2Manager.UiChecks.csproj" />
+  </Folder>
+</Solution>
