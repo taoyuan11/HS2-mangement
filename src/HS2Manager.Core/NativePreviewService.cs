@@ -19,7 +19,7 @@ public sealed record NativeAssetEntry(int Category, int Id, string Bundle, strin
 public sealed class NativePreviewService
 {
     public const string Limitations = "独立静态预览 · 眉眼妆容为近似还原，不含游戏着色器、物理及未支持的插件效果；资源缺失会列出原因。";
-    private const string CacheVersion = "native-v6";
+    private const string CacheVersion = "native-v8";
     private readonly SemaphoreSlim gate = new(1, 1);
 
     public async Task<NativePreviewScene> LoadAsync(string gamePath, string dataPath, CardRecord card, IProgress<string>? progress, CancellationToken cancellation)
@@ -36,6 +36,8 @@ public sealed class NativePreviewService
         progress?.Report("正在读取人物外观参数…");
         var appearance = CardAppearanceReader.Read(card, cancellation);
         var warnings = new List<string>(); var meshes = new List<NativeMesh>();
+        var embeddedTextures = new Dictionary<NativeEmbeddedTexture, NativeTexture>();
+        long embeddedBytes = 0;
         warnings.AddRange(appearance.Warnings);
         var masks = new List<(string Target, NativeTexture Texture)>();
         var index = LoadIndex(assetsRoot, cache, progress, warnings, cancellation);
@@ -44,14 +46,36 @@ public sealed class NativePreviewService
         using var shapeRig = new NativeShapeRig(gamePath);
         var rig = Prefab("chara/oo_base.unity3d", "p_cf_anim");
         progress?.Report("正在应用人物体型与骨骼权重…");
+        bool hideNippleAccessories = false;
         using (var shape = new NativeAssetBundle(ResolveBundlePath(assetsRoot, "list/customshape.unity3d")))
-            shapeRig.Apply(rig, "ShapeBodyInfoFemale", shape.ReadText("cf_anmShapeBody"), shape.ReadText("cf_custombody"), CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(), cancellation);
-        NativeCardExtensions.Apply(rig, appearance.BoneModifiers);
+        {
+            var bodyValues = CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray();
+            var animation = shape.ReadText("cf_anmShapeBody");
+            shapeRig.Apply(rig, "ShapeBodyInfoFemale", animation, shape.ReadText("cf_custombody"), bodyValues, cancellation);
+            NativeCardExtensions.Apply(rig, appearance.BoneModifiers);
+            if (appearance.PushUp != null)
+            {
+                NativeAssetEntry? Garment(int slot)
+                {
+                    var part=appearance.Parts.FirstOrDefault(p=>p.Category is >=240 and <=247 && p.Slot==slot);
+                    if(part==null)return null;
+                    try { return part.Reference!=null?mods.Resolve(part.Reference):index.LastOrDefault(e=>e.Category==part.Category && e.Id==part.Id); }
+                    catch(Exception ex) when(ex is IOException or InvalidDataException or NotSupportedException) { return null; }
+                }
+                var top=Garment(0); var bra=Garment(2);
+                try { hideNippleAccessories=appearance.PushUp.Apply(rig,bodyValues,
+                    bra?.Asset is not (null or "" or "0" or "p_dummy") && top?.Get("NotBra")!="1",
+                    top?.Asset is not (null or "" or "0" or "p_dummy"),animation); }
+                catch(Exception ex) when(ex is InvalidDataException or NotSupportedException) { warnings.Add(ex.Message); }
+            }
+        }
         var skeleton = NativeShapeRig.World(rig, Matrix4x4.Identity);
         var body = Prefab("chara/oo_base.unity3d", appearance.Sex == 0 ? "p_cm_body_00" : "p_cf_body_00");
         var bodyTexture = SelectedTexture(appearance.Sex == 0 ? 131 : 231, appearance.Body, "skinId", "body.skinId", "MainTex");
         Add(body, appearance.Skin, "身体", Matrix4x4.Identity, skeleton, bodyTexture);
-        NativeCardExtensions.ApplyMaterials(meshes, appearance, 4, 0);
+        foreach (var mesh in meshes) { mesh.ObjectType = 4; mesh.Slot = 0; }
+        ApplySkinOverlays(meshes);
+        NativeCardExtensions.ApplyMaterials(meshes, appearance, 4, 0, EmbeddedTexture, warnings);
         var headTransform = skeleton.GetValueOrDefault("cf_J_Head", Matrix4x4.Identity);
         bool headLoaded = false;
         var worn = new Dictionary<int, NativeAssetEntry>();
@@ -61,14 +85,23 @@ public sealed class NativePreviewService
             try
             {
                 bool head = part.Category is 110 or 210, hair = part.Category is >= 300 and <= 303, clothing = part.Category is >= 140 and <= 147 or >= 240 and <= 247;
+                if (hideNippleAccessories && part.Category >= 351 && part.Parent is "N_Tikubi_L" or "N_Tikubi_R") continue;
                 if (hair && !headLoaded) { warnings.Add(part.Label + "未显示：头部资源未能加载。"); continue; }
                 if (clothing && (part.Slot == 1 && worn.GetValueOrDefault(0)?.Get("Coordinate") == "1" || part.Slot == 2 && worn.GetValueOrDefault(0)?.Get("NotBra") == "1" || part.Slot == 3 && worn.GetValueOrDefault(2)?.Get("Coordinate") == "1")) continue;
                 var entry = part.Reference != null ? mods.Resolve(part.Reference) : index.LastOrDefault(e => e.Category == part.Category && e.Id == part.Id);
-                if (entry == null) { warnings.Add($"未找到{part.Label} #{part.Id} 的资源。"); continue; }
+                string savedName = part.Category >= 351 ? appearance.AccessoryControls.GetValueOrDefault(part.Slot)?.Name ?? "" : "";
+                if(entry==null && part.Reference==null && part.Id==99999999 && savedName.Length>0) entry=mods.FindSavedName(part.Category,savedName);
+                if (entry == null) { warnings.Add($"未找到{part.Label} #{part.Id}{(savedName.Length>0 ? "（"+savedName+"）" : "")} 的资源。" + (part.Id==99999999?"卡片未保存可用的原始 MOD 引用。":"")); continue; }
                 string asset = appearance.Sex == 0 && entry.MaleAsset is not ("" or "0") ? entry.MaleAsset : entry.Asset;
                 if (asset is "" or "0" or "p_dummy") continue;
                 progress?.Report($"正在读取{part.Label}与材质…");
                 var prefab = Prefab(entry.Bundle, asset, entry.Archive);
+                if (head && appearance.EyeOpenMax is { } open)
+                {
+                    if (prefab.Meshes.Any(m => m.EyeBlend != null))
+                        foreach (var mesh in prefab.Meshes) UnityMeshDecoder.ApplyEyeBlend(mesh, open);
+                    else if (open != 1) warnings.Add("EyeControl：头部缺少可读取的眼睑形态，开合上限尚未还原。");
+                }
                 int objectType = clothing ? 1 : part.Category >= 351 ? 2 : hair ? 3 : 4;
                 int objectSlot = hair ? part.Category - 300 : part.Slot;
                 foreach (var hidden in appearance.Renderers.Where(r => !r.Enabled && r.ObjectType == objectType && (objectType == 4 || r.Slot == objectSlot)))
@@ -126,8 +159,10 @@ public sealed class NativePreviewService
                         { warnings.Add(part.Label + "贴图：" + ex.Message); }
                     }
                 }
-                var partColor = prefab.HairAccessory ? appearance.Parts.FirstOrDefault(p => p.Category == 300)?.Color ?? part.Color : part.Color;
-                Add(prefab, partColor, part.Label, placement, bones, texture, prefab.HairAccessory ? [partColor] : part.Colors, head, hair || prefab.HairAccessory, clothing);
+                bool matchHair = prefab.HairAccessory || part.Category >= 351 && appearance.AccessoryControls.GetValueOrDefault(part.Slot)?.MatchHair == true;
+                var partColor = matchHair ? appearance.Parts.FirstOrDefault(p => p.Category == 300)?.Color ?? part.Color : part.Color;
+                Add(prefab, partColor, part.Label, placement, bones, texture, matchHair ? [partColor] : part.Colors, head, hair || prefab.HairAccessory, clothing, head || hair);
+                foreach (var mesh in meshes.Skip(firstMesh)) { mesh.ObjectType = objectType; mesh.Slot = objectSlot; }
                 if (head) headLoaded = prefab.Meshes.Any(m => m.Name.StartsWith("o_head/", StringComparison.Ordinal));
                 if (clothing)
                 {
@@ -137,8 +172,8 @@ public sealed class NativePreviewService
                     {
                         string suffix = group.Key == 0 ? "" : $"0{group.Key+1}";
                         string mainName = entry.Get("MainTex" + suffix), maskName = entry.Get("ColorMask" + suffix + "Tex");
-                        var main = mainName is "" or "0" ? null : Texture(entry.Bundle, mainName, entry.Archive);
-                        var colorMask = maskName is "" or "0" ? null : Texture(entry.Bundle, maskName, entry.Archive);
+                        var main = ClothingTexture(entry.Bundle, mainName);
+                        var colorMask = ClothingTexture(entry.Bundle, maskName);
                         foreach (var material in group.SelectMany(m => m.Materials))
                         { if (main != null) material.MainTexture = main; if (colorMask != null) material.ColorMask = colorMask; }
                     }
@@ -147,27 +182,69 @@ public sealed class NativePreviewService
                     Mask("OverInnerBMask", "clothes[3]/"); Mask("OverPanstMask", "clothes[5]/");
                 }
                 else if (part.Category >= 351) foreach (var mesh in meshes.Skip(firstMesh)) mesh.Name = $"accessory[{part.Slot}]/" + mesh.Name;
-                NativeCardExtensions.ApplyMaterials(meshes.Skip(firstMesh), appearance, objectType, objectSlot);
+                if (head) ApplySkinOverlays(meshes.Skip(firstMesh));
+                if (clothing) NativeCardExtensions.ApplyClothesOverlays(meshes.Skip(firstMesh), appearance.ClothesOverlays, part.Slot, asset, EmbeddedTexture, warnings);
+                NativeCardExtensions.ApplyMaterials(meshes.Skip(firstMesh), appearance, objectType, objectSlot, EmbeddedTexture, warnings);
+                foreach(var material in meshes.Skip(firstMesh).SelectMany(m=>m.Materials))
+                    foreach(var (property,resolved) in new[]{("_MainTex",material.MainTexture!=null),("_ColorMask",material.ColorMask!=null),("_AlphaMask",material.AlphaMask!=null)})
+                        if(resolved) warnings.RemoveAll(w=>w.StartsWith(part.Label+"："+material.Name+" "+property+"：",StringComparison.Ordinal));
+
+                NativeTexture? ClothingTexture(string bundleName,string textureName)
+                {
+                    if(textureName is "" or "0")return null;
+                    try{return Texture(bundleName,textureName,entry.Archive);}
+                    catch(Exception ex) when(ex is IOException or InvalidDataException or NotSupportedException)
+                    {warnings.Add($"{part.Label}清单贴图 {textureName}：{ex.Message}；保留模型自带材质。");return null;}
+                }
 
                 void Mask(string key, string target)
                 {
                     if (entry.Get(key) is "" or "0") return;
-                    var mask = Texture(entry.Get(key + "AB"), entry.Get(key), entry.Archive);
+                    var mask = ClothingTexture(entry.Get(key + "AB"), entry.Get(key));
                     // Masks for later inner garments are applied after all parts have loaded.
-                    masks.Add((target, mask));
+                    if(mask!=null)masks.Add((target, mask));
                 }
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or BadImageFormatException)
             { warnings.Add(part.Label + "：" + ex.Message); }
         }
+        NativeCardExtensions.ApplyAccessoryVisibility(meshes,appearance.AccessoryControls,worn);
         foreach (var (target, mask) in masks)
             foreach (var mesh in meshes.Where(m => target == "身体" ? m.Name.StartsWith("o_body_", StringComparison.Ordinal) : m.Name.StartsWith(target, StringComparison.Ordinal)))
                 foreach (var material in mesh.Materials) material.VisibilityMasks.Add(mask);
         if (meshes.Count == 0) throw new InvalidDataException("没有可独立预览的网格。" + string.Join("；", warnings));
         var extensions = card.PluginDataIds.Where(id => !appearance.HandledExtensions.Contains(id) && id is not ("com.bepis.sideloader.universalautoresolver" or "EC.Core.Sideloader.UniversalAutoResolver")).ToArray();
-        if (extensions.Length > 0) warnings.Add("扩展插件效果未执行：" + string.Join("、", extensions));
+        if (extensions.Length > 0) warnings.Add("尚未适配的扩展数据：" + string.Join("、", extensions));
         return new(meshes, warnings.Distinct().ToArray(), clock.Elapsed.TotalSeconds, cacheHits);
 
+        NativeTexture EmbeddedTexture(NativeEmbeddedTexture source)
+        {
+            if (embeddedTextures.TryGetValue(source, out var saved)) return saved;
+            if (embeddedBytes >= 128 * 1024 * 1024) throw new NotSupportedException("当前人物内嵌贴图总量超过预览内存限制。");
+            var decoded = source.Decode(cancellation); embeddedBytes += decoded.Pixels.Length;
+            embeddedTextures[source] = decoded; return decoded;
+        }
+        void ApplySkinOverlays(IEnumerable<NativeMesh> targets)
+        {
+            foreach (var mesh in targets)
+            {
+                int over = mesh.Name.StartsWith("o_body_", StringComparison.Ordinal) ? 1 : mesh.Name.StartsWith("o_head/", StringComparison.Ordinal) ? 2 :
+                    mesh.Name.Contains("eyebase_L", StringComparison.Ordinal) ? 8 : mesh.Name.Contains("eyebase_R", StringComparison.Ordinal) ? 10 : 0;
+                if (over == 0) continue;
+                int under = over <= 2 ? over + 2 : over - 1;
+                foreach (var overlay in appearance.SkinOverlays.Where(o => o.Type == over || o.Type == under || over >= 8 && o.Type is 5 or 6).OrderBy(o => o.Type == under || o.Type == 5 ? 0 : 1))
+                {
+                    try
+                    {
+                        var layer = new NativeTextureLayer(EmbeddedTexture(overlay.Texture), new(1,1,1), FullColor: true);
+                        foreach (var material in mesh.Materials)
+                            if (overlay.Type == under || overlay.Type == 5) material.Layers.Insert(0, layer); else material.Layers.Add(layer);
+                    }
+                    catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+                    { warnings.Add($"KSOX 覆盖贴图 {overlay.Type}：{ex.Message}"); }
+                }
+            }
+        }
         NativePrefab Prefab(string relative, string asset, string archive = "")
         {
             cancellation.ThrowIfCancellationRequested();
@@ -175,7 +252,8 @@ public sealed class NativePreviewService
             var stamp = string.Join("|", resources.Paths(relative, archive).Select(Fingerprint));
             string target = Path.Combine(cache, Hash(stamp + "|" + asset) + ".mesh.br");
             if (TryRead<NativePrefab>(target, out var saved) && ValidPrefab(saved!)) { cacheHits++; return saved!; }
-            using var bundle = new NativeAssetBundle(source, (cab, id) => resources.Texture(relative, archive, cab, id));
+            using var bundle = new NativeAssetBundle(source, (cab, id) => resources.Texture(relative, archive, cab, id),
+                (cab, id, world) => resources.Mesh(relative, archive, cab, id, world));
             var result = bundle.ReadPrefab(asset, cancellation);
             if (!ValidPrefab(result)) throw new InvalidDataException("解析得到的模型包含无效数据。");
             cancellation.ThrowIfCancellationRequested(); Write(target, result); return result;
@@ -199,11 +277,13 @@ public sealed class NativePreviewService
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException) { warnings.Add(property + " 贴图：" + ex.Message); return null; }
         }
-        void Add(NativePrefab prefab, PreviewColor color, string label, Matrix4x4 placement, IReadOnlyDictionary<string, Matrix4x4> bones, NativeTexture? skin = null, PreviewColor[]? colors = null, bool head = false, bool hair = false, bool clothing = false)
+        void Add(NativePrefab prefab, PreviewColor color, string label, Matrix4x4 placement, IReadOnlyDictionary<string, Matrix4x4> bones, NativeTexture? skin = null, PreviewColor[]? colors = null, bool head = false, bool hair = false, bool clothing = false, bool hideWithBody = false)
         {
             warnings.AddRange(prefab.Warnings.Select(w => label + "：" + w));
             foreach (var mesh in prefab.Meshes)
             {
+                if (!appearance.BodyVisible && (label == "身体" || hideWithBody)) continue;
+                if (appearance.Renderers.Any(r => !r.Enabled && r.ObjectType == 4 && mesh.Name.StartsWith(r.Name + "/", StringComparison.Ordinal)) && (head || label == "身体")) continue;
                 if (label == "身体" && !mesh.Name.StartsWith("o_body_", StringComparison.Ordinal)) continue;
                 if (mesh.Name.Contains("namida", StringComparison.OrdinalIgnoreCase) || mesh.Name.Contains("eyeshadow", StringComparison.OrdinalIgnoreCase)) continue;
                 mesh.Color = color;
@@ -269,7 +349,7 @@ public sealed class NativePreviewService
         }
     }
     private static Matrix4x4 Matrix(float[] m) => m.Length == 16 ? new(m[0],m[1],m[2],m[3],m[4],m[5],m[6],m[7],m[8],m[9],m[10],m[11],m[12],m[13],m[14],m[15]) : throw new InvalidDataException("模型缓存的连接点损坏。");
-    private static bool ValidPrefab(NativePrefab prefab) => prefab.Meshes != null && prefab.Anchors != null && prefab.Warnings != null && prefab.Bones != null && prefab.AccessoryMoves is { Length: 2 }
+    private static bool ValidPrefab(NativePrefab prefab) => prefab.FormatVersion == 8 && prefab.Meshes != null && prefab.Anchors != null && prefab.Warnings != null && prefab.Bones != null && prefab.AccessoryMoves is { Length: 2 }
         && prefab.Bones.Values.All(b => b != null && b.Parent != null && b.Position is { Length: 3 } && b.Scale is { Length: 3 } && b.Rotation is { Length: 4 } && b.Position.All(float.IsFinite) && b.Scale.All(float.IsFinite) && b.Rotation.All(float.IsFinite))
         && prefab.Anchors.Values.All(m => m != null && m.Length == 16 && m.All(float.IsFinite))
         && prefab.Meshes.All(m => m != null && m.Name != null && m.Positions != null && m.Normals != null && m.UV != null && m.Indices != null
@@ -278,6 +358,7 @@ public sealed class NativePreviewService
             && m.Transform is { Length: 16 } && m.Transform.All(float.IsFinite) && m.Submeshes != null && m.Materials != null && m.Bones != null && m.BindPoses != null && m.Weights != null && m.BoneIndices != null
             && m.BindPoses.All(p => p is { Length: 16 } && p.All(float.IsFinite)) && m.Weights.All(w => float.IsFinite(w) && w >= 0)
             && m.BoneIndices.Length == m.Weights.Length && (m.Weights.Length == 0 || m.Weights.Length == m.Positions.Length / 3 * 4)
+            && (m.EyeBlend == null || m.EyeBlend.Close != null && m.EyeBlend.Open != null && m.EyeBlend.Close.IsValid(m.Positions.Length / 3) && m.EyeBlend.Open.IsValid(m.Positions.Length / 3))
             && m.Materials.All(a => a != null && a.Name != null && float.IsFinite(a.AlphaCutoff) && a.AlphaCutoff is >= 0 and <= 1 && a.UVTransform is { Length: 4 } && a.UVTransform.All(float.IsFinite) && (a.MainTexture == null || a.MainTexture.IsValid) && (a.ColorMask == null || a.ColorMask.IsValid) && (a.AlphaMask == null || a.AlphaMask.IsValid))
             && m.Submeshes.All(s => s != null && s.Length % 3 == 0 && s.All(i => i >= 0 && i < m.Positions.Length / 3))
             && m.Indices.Length % 3 == 0 && m.Positions.All(float.IsFinite) && m.Normals.All(float.IsFinite) && m.UV.All(float.IsFinite)

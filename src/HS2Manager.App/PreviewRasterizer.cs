@@ -13,12 +13,12 @@ namespace HS2Manager.App;
 /// </summary>
 public static class PreviewRasterizer
 {
-    private sealed record Surface(Vector3[] Positions, Vector3[] Normals, Vector2[] UV, int[] Indices, Texture Texture, float Specular, float Cutoff);
+    private sealed record Surface(Vector3[] Positions, Vector3[] Normals, Vector2[] UV, int[] Indices, Texture Texture, NativePreviewLighting Lighting, float Cutoff);
     private sealed record Texture(int Width, int Height, byte[] Pixels);
     private sealed record Scene(Surface[] Surfaces);
     private readonly record struct Vertex(Vector3 Position, Vector2 UV, Vector3 Light, float Specular);
     private readonly record struct Projected(float X, float Y, float InverseZ, Vector2 UV, Vector3 Light, float Specular);
-    private readonly record struct Triangle(Projected A, Projected B, Projected C, Texture Texture, int Left, int Top, int Right, int Bottom, float Area, float Cutoff);
+    private readonly record struct Triangle(Projected A, Projected B, Projected C, Texture Texture, int Left, int Top, int Right, int Bottom, float Area, float Cutoff, NativePreviewLighting Lighting);
     private static readonly ConditionalWeakTable<Model3DGroup, Scene> Scenes = new();
     private static readonly float[] Linear = Enumerable.Range(0, 256).Select(i =>
     {
@@ -64,7 +64,7 @@ public static class PreviewRasterizer
                     float ndl = Math.Max(0, Vector3.Dot(n, light.Direction));
                     diffuse += light.Color * ndl;
                     var half = Vector3.Normalize(light.Direction + view);
-                    specular += surface.Specular * MathF.Pow(Math.Max(0, Vector3.Dot(n, half)), 32) * ndl;
+                    specular += surface.Lighting.Specular * MathF.Pow(Math.Max(0, Vector3.Dot(n, half)), surface.Lighting.Power) * ndl;
                 }
                 vertices[i] = new(new(Vector3.Dot(delta, right), Vector3.Dot(delta, up), Vector3.Dot(delta, forward)), surface.UV[i], diffuse, specular);
                 if (vertices[i].Position.Z >= near) projected[i] = Project(vertices[i]);
@@ -117,7 +117,10 @@ public static class PreviewRasterizer
                         if (texel.W < t.Cutoff || texel.W <= .001f) continue;
                         var illumination = (wa * t.A.Light + wb * t.B.Light + wc * t.C.Light) / z;
                         float gloss = (wa * t.A.Specular + wb * t.B.Specular + wc * t.C.Specular) / z;
-                        var rgb = new Vector3(texel.X, texel.Y, texel.Z) * illumination + new Vector3(gloss);
+                        var albedo = new Vector3(texel.X,texel.Y,texel.Z);
+                        var lighting=t.Lighting;var emission=new Vector3(lighting.Emission.R,lighting.Emission.G,lighting.Emission.B);
+                        var specularColor=Vector3.Lerp(new(lighting.SpecularColor.R,lighting.SpecularColor.G,lighting.SpecularColor.B),albedo,lighting.Metallic);
+                        var rgb = albedo * illumination * (1-.35f*lighting.Metallic) + specularColor * gloss + emission;
                         int dst = pixel * 4;
                         pixels[dst] = Encode(rgb.Z); pixels[dst + 1] = Encode(rgb.Y); pixels[dst + 2] = Encode(rgb.X);
                         depth[pixel] = z;
@@ -144,7 +147,7 @@ public static class PreviewRasterizer
             int top = (int)Math.Clamp(MathF.Floor(Math.Min(p.Y, Math.Min(q.Y, r.Y))), 0, height);
             int lastX = (int)Math.Clamp(MathF.Ceiling(Math.Max(p.X, Math.Max(q.X, r.X))), 0, width);
             int lastY = (int)Math.Clamp(MathF.Ceiling(Math.Max(p.Y, Math.Max(q.Y, r.Y))), 0, height);
-            if (left < lastX && top < lastY) triangles.Add(new(p, q, r, surface.Texture, left, top, lastX, lastY, area, surface.Cutoff));
+            if (left < lastX && top < lastY) triangles.Add(new(p, q, r, surface.Texture, left, top, lastX, lastY, area, surface.Cutoff,surface.Lighting));
         }
     }
 
@@ -170,7 +173,8 @@ public static class PreviewRasterizer
             }
             surfaces.Add(new(mesh.Positions.Select(V).ToArray(), mesh.Normals.Select(n => n.LengthSquared > 1e-12 ? Vector3.Normalize(V(n)) : -Vector3.UnitZ).ToArray(),
                 mesh.TextureCoordinates.Select(p => new Vector2((float)p.X, (float)p.Y)).ToArray(), mesh.TriangleIndices.ToArray(), texture,
-                materials.OfType<SpecularMaterial>().Any() ? .055f : .015f, (float)geometry.GetValue(NativePreviewRenderer.AlphaCutoffProperty)));
+                (NativePreviewLighting?)geometry.GetValue(NativePreviewRenderer.LightingProperty) ?? new(materials.OfType<SpecularMaterial>().Any() ? .055f : .015f,32,new(1,1,1),new(0,0,0),0),
+                (float)geometry.GetValue(NativePreviewRenderer.AlphaCutoffProperty)));
         }
         return new(surfaces.ToArray());
     }

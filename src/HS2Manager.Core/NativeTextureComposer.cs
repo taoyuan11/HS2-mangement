@@ -4,11 +4,11 @@ public static class NativeTextureComposer
 {
     public static NativeTexture? Compose(NativeMaterial material, CancellationToken cancellation)
     {
-        var source = material.MainTexture ?? material.ColorMask ?? material.AlphaMask ?? material.VisibilityMasks.FirstOrDefault();
+        var source = material.MainTexture ?? material.ColorMask ?? material.AlphaMask ?? material.VisibilityMasks.FirstOrDefault() ?? material.Layers.FirstOrDefault()?.Texture;
         if (source == null) return null;
         var result = new NativeTexture { Width = source.Width, Height = source.Height, Pixels = new byte[source.Width * source.Height * 4] };
         var colors = material.Colors.Length > 0 ? material.Colors : [material.Color];
-        var layers = material.Layers.Select(l => (Layer: l, Alpha: Enumerable.Range(0,l.Texture.Width*l.Texture.Height).Any(i => l.Texture.Pixels[i*4+3] < 250))).ToArray();
+        var layers = material.Layers.Select(l => (Layer: l, Alpha: l.FullColor || Enumerable.Range(0,l.Texture.Width*l.Texture.Height).Any(i => l.Texture.Pixels[i*4+3] < 250))).ToArray();
         for (int y = 0; y < result.Height; y++)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -47,6 +47,15 @@ public static class NativeTextureComposer
                     if (lu < 0 || lu > 1 || lv < 0 || lv > 1) continue;
                     // Eyebrow atlases pack coverage in blue; red/green also contain shader data.
                     int layerOffset = layer.Texture.Offset(lu,lv); float coverage = layer.Texture.Pixels[layerOffset+(layer.Eyebrow?0:useAlpha?3:2)] / 255f * layer.Color.A;
+                    if (layer.FullColor)
+                    {
+                        if (layer.Replace) alpha = 0;
+                        float combined = coverage + alpha * (1 - coverage);
+                        for (int c = 0; c < 3; c++)
+                            result.Pixels[p+c] = combined <= 0 ? (byte)0 : (byte)Math.Clamp(MathF.Round((result.Pixels[p+c] * alpha * (1-coverage) + layer.Texture.Pixels[layerOffset+c] * coverage) / combined), 0, 255);
+                        alpha = combined;
+                        continue;
+                    }
                     for (int c = 0; c < 3; c++) result.Pixels[p+c] = (byte)Math.Clamp(result.Pixels[p+c]*(1-coverage)+255*Component(layer.Color,c)*coverage,0,255);
                 }
                 if (material.Transparent && material.ColorMask is { } hairMask) alpha *= hairMask.Pixels[hairMask.Offset(u,v)+3] / 255f;
@@ -54,7 +63,7 @@ public static class NativeTextureComposer
                 foreach (var mask in material.VisibilityMasks) alpha *= mask.Pixels[mask.Offset(u,v)+2] / 255f;
                 // Preserve coverage for filtered sampling. The viewport discards uncovered pixels
                 // before the depth write, so intersecting hair cards cannot punch holes in one another.
-                result.Pixels[p+3] = (byte)Math.Clamp((int)MathF.Round(alpha * 255), 0, 255);
+                result.Pixels[p+3] = (byte)Math.Clamp((int)MathF.Round(alpha * material.Opacity * colors[0].A * 255), 0, 255);
             }
         }
         return result;

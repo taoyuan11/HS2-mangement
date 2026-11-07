@@ -21,11 +21,65 @@ public sealed class NativeMesh
     public float[] Transform { get; set; } = [];
     public int OptionMask { get; set; }
     public int ClothingGroup { get; set; } = -1;
+    public int ObjectType { get; set; }
+    public int Slot { get; set; } = -1;
+    public NativeEyeBlend? EyeBlend { get; set; }
 }
+
+public sealed record NativeBlendShape(int[] Indices, float[] Positions, float[] Normals, float Weight)
+{
+    public bool IsValid(int vertices) => Indices != null && Positions != null && Normals != null && Positions.Length == Indices.Length * 3 && Normals.Length == Positions.Length
+        && Indices.All(i => i >= 0 && i < vertices) && Positions.All(float.IsFinite) && Normals.All(float.IsFinite) && float.IsFinite(Weight) && Weight > 0;
+}
+public sealed record NativeEyeBlend(NativeBlendShape Close, NativeBlendShape Open);
 
 /// <summary>Unity 2018 uncompressed vertex streams, including separate streams and half floats.</summary>
 internal static class UnityMeshDecoder
 {
+    internal static NativeBlendShape ReadBlendShape(AssetTypeValueField mesh, int channelIndex, Matrix4x4 transform, CancellationToken cancellation)
+    {
+        if (channelIndex == -1) return new([], [], [], 100);
+        var data = mesh["m_Shapes"];
+        var channels = data["channels"]["Array"].Children;
+        if (channelIndex < 0 || channelIndex >= channels.Count) throw new InvalidDataException("眼睑形态索引越界。");
+        var channel = channels[channelIndex];
+        if (channel["frameCount"].AsInt != 1) throw new NotSupportedException("眼睑多关键帧形态尚未支持。");
+        int frame = channel["frameIndex"].AsInt;
+        var shapes = data["shapes"]["Array"].Children;
+        var weights = data["fullWeights"]["Array"].Children;
+        if (frame < 0 || frame >= shapes.Count || frame >= weights.Count) throw new InvalidDataException("眼睑形态关键帧越界。");
+        int first = shapes[frame]["firstVertex"].AsInt, count = shapes[frame]["vertexCount"].AsInt;
+        var vertices = data["vertices"]["Array"].Children;
+        if (first < 0 || count < 0 || count > 500000 || first > vertices.Count - count) throw new InvalidDataException("眼睑形态顶点越界。");
+        if (!Matrix4x4.Invert(transform, out var inverse)) throw new InvalidDataException("眼睑形态变换无效。");
+        var normals = Matrix4x4.Transpose(inverse);
+        var result = new NativeBlendShape(new int[count],new float[count*3],new float[count*3],weights[frame].AsFloat);
+        for (int i = 0; i < count; i++)
+        {
+            if ((i & 1023) == 0) cancellation.ThrowIfCancellationRequested();
+            var vertex = vertices[first+i]; result.Indices[i] = vertex["index"].AsInt;
+            Store(result.Positions,Vector3.TransformNormal(Vector(vertex["vertex"]),transform),i);
+            Store(result.Normals,Vector3.TransformNormal(Vector(vertex["normal"]),normals),i);
+        }
+        if (!result.IsValid(mesh["m_VertexData"]["m_VertexCount"].AsInt)) throw new InvalidDataException("眼睑形态包含无效数据。");
+        return result;
+        static Vector3 Vector(AssetTypeValueField f) => new(f["x"].AsFloat,f["y"].AsFloat,f["z"].AsFloat);
+        static void Store(float[] target,Vector3 value,int i) { target[i*3]=value.X;target[i*3+1]=value.Y;target[i*3+2]=-value.Z; }
+    }
+    internal static void ApplyEyeBlend(NativeMesh mesh, float open)
+    {
+        if (mesh.EyeBlend is not { } blend) return;
+        // FBSBase quantizes the saved maximum to integer percent before setting blend weights.
+        int percent = (int)(Math.Clamp(open,0,1)*100);
+        Apply(blend.Close,100-percent); Apply(blend.Open,percent);
+        void Apply(NativeBlendShape frame,float weight)
+        {
+            float amount=weight/frame.Weight;
+            for(int i=0;i<frame.Indices.Length;i++)
+                for(int c=0;c<3;c++)
+                { mesh.Positions[frame.Indices[i]*3+c]+=frame.Positions[i*3+c]*amount; mesh.Normals[frame.Indices[i]*3+c]+=frame.Normals[i*3+c]*amount; }
+        }
+    }
     public static NativeMesh Read(AssetTypeValueField mesh, Matrix4x4 transform, CancellationToken cancellation)
     {
         if (mesh["m_MeshCompression"].AsInt != 0) throw new NotSupportedException("暂不支持压缩顶点网格。");

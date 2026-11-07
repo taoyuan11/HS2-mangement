@@ -9,14 +9,16 @@ internal static class NativeRenderingDataChecks
             Property(1, 0, "cloth", "Color", new List<object?> { .1f, .3f, .7f, 1f }),
             Property(1, 1, "cloth", "Color", new List<object?> { 1f, 0f, 0f, 1f }),
             Property(3, 0, "cloth", "Color", new List<object?> { 0f, 1f, 0f, 1f }),
-            Property(1, 0, "cloth", "Color2", new List<object?> { .7f, .6f, .5f, 1f })
+            Property(1, 0, "cloth", "Color2", new List<object?> { .7f, .6f, .5f, 1f }),
+            Property(1, 0, "cloth", "EmissionColor", new List<object?> { 2f, .1f, 0f, 1f })
         };
         var extension = new Dictionary<string, object?>
         {
             ["com.deathweasel.bepinex.materialeditor"] = new List<object?> { 1L, new Dictionary<string, object?>
             {
                 ["MaterialColorPropertyList"] = NativeAppearanceChecks.Pack(colors),
-                ["MaterialFloatPropertyList"] = NativeAppearanceChecks.Pack(new List<object?> { Property(1, 0, "cloth", "Cutoff", "0.7") }),
+                ["MaterialFloatPropertyList"] = NativeAppearanceChecks.Pack(new List<object?> { Property(1, 0, "cloth", "Cutoff", "0.7"),Property(1,0,"cloth","Glossiness","0.8"),
+                    Property(1,0,"cloth","Metallic","0.6"),Property(1,0,"cloth","EmissionStrength","0.5"),Property(1,1,"cloth","Glossiness","0.1") }),
                 ["TextureDictionary"] = new Dictionary<string, object?> { ["1"] = new byte[1024 * 1024] }
             } }
         };
@@ -29,6 +31,7 @@ internal static class NativeRenderingDataChecks
         if (mesh.Materials[0].Colors[0] != new PreviewColor(.1f,.3f,.7f) || mesh.Materials[0].Colors[1] != new PreviewColor(.7f,.6f,.5f) || mesh.Materials[0].AlphaCutoff != .7f)
             throw new Exception("MaterialEditor properties mixed between object types/slots or ignored palette/cutoff");
         if (mesh.Materials[0].Tint) throw new Exception("Material override disabled the clothing color mask");
+        var lit=mesh.Materials[0];if(lit.Smoothness!=.8f || lit.Metallic!=.6f || lit.EmissionColor.R!=2 || lit.EmissionStrength!=.5f)throw new Exception("Material lighting lost HDR values or leaked across slots");
         Console.WriteLine("PASS MaterialEditor color/cutoff parsing, object/slot isolation and embedded texture skipping");
 
         var iris = new NativeTexture { Width=4, Height=1, Pixels=[255,0,32,255, 255,0,96,255, 255,0,176,255, 255,0,240,255] };

@@ -8,7 +8,8 @@ var gameArg = Array.IndexOf(args, "--game");
 var game = gameArg >= 0 ? args[gameArg + 1] : @"Z:\games\hs2\HS two DX - TSYMQ";
 var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
-if (args.Contains("--native-preview")) await NativePreviewChecks.Run(game, data, Array.IndexOf(args,"--card") is int sample && sample >= 0 ? args[sample+1] : null);
+if (args.Contains("--audit-preview")) await NativePreviewAudit.Run(game,data,Array.IndexOf(args,"--report") is int report && report>=0 ? args[report+1] : "female-audit",Array.IndexOf(args,"--file") is int only && only>=0 ? args[only+1] : null);
+else if (args.Contains("--native-preview")) await NativePreviewChecks.Run(game, data, Array.IndexOf(args,"--card") is int sample && sample >= 0 ? args[sample+1] : null);
 else if (args.Contains("--core")) await CoreChecks.Run(game, data);
 else if (args.Contains("--scan-settings")) await ScanSettingsChecks.Run(data);
 else if (args.Contains("--scan"))

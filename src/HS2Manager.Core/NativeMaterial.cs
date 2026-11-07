@@ -24,12 +24,19 @@ public sealed class NativeMaterial
     public bool Hair { get; set; }
     public bool MaskOnly { get; set; }
     public float AlphaCutoff { get; set; } = .45f;
+    public int RenderQueue { get; set; } = 2000;
     public PreviewColor[] Colors { get; set; } = [];
+    public float? Smoothness { get; set; }
+    public float Metallic { get; set; }
+    public PreviewColor EmissionColor { get; set; } = new(0,0,0);
+    public PreviewColor SpecularColor { get; set; } = new(1,1,1);
+    public float EmissionStrength { get; set; } = 1;
+    public float Opacity { get; set; } = 1;
     public List<NativeTexture> VisibilityMasks { get; set; } = [];
     public List<NativeTextureLayer> Layers { get; set; } = [];
 }
 
-public sealed record NativeTextureLayer(NativeTexture Texture, PreviewColor Color, bool Eyebrow = false, float[]? Layout = null, float Tilt = .5f, float[]? UVTransform = null);
+public sealed record NativeTextureLayer(NativeTexture Texture, PreviewColor Color, bool Eyebrow = false, float[]? Layout = null, float Tilt = .5f, float[]? UVTransform = null, bool FullColor = false, bool Replace = false);
 
 public sealed class NativeBone
 {

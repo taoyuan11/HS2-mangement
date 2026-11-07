@@ -33,6 +33,8 @@ internal static class NativePreviewUiChecks
         var male = parser.Parse(Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara", "male"), "*.png", SearchOption.AllDirectories).First());
         Await(model.OpenPreviewAsync(female));
         if (model.PreviewModel == null || model.HasPreviewError) throw new Exception(model.PreviewError);
+        if (sample != null && Path.GetFileName(sample) == "HS2ChaF_20250814211651049.png" && model.HasPreviewWarnings)
+            throw new Exception("User compatibility fixture still warns: " + model.PreviewWarnings);
         canvas.Measure(new Size(1440, 900)); canvas.Arrange(new Rect(0, 0, 1440, 900)); canvas.UpdateLayout();
         Await(viewport.WaitForRenderAsync());
         if (viewport.RenderError != null) throw new Exception(viewport.RenderError);

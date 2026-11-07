@@ -188,7 +188,7 @@ public sealed class ModDependencyService(CardRepository repository)
             if (!all)
             {
                 if (rule.OldSlot != reference.Slot) continue;
-                if (!int.TryParse(rule.Category, out int category)) { unknown = true; continue; }
+                if (!NativeModCategories.TryParse(rule.Category, out int category)) { unknown = true; continue; }
                 if (category != reference.Category) continue;
             }
             if (rule.Kind is "Strip" or "StripAll") return DependencyState.Found;

@@ -10,36 +10,76 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
     private ModIndex? index;
     private bool scanned;
     private readonly Dictionary<string, List<NativeAssetEntry>> lists = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string>? bundles;
+    private CardRepository Repository => new(data);
     public NativeAssetEntry Resolve(ModReference reference)
     {
-        var repository = new CardRepository(data);
-        index ??= repository.LoadMetadata<ModIndex>("mods-v1");
-        if (index == null || !index.GamePath.Equals(Path.GetFullPath(game), StringComparison.OrdinalIgnoreCase)) Scan();
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (int depth = 0; depth < 16; depth++)
+        EnsureIndex();
+        var result = Find(reference, new(StringComparer.OrdinalIgnoreCase), 0);
+        if (result == null && !scanned)
+        {
+            Scan(); result = Find(reference, new(StringComparer.OrdinalIgnoreCase), 0);
+        }
+        if (result != null) return result;
+        if (UsableMods().Any(m => m.Guid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException($"MOD {reference.Guid} 已安装，但没有类别 {reference.Category} / Slot {reference.Slot}，且未找到可用迁移。");
+        throw new FileNotFoundException($"缺少 MOD {reference.Guid}（类别 {reference.Category} / Slot {reference.Slot}）。");
+    }
+    public NativeAssetEntry? FindSavedName(int category,string name)
+    {
+        if(string.IsNullOrWhiteSpace(name))return null;
+        EnsureIndex();
+        var matches=new Dictionary<string,NativeAssetEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach(var mod in UsableMods().OrderByDescending(m=>Version.TryParse(m.Version.TrimStart('v','V'),out var version)?version:new Version()))
         {
             cancellation.ThrowIfCancellationRequested();
-            if (!visited.Add(reference.Guid + ":" + reference.Category + ":" + reference.Slot)) break;
-            var mod = index!.Files.LastOrDefault(m => m.Compatible && m.Error.Length == 0 && m.Guid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase) && File.Exists(m.Path));
-            if (mod != null)
+            try
             {
-                if (!lists.TryGetValue(mod.Path, out var entries)) lists[mod.Path] = entries = ReadLists(mod.Path);
-                return entries.LastOrDefault(e => e.Category == reference.Category && e.Id == reference.Slot)
-                    ?? throw new InvalidDataException($"MOD {reference.Guid} 中找不到类别 {reference.Category} / Slot {reference.Slot}。");
+                if(!lists.TryGetValue(mod.Path,out var entries))lists[mod.Path]=entries=ReadLists(mod.Path);
+                foreach(var entry in entries.Where(e=>e.Category==category && e.Get("Name").Equals(name,StringComparison.Ordinal)))
+                    matches.TryAdd(mod.Guid+":"+entry.Category+":"+entry.Id,entry);
+                if(matches.Count>1)return null; // A display name is not a globally unique MOD identifier.
             }
-            if (!scanned) { Scan(); visited.Clear(); continue; }
-            var rule = index.MigrationEnabled ? index.Files.SelectMany(m => m.Migrations).LastOrDefault(m =>
-                m.OldGuid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase) && (m.Kind == "MigrateAll" || m.Kind == "Migrate" && m.OldSlot == reference.Slot && int.TryParse(m.Category, out int cat) && cat == reference.Category)) : null;
-            if (rule == null) break;
-            reference = reference with { Guid = rule.NewGuid, Slot = rule.Kind == "MigrateAll" ? reference.Slot : rule.NewSlot };
+            catch(Exception ex) when(ex is IOException or InvalidDataException or UnauthorizedAccessException or MalformedLineException) { }
         }
-        throw new FileNotFoundException($"缺少 MOD {reference.Guid}（类别 {reference.Category} / Slot {reference.Slot}）。");
-        void Scan()
+        return matches.Count==1?matches.Values.Single():null;
+    }
+    private NativeAssetEntry? Find(ModReference reference, HashSet<string> visited, int depth)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        if (depth >= 16 || !visited.Add(reference.Guid + ":" + reference.Category + ":" + reference.Slot)) return null;
+        if (index!.MigrationEnabled)
         {
-            progress?.Report("正在建立 MOD 模型资源索引…");
-            var service = new ModDependencyService(repository);
-            index = service.ScanAsync(game, null, cancellation).GetAwaiter().GetResult(); scanned = true;
+            var rules = UsableMods().SelectMany(m => m.Migrations).Where(m => m.OldGuid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase) &&
+                (m.Kind == "MigrateAll" || m.Kind == "Migrate" && m.OldSlot == reference.Slot && NativeModCategories.Matches(m.Category, reference.Category)))
+                .OrderBy(m => m.Kind == "MigrateAll" ? 1 : 0);
+            foreach (var rule in rules)
+            {
+                var migrated = Find(reference with { Guid = rule.NewGuid, Slot = rule.Kind == "MigrateAll" ? reference.Slot : rule.NewSlot }, visited, depth + 1);
+                if (migrated != null) return migrated;
+            }
         }
+        foreach (var mod in UsableMods().Where(m => m.Guid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(m => Version.TryParse(m.Version.TrimStart('v', 'V'), out var version) ? version : new Version()).ThenByDescending(m => m.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(mod.Path)) continue;
+            if (!lists.TryGetValue(mod.Path, out var entries)) lists[mod.Path] = entries = ReadLists(mod.Path);
+            var entry = entries.LastOrDefault(e => e.Category == reference.Category && e.Id == reference.Slot);
+            if (entry != null) return entry;
+        }
+        return null;
+    }
+    private IEnumerable<ModFileInfo> UsableMods() => index!.Files.Where(m => m.Compatible && m.Error.Length == 0);
+    private void EnsureIndex()
+    {
+        index ??= Repository.LoadMetadata<ModIndex>("mods-v1");
+        if (index == null || !index.GamePath.Equals(Path.GetFullPath(game), StringComparison.OrdinalIgnoreCase)) Scan();
+    }
+    private void Scan()
+    {
+        progress?.Report("正在更新 MOD 模型资源索引…");
+        index = new ModDependencyService(Repository).ScanAsync(game, null, cancellation).GetAwaiter().GetResult();
+        scanned = true; lists.Clear(); bundles = null;
     }
     private List<NativeAssetEntry> ReadLists(string path)
     {
@@ -71,11 +111,40 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
     {
         // Validate even archive references; no archive path is ever used as an extraction destination.
         string physical = NativePreviewService.ResolveBundlePath(Path.Combine(game, "abdata"), relative);
-        if (archive.Length == 0) return physical;
+        if (archive.Length > 0 && Extract(archive, relative) is { } owned) return owned;
+        if (File.Exists(physical)) return physical;
+        // Lists can reference bundles supplied by a different installed zipmod.
+        EnsureBundles();
+        if (!bundles!.ContainsKey(relative.Replace('\\', '/')) && !scanned) { Scan(); EnsureBundles(); }
+        if (bundles!.TryGetValue(relative.Replace('\\', '/'), out var other) && Extract(other, relative) is { } found) return found;
+        throw new FileNotFoundException("游戏及已安装 MOD 中缺少资源包：" + relative);
+    }
+    private void EnsureBundles()
+    {
+        if (bundles != null) return;
+        EnsureIndex(); bundles = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var mod in UsableMods())
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (!File.Exists(mod.Path)) continue;
+            try
+            {
+                using var zip = ZipFile.OpenRead(mod.Path);
+                foreach (var entry in zip.Entries)
+                {
+                    string name = entry.FullName.Replace('\\', '/');
+                    if (name.StartsWith("abdata/", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".unity3d", StringComparison.OrdinalIgnoreCase)) bundles[name[7..]] = mod.Path;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) { /* An unrelated broken archive must not stop bundle discovery. */ }
+        }
+    }
+    private string? Extract(string archive, string relative)
+    {
         using var zip = ZipFile.OpenRead(archive);
         string wanted = "abdata/" + relative.Replace('\\','/');
         var entry = zip.Entries.FirstOrDefault(e => e.FullName.Replace('\\','/').Equals(wanted, StringComparison.OrdinalIgnoreCase));
-        if (entry == null) return File.Exists(physical) ? physical : throw new FileNotFoundException("MOD 包内缺少资源：" + relative);
+        if (entry == null) return null;
         if (entry.Length is < 1 or > 512 * 1024 * 1024) throw new InvalidDataException("MOD 资源大小超限。");
         var info = new FileInfo(archive);
         string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(info.FullName + "|" + info.Length + "|" + info.LastWriteTimeUtc.Ticks + "|" + entry.FullName)));

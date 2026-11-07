@@ -47,6 +47,14 @@ internal sealed class BoundedMessagePack(Stream stream, long end, int allocation
         int n = b switch { 0xdc => Length(2), 0xdd => Length(4), _ => throw new InvalidDataException("预期 MessagePack 数组") };
         if (n > 100000) throw new InvalidDataException("数组项目过多"); return n;
     }
+    // Keep embedded PNGs and nested MessagePack dictionaries on disk until actually used.
+    public (long Offset, int Length)? BinaryRange()
+    {
+        byte marker = Byte();
+        if (marker == 0xc0) return null;
+        int length = marker switch { 0xc4 => Length(1), 0xc5 => Length(2), 0xc6 => Length(4), _ => throw new InvalidDataException("预期 MessagePack 二进制字段") };
+        long offset = stream.Position; Advance(length); return (offset, length);
+    }
     public object? Read(int depth = 0)
     {
         Guard(depth); byte b = Byte();

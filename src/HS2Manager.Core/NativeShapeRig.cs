@@ -57,7 +57,7 @@ internal sealed class NativeShapeRig : IDisposable
                 .ToDictionary(f => metadata.GetBlobReader(metadata.GetConstant(f.GetDefaultValue()).Value).ReadInt32(), f => metadata.GetString(f.Name));
         }
     }
-    private static Dictionary<string, float[][]> ReadKeys(byte[] bytes)
+    internal static Dictionary<string, float[][]> ReadKeys(byte[] bytes)
     {
         using var input = new MemoryStream(bytes); using var r = new BinaryReader(input);
         int count = r.ReadInt32(); if (count is < 1 or > 4096) throw new InvalidDataException("形变数据数量越界。");

@@ -9,14 +9,24 @@ public sealed record NativeBoneAdjustment(string Name, float[] Scale, float Leng
 public sealed record NativeRendererOverride(int ObjectType, int Slot, string Name, bool Enabled);
 public sealed record NativeMaterialColorOverride(int ObjectType, int Slot, string Name, string Property, PreviewColor Color);
 public sealed record NativeMaterialFloatOverride(int ObjectType, int Slot, string Name, string Property, float Value);
+public sealed record NativeMaterialDiagnostic(int ObjectType, int Slot, string Name, string Message);
 
-internal sealed class NativeCardExtensions
+internal sealed partial class NativeCardExtensions
 {
     public List<AppearancePart> Accessories { get; } = [];
     public List<NativeBoneAdjustment> Bones { get; } = [];
     public List<NativeRendererOverride> Renderers { get; } = [];
     public List<NativeMaterialColorOverride> MaterialColors { get; } = [];
     public List<NativeMaterialFloatOverride> MaterialFloats { get; } = [];
+    public List<NativeMaterialDiagnostic> MaterialDiagnostics { get; } = [];
+    public List<NativeMaterialTextureOverride> MaterialTextures { get; } = [];
+    public List<NativeMaterialQueueOverride> MaterialQueues { get; } = [];
+    public List<NativeSkinOverlay> SkinOverlays { get; } = [];
+    public List<NativeClothesOverlay> ClothesOverlays { get; } = [];
+    public bool BodyVisible { get; private set; } = true;
+    public float? EyeOpenMax { get; private set; }
+    public NativePushUp? PushUp { get; private set; }
+    public Dictionary<int,NativeAccessoryControl> AccessoryControls { get; } = [];
     public HashSet<string> Handled { get; } = [];
     public List<string> Warnings { get; } = [];
     public void Read(Stream stream, long end, CardRecord card, CancellationToken cancellation)
@@ -25,65 +35,65 @@ internal sealed class NativeCardExtensions
         for (int i = 0; i < count; i++)
         {
             cancellation.ThrowIfCancellationRequested(); string key = reader.Read() as string ?? throw new InvalidDataException("扩展数据标识无效。");
-            if (key is not ("moreAccessories" or "KKABMPlugin.ABMData" or "com.deathweasel.bepinex.materialeditor")) { reader.Skip(); continue; }
-            // Skip large embedded texture dictionaries without allocating them. Only the supported
-            // data fields are needed even when a MaterialEditor card contains hundreds of MB of PNGs.
-            int fields = reader.ArrayCount();
-            if (fields < 2) throw new InvalidDataException("扩展参数格式不支持。");
-            object? version = reader.Read(); int entries = reader.MapCount(); var data = new Dictionary<string, object?>();
-            bool otherMaterialData = false;
-            for (int entry = 0; entry < entries; entry++)
-            {
-                string field = reader.Read() as string ?? throw new InvalidDataException("扩展参数名称无效。");
-                if (field is "additionalAccessories" or "boneData" or "RendererPropertyList" or "MaterialColorPropertyList" or "MaterialFloatPropertyList") data[field] = reader.Read();
-                else
-                {
-                    long position = stream.Position; int marker = stream.ReadByte(); stream.Position = position;
-                    reader.Skip();
-                    if (marker != 0xc0 && key == "com.deathweasel.bepinex.materialeditor" && field != "TextureDictionary") otherMaterialData = true;
-                }
-            }
-            for (int field=2; field<fields; field++) reader.Skip();
+            long start = stream.Position; reader.Skip(); long next = stream.Position;
             try
             {
+                if (!KnownExtension(key)) continue;
+                var plugin = new NativePluginData(stream, start, next);
+                var data = new Dictionary<string, object?>();
+                foreach (string field in new[] { "additionalAccessories", "boneData", "RendererPropertyList", "MaterialColorPropertyList", "MaterialFloatPropertyList" })
+                    if (plugin.HasValue(field)) data[field] = plugin.Read(field);
                 if (key == "moreAccessories") ReadAccessories(data, card);
                 else if (key == "com.deathweasel.bepinex.materialeditor")
                 {
+                    if (plugin.Version is < 0 or > 1) throw new NotSupportedException("MaterialEditor 数据版本不支持。");
                     ReadRenderers(data);
                     ReadMaterialProperties(data);
-                    if (otherMaterialData) Warnings.Add("MaterialEditor：已应用部件显示、基础颜色与透明裁切；自定义贴图与着色器修改尚未还原。");
+                    ReadMaterialTextures(plugin, stream, card, cancellation);
                 }
-                else
+                else if (key == "KKABMPlugin.ABMData")
                 {
-                    if (version is not 2L) throw new NotSupportedException("ABMX 数据版本不支持。");
+                    if (plugin.Version != 2) throw new NotSupportedException("ABMX 数据版本不支持。");
                     ReadBones(data);
                 }
+                else ReadOther(key, plugin, stream, card, cancellation);
                 Handled.Add(key);
             }
-            catch (Exception ex) when (ex is InvalidDataException or IOException or XmlException or NotSupportedException or ArgumentException)
-            { Warnings.Add(key + "：" + ex.Message); }
+            catch (Exception ex) when (ex is InvalidDataException or IOException or XmlException or NotSupportedException or ArgumentException or OverflowException or FormatException or InvalidCastException)
+            { Warnings.Add(key + "：" + ex.Message); Handled.Add(key); }
+            finally { stream.Position = next; }
         }
     }
     private void ReadMaterialProperties(Dictionary<string, object?> data)
     {
-        bool unsupported = false;
         foreach (var value in Properties("MaterialColorPropertyList"))
         {
             string property = CardAppearanceReader.Text(value, "Property").TrimStart('_');
-            if (property is not ("Color" or "Color2" or "Color3" or "Color4" or "BaseColor")) { unsupported = true; continue; }
+            if (property is not ("Color" or "Color2" or "Color3" or "Color4" or "BaseColor" or "EmissionColor" or "Specular"))
+            { Diagnostic(value,"颜色参数 "+property); continue; }
+            var color=CardAppearanceReader.Color(value,"Value",new(1,1,1));
+            if(property=="EmissionColor")
+            {
+                var components=CardAppearanceReader.Flatten(value.GetValueOrDefault("Value")).ToArray();
+                if(components.Length is <3 or >4 || components.Any(n=>!float.IsFinite(n) || n<0 || n>64))throw new InvalidDataException("材质自发光颜色无效。");
+                color=new(components[0],components[1],components[2]);
+            }
             MaterialColors.Add(new(checked((int)CardAppearanceReader.Integer(value, "ObjectType")), checked((int)CardAppearanceReader.Integer(value, "Slot")),
-                CardAppearanceReader.Text(value, "MaterialName"), property, CardAppearanceReader.Color(value, "Value", new(1, 1, 1))));
+                CardAppearanceReader.Text(value, "MaterialName"), property, color));
         }
         foreach (var value in Properties("MaterialFloatPropertyList"))
         {
             string property = CardAppearanceReader.Text(value, "Property").TrimStart('_');
-            if (property != "Cutoff") { unsupported = true; continue; }
+            if (property is not ("Cutoff" or "Glossiness" or "Smoothness" or "Roughness" or "Metallic" or "EmissionStrength"))
+            { Diagnostic(value,"着色参数 "+property); continue; }
             if (!float.TryParse(CardAppearanceReader.Text(value, "Value"), NumberStyles.Float, CultureInfo.InvariantCulture, out float number) || !float.IsFinite(number))
                 throw new InvalidDataException("材质编辑器参数不是有效数值。");
             MaterialFloats.Add(new(checked((int)CardAppearanceReader.Integer(value, "ObjectType")), checked((int)CardAppearanceReader.Integer(value, "Slot")),
-                CardAppearanceReader.Text(value, "MaterialName"), property, Math.Clamp(number, 0, 1)));
+                CardAppearanceReader.Text(value, "MaterialName"), property, Math.Clamp(number, 0, property == "EmissionStrength" ? 64 : 1)));
         }
-        if (unsupported) Warnings.Add("MaterialEditor：部分光照、颜色或着色器参数不受独立预览支持。");
+        void Diagnostic(Dictionary<string,object?> value,string detail) => MaterialDiagnostics.Add(new(
+            checked((int)CardAppearanceReader.Integer(value,"ObjectType")),checked((int)CardAppearanceReader.Integer(value,"Slot")),
+            CardAppearanceReader.Text(value,"MaterialName"),detail));
         IEnumerable<Dictionary<string, object?>> Properties(string field)
         {
             if (data.GetValueOrDefault(field) is not byte[] bytes) yield break;
@@ -97,20 +107,57 @@ internal sealed class NativeCardExtensions
             }
         }
     }
-    public static void ApplyMaterials(IEnumerable<NativeMesh> meshes, CardAppearance appearance, int objectType, int slot)
+    public static void ApplyMaterials(IEnumerable<NativeMesh> meshes, CardAppearance appearance, int objectType, int slot,
+        Func<NativeEmbeddedTexture, NativeTexture>? decode = null, ICollection<string>? warnings = null)
     {
         foreach (var material in meshes.SelectMany(m => m.Materials))
         {
             string name = material.Name.Replace("(Instance)", "", StringComparison.Ordinal).Trim();
+            var diagnostics=appearance.MaterialDiagnostics.Where(c=>c.ObjectType==objectType && (objectType==4 || c.Slot==slot) && c.Name==name).Select(c=>c.Message).Distinct().ToArray();
+            if(diagnostics.Length>0)warnings?.Add($"MaterialEditor [{name}]：尚未还原 {string.Join("、",diagnostics)}。");
             foreach (var change in appearance.MaterialColors.Where(c => c.ObjectType == objectType && (objectType == 4 || c.Slot == slot) && c.Name == name))
             {
+                if(change.Property=="EmissionColor"){material.EmissionColor=change.Color;continue;}
+                if(change.Property=="Specular"){material.SpecularColor=change.Color;continue;}
                 int channel = change.Property switch { "Color2" => 1, "Color3" => 2, "Color4" => 3, _ => 0 };
                 var colors = Enumerable.Range(0, Math.Max(channel + 1, material.Colors.Length)).Select(i => material.Colors.Length > 0 ? material.Colors[Math.Min(i, material.Colors.Length - 1)] : material.Color).ToArray();
                 colors[channel] = change.Color; material.Colors = colors;
                 if (channel == 0) { material.Color = change.Color; material.Tint = material.ColorMask == null; }
             }
             foreach (var change in appearance.MaterialFloats.Where(c => c.ObjectType == objectType && (objectType == 4 || c.Slot == slot) && c.Name == name))
-                material.AlphaCutoff = change.Value;
+                switch(change.Property)
+                {
+                    case "Cutoff":material.AlphaCutoff=change.Value;break;
+                    case "Glossiness":case "Smoothness":material.Smoothness=change.Value;break;
+                    case "Roughness":material.Smoothness=1-change.Value;break;
+                    case "Metallic":material.Metallic=change.Value;material.Smoothness??=.4f;break;
+                    case "EmissionStrength":material.EmissionStrength=change.Value;break;
+                }
+            foreach (var change in appearance.MaterialQueues.Where(c => c.ObjectType == objectType && (objectType == 4 || c.Slot == slot) && c.Name == name))
+                material.RenderQueue = change.Queue;
+            foreach (var change in appearance.MaterialTextures.Where(c => c.ObjectType == objectType && (objectType == 4 || c.Slot == slot) && c.Name == name))
+            {
+                try
+                {
+                    if (change.Texture != null && decode != null)
+                    {
+                        var texture = decode(change.Texture);
+                        switch (change.Property)
+                        {
+                            case "MainTex": case "BaseMap": material.MainTexture = texture; break;
+                            case "ColorMask": material.ColorMask = texture; break;
+                            case "AlphaMask": material.AlphaMask = texture; break;
+                        }
+                    }
+                    if (change.Property is "MainTex" or "BaseMap")
+                    {
+                        if (change.Scale is { Length: 2 }) { material.UVTransform[0] = change.Scale[0]; material.UVTransform[1] = change.Scale[1]; }
+                        if (change.Offset is { Length: 2 }) { material.UVTransform[2] = change.Offset[0]; material.UVTransform[3] = change.Offset[1]; }
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+                { warnings?.Add($"MaterialEditor {name} / {change.Property}：{ex.Message}"); }
+            }
         }
     }
     private void ReadRenderers(Dictionary<string, object?> data)

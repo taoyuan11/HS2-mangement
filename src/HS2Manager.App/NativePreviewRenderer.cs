@@ -7,12 +7,15 @@ using HS2Manager.Core;
 
 namespace HS2Manager.App;
 
+public sealed record NativePreviewLighting(float Specular,float Power,PreviewColor SpecularColor,PreviewColor Emission,float Metallic);
 public static class NativePreviewRenderer
 {
     public static readonly DependencyProperty AlphaCutoffProperty = DependencyProperty.RegisterAttached("AlphaCutoff", typeof(float), typeof(NativePreviewRenderer), new PropertyMetadata(.45f));
+    public static readonly DependencyProperty LightingProperty = DependencyProperty.RegisterAttached("Lighting", typeof(NativePreviewLighting), typeof(NativePreviewRenderer));
     public static Model3DGroup Build(NativePreviewScene scene, CancellationToken cancellation)
     {
         var model = new Model3DGroup();
+        var geometries = new List<(int Queue, GeometryModel3D Model)>();
         foreach (var part in scene.Meshes)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -43,17 +46,23 @@ public static class NativePreviewRenderer
                 else
                 {
                     var color = material.Colors.FirstOrDefault() ?? material.Color;
-                    brush = new SolidColorBrush(Color.FromRgb((byte)(Math.Clamp(color.R,0,1)*255), (byte)(Math.Clamp(color.G,0,1)*255), (byte)(Math.Clamp(color.B,0,1)*255)));
+                    brush = new SolidColorBrush(Color.FromArgb((byte)(Math.Clamp(color.A*material.Opacity,0,1)*255),(byte)(Math.Clamp(color.R,0,1)*255), (byte)(Math.Clamp(color.G,0,1)*255), (byte)(Math.Clamp(color.B,0,1)*255)));
                 }
                 brush.Freeze();
                 var materials = new MaterialGroup(); materials.Children.Add(new DiffuseMaterial(brush));
                 if (!material.Transparent && material.VisibilityMasks.Count == 0) materials.Children.Add(new SpecularMaterial(new SolidColorBrush(Color.FromRgb(24, 24, 24)), 28));
                 materials.Freeze();
                 var geometry = new GeometryModel3D(mesh, materials) { BackMaterial = materials };
+                float smooth=material.Smoothness??.4f;
+                geometry.SetValue(LightingProperty,new NativePreviewLighting(
+                    material.Smoothness==null ? (!material.Transparent && material.VisibilityMasks.Count==0?.055f:.015f) : .02f+.12f*smooth+.25f*material.Metallic,
+                    material.Smoothness==null ? 32 : 4+124*smooth*smooth,material.SpecularColor,
+                    new(material.EmissionColor.R*material.EmissionStrength,material.EmissionColor.G*material.EmissionStrength,material.EmissionColor.B*material.EmissionStrength),material.Metallic));
                 geometry.SetValue(AlphaCutoffProperty, material.AlphaCutoff); geometry.Freeze();
-                model.Children.Add(geometry);
+                geometries.Add((material.RenderQueue, geometry));
             }
         }
+        foreach (var geometry in geometries.OrderBy(g => g.Queue)) model.Children.Add(geometry.Model);
         model.Freeze(); return model;
     }
     public static Model3DGroup Lights(double strength)

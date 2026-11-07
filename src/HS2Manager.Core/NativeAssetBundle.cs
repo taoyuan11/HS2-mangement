@@ -7,6 +7,7 @@ namespace HS2Manager.Core;
 
 public sealed class NativePrefab
 {
+    public int FormatVersion { get; set; }
     public List<NativeMesh> Meshes { get; set; } = [];
     public Dictionary<string, float[]> Anchors { get; set; } = [];
     public List<string> Warnings { get; set; } = [];
@@ -25,9 +26,12 @@ internal sealed class NativeAssetBundle : IDisposable
     private readonly BundleFileInstance bundle;
     private readonly Dictionary<long, NativeTexture> textures = [];
     private readonly Func<string, long, NativeTexture>? externalTexture;
-    public NativeAssetBundle(string path, Func<string, long, NativeTexture>? externalTexture = null)
+    private readonly Func<string, long, Matrix4x4, NativeMesh>? externalMesh;
+    public NativeAssetBundle(string path, Func<string, long, NativeTexture>? externalTexture = null,
+        Func<string, long, Matrix4x4, NativeMesh>? externalMesh = null)
     {
         this.externalTexture = externalTexture;
+        this.externalMesh = externalMesh;
         try
         {
             bundle = manager.LoadBundleFile(path, true);
@@ -63,6 +67,8 @@ internal sealed class NativeAssetBundle : IDisposable
     }
     public NativeTexture ReadTexture(string asset)
     {
+        var pointer = ContainerAsset(asset, AssetClassID.Texture2D);
+        if (pointer != null) return Texture(Pointer(pointer));
         var info = file.file.GetAssetsOfType(AssetClassID.Texture2D).FirstOrDefault(i => Field(i.PathId)["m_Name"].AsString.Equals(asset, StringComparison.OrdinalIgnoreCase));
         return info == null ? throw new InvalidDataException("找不到贴图：" + asset) : Texture(info.PathId);
     }
@@ -137,19 +143,16 @@ internal sealed class NativeAssetBundle : IDisposable
     }
     public NativePrefab ReadPrefab(string assetName, CancellationToken cancellation)
     {
-        var containerInfo = file.file.GetAssetsOfType(AssetClassID.AssetBundle).FirstOrDefault() ?? throw new InvalidDataException("资源包缺少目录。");
-        var container = Field(containerInfo.PathId)["m_Container"]["Array"].Children;
         // MOD containers can contain a texture/material and prefab with exactly the same name
         // (including extensionless keys). Unity LoadAsset<GameObject> selects by type as well.
-        var entry = container.FirstOrDefault(e => Path.GetFileNameWithoutExtension(e["first"].AsString).Equals(assetName, StringComparison.OrdinalIgnoreCase)
-            && e["second"]["asset"]["m_FileID"].AsInt == 0
-            && file.file.GetAssetInfo(e["second"]["asset"]["m_PathID"].AsLong)?.TypeId == (int)AssetClassID.GameObject);
+        var entry = ContainerAsset(assetName, AssetClassID.GameObject);
         if (entry == null) throw new InvalidDataException($"资源包中找不到可加载的模型对象 {assetName}。");
-        long root = Pointer(entry["second"]["asset"]);
-        var result = new NativePrefab(); var visited = new HashSet<long>();
+        long root = Pointer(entry);
+        var result = new NativePrefab { FormatVersion = 8 }; var visited = new HashSet<long>();
         var visibility = new Dictionary<long, bool>();
         var options = new Dictionary<long, int>();
         var clothingGroups = new Dictionary<long, int>();
+        var eyeTargets = new Dictionary<long, (int Close, int Open)>();
         Walk(root, true, 0, 0); return result;
 
         void Walk(long gameObjectId, bool active, int depth, int optionMask)
@@ -171,6 +174,9 @@ internal sealed class NativeAssetBundle : IDisposable
                 Position = [p.X,p.Y,p.Z], Rotation = [q["x"].AsFloat,q["y"].AsFloat,q["z"].AsFloat,q["w"].AsFloat], Scale = [s.X,s.Y,s.Z] });
             foreach (var component in components.Where(p => file.file.GetAssetInfo(p).TypeId == (int)AssetClassID.MonoBehaviour))
             {
+                // DynamicBone serialization varies by MOD exporter. Its simulation is not
+                // used by the rest pose; inspect the stable script pointer before its payload.
+                if (IsPhysicsComponent(component)) continue;
                 AssetTypeValueField c;
                 try { c = Field(component); }
                 catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
@@ -180,6 +186,17 @@ internal sealed class NativeAssetBundle : IDisposable
                     result.Warnings.Add(name + " 可选组件未应用：" + ex.Message); continue;
                 }
                 if (!c["typeHair"].IsDummy) result.HairAccessory |= c["typeHair"].AsBool;
+                if (!c["EyesCtrl"].IsDummy && !c["EyesCtrl"]["FBSTarget"].IsDummy)
+                try
+                {
+                    foreach (var target in c["EyesCtrl"]["FBSTarget"]["Array"].Children)
+                    {
+                        long objTarget = Pointer(target["ObjTarget"]);
+                        var pattern = target["PtnSet"]["Array"].Children.FirstOrDefault();
+                        if (objTarget != 0 && pattern != null) eyeTargets[objTarget] = (pattern["Close"].AsInt, pattern["Open"].AsInt);
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidDataException or NotSupportedException) { result.Warnings.Add(name + " 眼睑目标：" + ex.Message); }
                 for (int group = 0; group < 3; group++)
                     if (!c[$"rendNormal0{group+1}"].IsDummy)
                         foreach (var item in c[$"rendNormal0{group+1}"]["Array"].Children) { long rendererId = Pointer(item); if (rendererId != 0) clothingGroups[rendererId] = group; }
@@ -203,15 +220,23 @@ internal sealed class NativeAssetBundle : IDisposable
                 if (name.StartsWith("O_hit_", StringComparison.OrdinalIgnoreCase) || name.Contains("silhouette", StringComparison.OrdinalIgnoreCase)) continue;
                 try
                 {
-                    long meshId;
-                    if (type == (int)AssetClassID.SkinnedMeshRenderer) meshId = Pointer(renderer["m_Mesh"]);
+                    AssetTypeValueField? meshPointer;
+                    if (type == (int)AssetClassID.SkinnedMeshRenderer) meshPointer = renderer["m_Mesh"];
                     else
                     {
                         long filterId = components.FirstOrDefault(p => file.file.GetAssetInfo(p).TypeId == (int)AssetClassID.MeshFilter);
-                        meshId = filterId == 0 ? 0 : Pointer(Field(filterId)["m_Mesh"]);
+                        meshPointer = filterId == 0 ? null : Field(filterId)["m_Mesh"];
                     }
+                    long meshId = meshPointer?["m_PathID"].AsLong ?? 0;
                     if (meshId == 0) continue;
-                    var mesh = UnityMeshDecoder.Read(Field(meshId), world, cancellation);
+                    int meshFile = meshPointer!["m_FileID"].AsInt;
+                    var mesh = meshFile == 0 ? Mesh(meshId, world, cancellation) :
+                        externalMesh?.Invoke(ExternalName(meshFile), meshId, world) ?? throw new NotSupportedException("跨资源包模型未找到：" + ExternalName(meshFile));
+                    if (meshFile == 0 && eyeTargets.TryGetValue(gameObjectId, out var eyes))
+                    {
+                        try { mesh.EyeBlend = new(UnityMeshDecoder.ReadBlendShape(Field(meshId),eyes.Close,world,cancellation), UnityMeshDecoder.ReadBlendShape(Field(meshId),eyes.Open,world,cancellation)); }
+                        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException) { result.Warnings.Add(name + " 眼睑形态：" + ex.Message); }
+                    }
                     mesh.OptionMask = optionMask;
                     mesh.ClothingGroup = clothingGroups.GetValueOrDefault(id, -1);
                     if (type == (int)AssetClassID.SkinnedMeshRenderer)
@@ -252,6 +277,34 @@ internal sealed class NativeAssetBundle : IDisposable
             catch (IOException ex) { throw new InvalidDataException($"{(AssetClassID)info.TypeId} 资源 #{id} 数据无法读取：{ex.Message}", ex); }
         }
         return value;
+    }
+    private AssetTypeValueField? ContainerAsset(string name, AssetClassID type)
+    {
+        var info = file.file.GetAssetsOfType(AssetClassID.AssetBundle).FirstOrDefault();
+        if (info == null) return null;
+        var candidates = Field(info.PathId)["m_Container"]["Array"].Children.Where(e =>
+            e["second"]["asset"]["m_FileID"].AsInt == 0 &&
+            file.file.GetAssetInfo(e["second"]["asset"]["m_PathID"].AsLong)?.TypeId == (int)type).ToArray();
+        // Extensionless asset names may themselves contain dots (e.g. [zj]rntm.top).
+        var exact = candidates.FirstOrDefault(e => Path.GetFileName(e["first"].AsString).Equals(name,StringComparison.OrdinalIgnoreCase));
+        var entry = exact ?? candidates.FirstOrDefault(e => Path.GetFileNameWithoutExtension(e["first"].AsString).Equals(name,StringComparison.OrdinalIgnoreCase));
+        return entry?["second"]["asset"];
+    }
+    private bool IsPhysicsComponent(long id)
+    {
+        var info=file.file.GetAssetInfo(id); if(info.ByteSize<28)return false;
+        var reader=file.file.Reader;reader.Position=info.GetAbsoluteByteOffset(file.file)+16;
+        int fileId=reader.ReadInt32();long script=reader.ReadInt64();
+        if(fileId!=0 || file.file.GetAssetInfo(script)?.TypeId!=(int)AssetClassID.MonoScript)return false;
+        string name=Field(script)["m_ClassName"].AsString;
+        return name is "DynamicBone" or "DynamicBone_Ver02" or "DynamicBoneCollider" or "DynamicBoneColliderBase";
+    }
+    internal NativeMesh Mesh(long id, Matrix4x4 world, CancellationToken cancellation) => UnityMeshDecoder.Read(Field(id), world, cancellation);
+    internal AssetTypeTemplateField MeshTemplate() => Field(file.file.GetAssetsOfType(AssetClassID.Mesh).First().PathId).TemplateField;
+    private string ExternalName(int id)
+    {
+        if(id<1 || id>file.file.Metadata.Externals.Count) throw new InvalidDataException("外部资源引用越界。");
+        return Path.GetFileName(file.file.Metadata.Externals[id-1].PathName);
     }
     private static long Pointer(AssetTypeValueField value)
     {

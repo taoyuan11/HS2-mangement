@@ -24,6 +24,15 @@ public sealed record CardAppearance(int Sex, PreviewColor Skin, IReadOnlyList<Ap
     public IReadOnlyList<NativeRendererOverride> Renderers { get; init; } = [];
     public IReadOnlyList<NativeMaterialColorOverride> MaterialColors { get; init; } = [];
     public IReadOnlyList<NativeMaterialFloatOverride> MaterialFloats { get; init; } = [];
+    public IReadOnlyList<NativeMaterialDiagnostic> MaterialDiagnostics { get; init; } = [];
+    public IReadOnlyList<NativeMaterialTextureOverride> MaterialTextures { get; init; } = [];
+    public IReadOnlyList<NativeMaterialQueueOverride> MaterialQueues { get; init; } = [];
+    public IReadOnlyList<NativeSkinOverlay> SkinOverlays { get; init; } = [];
+    public IReadOnlyList<NativeClothesOverlay> ClothesOverlays { get; init; } = [];
+    public bool BodyVisible { get; init; } = true;
+    public float? EyeOpenMax { get; init; }
+    public NativePushUp? PushUp { get; init; }
+    public IReadOnlyDictionary<int,NativeAccessoryControl> AccessoryControls { get; init; } = new Dictionary<int,NativeAccessoryControl>();
     public IReadOnlySet<string> HandledExtensions { get; init; } = new HashSet<string>();
     public IReadOnlyList<string> Warnings { get; init; } = [];
 }
@@ -104,7 +113,10 @@ public static class CardAppearanceReader
         }
         parts.AddRange(extensions.Accessories);
         return new(card.Sex, skin, parts) { Face = face, Body = body, Hair = hair, BoneModifiers = extensions.Bones, Renderers = extensions.Renderers,
-            MaterialColors = extensions.MaterialColors, MaterialFloats = extensions.MaterialFloats, HandledExtensions = extensions.Handled, Warnings = extensions.Warnings };
+            MaterialColors = extensions.MaterialColors, MaterialFloats = extensions.MaterialFloats, MaterialTextures = extensions.MaterialTextures, MaterialDiagnostics = extensions.MaterialDiagnostics,
+            MaterialQueues = extensions.MaterialQueues, SkinOverlays = extensions.SkinOverlays, ClothesOverlays = extensions.ClothesOverlays,
+            BodyVisible = extensions.BodyVisible, EyeOpenMax = extensions.EyeOpenMax, PushUp = extensions.PushUp, AccessoryControls = extensions.AccessoryControls,
+            HandledExtensions = extensions.Handled, Warnings = extensions.Warnings };
 
         void Add(string label, int category, Dictionary<string, object?> value, string key, PreviewColor color, string property)
         {

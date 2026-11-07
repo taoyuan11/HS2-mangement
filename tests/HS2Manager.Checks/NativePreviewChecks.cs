@@ -20,9 +20,9 @@ internal static class NativePreviewChecks
             var shoes = bundle.ReadPrefab("shoes", default);
             if (!shoes.Bones.ContainsKey("shoes") || shoes.Meshes.Count == 0) throw new Exception("Duplicate asset name did not select the prefab GameObject");
             var skirt = bundle.ReadPrefab("bot", default);
-            if (skirt.Meshes.Count == 0 || !skirt.Warnings.Any(w => w.Contains("可选组件"))) throw new Exception("Unsupported helper component discarded the garment");
+            if (skirt.Meshes.Count == 0 || skirt.Warnings.Any(w => w.Contains("可选组件"))) throw new Exception("Static DynamicBone helper misreported or discarded the garment");
             Console.WriteLine("PASS duplicate-name texture/prefab resolves the GameObject");
-            Console.WriteLine("PASS unsupported MOD component retains renderable garment meshes");
+            Console.WriteLine("PASS versioned DynamicBone components preserve the static garment without parse noise");
         }
         var parser = new CardParser();
         string male = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara", "male"), "*.png", SearchOption.AllDirectories).First();

@@ -48,6 +48,13 @@ internal static class RasterizerChecks
         try { PreviewRasterizer.Render(NativePreviewRenderer.Build(new([mesh], [], 0, 0), default), camera, lights, Colors.Black, 256, 256, cancel.Token); throw new Exception("Cancelled frame rendered"); }
         catch (OperationCanceledException) { }
         Console.WriteLine("PASS intersecting cutouts, triangle order independence, material cutoff, near clipping, perspective UV and render cancellation");
+        mesh=new(){Positions=[-1,-1,0,1,-1,0,0,1,0],Normals=[0,0,-1,0,0,-1,0,0,-1],UV=[0,0,1,0,.5f,1],Indices=[0,2,1],Materials=[new(){Color=new(0,0,0),Colors=[new(0,0,0)]}]};
+        var dark=Render(mesh);mesh.Materials[0].EmissionColor=new(.5f,0,0);mesh.Materials[0].EmissionStrength=1;
+        var emissive=Render(mesh);if(Pixel(emissive,128,128).R<.65 || Pixel(dark,128,128).R>.05)throw new Exception("MaterialEditor emission did not reach rasterized pixels");
+        lights=new();lights.Children.Add(new DirectionalLight(Colors.White,new(0,0,1)));lights.Freeze();mesh.Materials[0].EmissionColor=new(0,0,0);
+        mesh.Materials[0].Smoothness=0;var matte=Render(mesh);mesh.Materials[0].Smoothness=1;var gloss=Render(mesh);
+        if(matte.SequenceEqual(gloss))throw new Exception("Saved gloss did not affect rasterized lighting");
+        Console.WriteLine("PASS MaterialEditor emissive color and gloss change real rendered pixels");
 
         byte[] Render(NativeMesh item)
         {

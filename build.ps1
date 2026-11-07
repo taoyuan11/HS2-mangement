@@ -13,12 +13,14 @@ $dotnet = if (Test-Path -LiteralPath $localDotnet) { $localDotnet } elseif ($dot
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:MSBUILDDISABLENODEREUSE = '1'
 function Invoke-Dotnet([string[]]$Arguments) {
+    # Prevent services from starting; do not shut down build servers owned by other sessions.
+    $Arguments = @($Arguments[0], '--disable-build-servers') + $Arguments[1..($Arguments.Length - 1)]
     & $dotnet @Arguments
     if ($LASTEXITCODE -ne 0) { throw "dotnet 执行失败，退出码 $LASTEXITCODE" }
 }
 if ($PreviewTest -and !(Test-Path -LiteralPath (Join-Path $GamePath 'abdata\chara\oo_base.unity3d'))) { throw "游戏资源目录无效：$GamePath" }
 $releaseRoot = Join-Path $projectRoot 'artifacts\release'
-$packageName = 'HS2Manager-1.1.0-preview3-win-x64'
+$packageName = 'HS2Manager-1.1.0-preview5-win-x64'
 $package = Join-Path $releaseRoot $packageName
 $staging = Join-Path $releaseRoot ($packageName + '-staging-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
@@ -33,7 +35,7 @@ try {
         Invoke-Dotnet @('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.UiChecks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--native-preview', '--game', $GamePath)
         if ($PreviewCard) { Invoke-Dotnet (@('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.UiChecks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--native-preview', '--game', $GamePath) + $sampleArguments) }
     }
-    Invoke-Dotnet @('publish', (Join-Path $projectRoot 'src\HS2Manager.App'), '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:UseSharedCompilation=false', '--disable-build-servers', '-o', $staging, '--nologo')
+    Invoke-Dotnet @('publish', (Join-Path $projectRoot 'src\HS2Manager.App'), '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:UseSharedCompilation=false', '-o', $staging, '--nologo')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $staging '使用说明.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md') -Destination $staging
     Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses') -Destination $staging -Recurse
@@ -55,5 +57,10 @@ try {
     Write-Output "SHA-256：$($hash.Hash)"
 }
 finally {
-    & $dotnet build-server shutdown | Out-Null
+    if (Test-Path -LiteralPath $staging) {
+        $resolvedStaging = [IO.Path]::GetFullPath($staging)
+        $releasePrefix = [IO.Path]::GetFullPath($releaseRoot).TrimEnd('\') + '\'
+        if (!$resolvedStaging.StartsWith($releasePrefix, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($resolvedStaging) -notlike ($packageName + '-staging-*')) { throw '临时发布目录超出工作区。' }
+        Remove-Item -LiteralPath $resolvedStaging -Recurse -Force
+    }
 }

@@ -71,9 +71,36 @@ internal static class NativeAppearanceChecks
             var modCard=parser.Parse(copy); var appearance=CardAppearanceReader.Read(modCard);
             if (!appearance.Parts.Any(p=>p.IsMod)) throw new Exception("MOD fixture has no resolvable references");
             var scene=await service.LoadAsync(game,output,modCard,null,default); NativePreviewChecks.Validate(scene);
+            if(appearance.PushUp is { } push && (push.Bra.Enabled || push.Top.Enabled))
+            {
+                string without=Path.Combine(output,"without-pushup.png");
+                Rewrite(copy,without,(name,_,map)=>
+                {
+                    if(name!="KKEx" || map.GetValueOrDefault("mikke.pushUpAI") is not List<object?> {Count:>=2} saved)return;
+                    var fields=CardAppearanceReader.Map(saved[1]);fields["ENABLE_PUSHUP"]=false;fields["TOP_ENABLE_PUSHUP"]=false;
+                });
+                var plain=await service.LoadAsync(game,output,parser.Parse(without),null,default);
+                foreach(string prefix in new[]{"o_body_","clothes["})
+                    if(!scene.Meshes.Where(m=>m.Name.StartsWith(prefix,StringComparison.Ordinal)).Any(m=>plain.Meshes.FirstOrDefault(n=>n.Name==m.Name) is {} other &&
+                        m.Positions.Length==other.Positions.Length && m.Positions.Where((v,i)=>Math.Abs(v-other.Positions[i])>.00001f).Any()))
+                        throw new Exception("Real-card PushUp did not deform "+prefix);
+                Console.WriteLine("PASS real-card PushUp changes both body and clothing vertices, with source card untouched");
+            }
             if (!scene.Meshes.Any(m=>m.Name.StartsWith("clothes[")) || !scene.Meshes.Any(m=>m.Name.StartsWith("accessory["))) throw new Exception("MOD clothing or accessories absent");
             foreach(var hidden in appearance.Renderers.Where(r=>!r.Enabled))
-                if(scene.Meshes.Any(m=>m.Name.StartsWith(hidden.Name+"/"))) throw new Exception("Hidden renderer reappeared");
+                if(scene.Meshes.Any(m=>m.ObjectType==hidden.ObjectType && (hidden.ObjectType==4 || m.Slot==hidden.Slot) && m.Name.StartsWith(hidden.Name+"/"))) throw new Exception("Hidden renderer reappeared in its object/slot");
+            if (appearance.SkinOverlays.Count > 0)
+            {
+                var material=scene.Meshes.SelectMany(m=>m.Materials).FirstOrDefault(m=>m.Layers.Any(l=>l.FullColor)) ?? throw new Exception("Saved skin overlay did not reach any rendered material");
+                var withOverlay=NativeTextureComposer.Compose(material,default)!;
+                var layers=material.Layers.ToArray();material.Layers.RemoveAll(l=>l.FullColor);
+                var withoutOverlay=NativeTextureComposer.Compose(material,default)!;material.Layers=layers.ToList();
+                if(withOverlay.Pixels.SequenceEqual(withoutOverlay.Pixels)) throw new Exception("Saved skin overlay has no effect on rendered pixels");
+                Console.WriteLine("PASS real-card skin overlay changes rendered texture pixels");
+            }
+            if(appearance.EyeOpenMax is < 1 && !scene.Meshes.Any(m=>m.EyeBlend!=null)) throw new Exception("Saved eyelid setting was not backed by decoded blend shapes");
+            if(Path.GetFileName(modSample)=="HS2ChaF_20250814211651049.png" && scene.Warnings.Count!=0)
+                throw new Exception("User compatibility fixture regressed: "+string.Join(";",scene.Warnings));
             if(Hash(modSample)!=hash) throw new Exception("MOD source was modified");
             Console.WriteLine($"PASS MOD GUID/Slot, clothes/accessories, {appearance.BoneModifiers.Count} bone modifiers, renderer overrides; {scene.Meshes.Sum(m=>m.Indices.Length/3)} triangles; {scene.Warnings.Count} diagnostics");
         }
@@ -101,6 +128,12 @@ internal static class NativeAppearanceChecks
                     byte[] packed=Pack(map);writer.Write(packed.Length);writer.Write(packed);
                 }
                 from.CopyTo(to);bytes=to.ToArray();
+            }
+            else if(name=="KKEx")
+            {
+                using var from=new MemoryStream(bytes);
+                var map=CardAppearanceReader.Map(new BoundedMessagePack(from,from.Length,256*1024*1024,16*1024*1024).Read());
+                change(name,0,map);bytes=Pack(map);
             }
             block["pos"]=data.Position;block["size"]=(long)bytes.Length;data.Write(bytes);
         }
