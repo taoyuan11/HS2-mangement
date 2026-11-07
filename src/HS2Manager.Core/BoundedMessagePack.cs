@@ -4,7 +4,7 @@ using System.Text;
 namespace HS2Manager.Core;
 
 /// <summary>Data-only MessagePack reader; never instantiates arbitrary types. Unknown plugin blobs can be skipped without allocation.</summary>
-internal sealed class BoundedMessagePack(Stream stream, long end, int allocationLimit = 16 * 1024 * 1024)
+internal sealed class BoundedMessagePack(Stream stream, long end, int allocationLimit = 16 * 1024 * 1024, int maxStringBytes = 65536)
 {
     private int remainingAllocation = allocationLimit;
     private int nodes;
@@ -26,7 +26,7 @@ internal sealed class BoundedMessagePack(Stream stream, long end, int allocation
         if (n < 0 || n > remainingAllocation || n > end - stream.Position) throw new InvalidDataException("MessagePack 数据长度超限");
         remainingAllocation -= n; byte[] bytes = new byte[n]; stream.ReadExactly(bytes); return bytes;
     }
-    private string Text(int n) { if (n > 65536) throw new InvalidDataException("文本字段过长"); return Encoding.UTF8.GetString(Bytes(n)); }
+    private string Text(int n) { if (n > maxStringBytes) throw new InvalidDataException("文本字段过长"); return Encoding.UTF8.GetString(Bytes(n)); }
     private void Advance(long n)
     {
         if (n < 0 || n > end - stream.Position) throw new InvalidDataException("MessagePack 数据截断"); stream.Seek(n, SeekOrigin.Current);
@@ -40,6 +40,12 @@ internal sealed class BoundedMessagePack(Stream stream, long end, int allocation
         byte b = Byte(); if (b is >= 0x80 and <= 0x8f) return b & 15;
         int n = b switch { 0xde => Length(2), 0xdf => Length(4), _ => throw new InvalidDataException("预期 MessagePack 字典") };
         if (n > 100000) throw new InvalidDataException("字典项目过多"); return n;
+    }
+    public int ArrayCount()
+    {
+        byte b = Byte(); if (b is >= 0x90 and <= 0x9f) return b & 15;
+        int n = b switch { 0xdc => Length(2), 0xdd => Length(4), _ => throw new InvalidDataException("预期 MessagePack 数组") };
+        if (n > 100000) throw new InvalidDataException("数组项目过多"); return n;
     }
     public object? Read(int depth = 0)
     {

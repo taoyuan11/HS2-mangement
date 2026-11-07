@@ -8,14 +8,15 @@ var gameArg = Array.IndexOf(args, "--game");
 var game = gameArg >= 0 ? args[gameArg + 1] : @"Z:\games\hs2\HS two DX - TSYMQ";
 var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
-if (args.Contains("--native-preview")) await NativePreviewChecks.Run(game, data);
+if (args.Contains("--native-preview")) await NativePreviewChecks.Run(game, data, Array.IndexOf(args,"--card") is int sample && sample >= 0 ? args[sample+1] : null);
 else if (args.Contains("--core")) await CoreChecks.Run(game, data);
+else if (args.Contains("--scan-settings")) await ScanSettingsChecks.Run(data);
 else if (args.Contains("--scan"))
 {
     var repo = new CardRepository(Path.Combine(data, "library"));
     var library = new CardLibraryService(repo);
     var watch = System.Diagnostics.Stopwatch.StartNew();
-    var report = await library.ScanAsync([Path.Combine(game, "UserData", "chara")], null, CancellationToken.None);
+    var report = await library.ScanAsync([Path.Combine(game, "UserData", "chara")], null, CancellationToken.None, recursive: true);
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report));
     var cards = repo.All();
     Console.WriteLine($"Parsed {cards.Count} cards in {watch.Elapsed.TotalSeconds:F2}s; {cards.Sum(c => c.Dependencies.Count)} mod references");

@@ -27,7 +27,11 @@ public sealed class SettingsWindow : Window
         var pathRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
         var browse = new Button { Content = "浏览…", Margin = new Thickness(8, 0, 0, 0) }; DockPanel.SetDock(browse, Dock.Right); pathRow.Children.Add(browse);
         gamePath = new TextBox { Text = model.Settings.GamePath }; pathRow.Children.Add(gamePath); body.Children.Add(pathRow);
-        body.Children.Add(Hint("自动扫描游戏目录中的 UserData\\chara，包含所有子目录。"));
+        body.Children.Add(Hint("默认扫描游戏目录中的女性人物卡目录 UserData\\chara\\female。"));
+        var recursiveSearch = new CheckBox { Content = "递归检索人物卡（包含子目录）", IsChecked = model.Settings.RecursiveCardSearch, Margin = new Thickness(0, 12, 0, 0) };
+        recursiveSearch.SetResourceReference(Control.ForegroundProperty, "TextBrush");
+        body.Children.Add(recursiveSearch);
+        body.Children.Add(Hint("默认关闭，仅扫描各目录当前层；开启后同时扫描子目录。适用于默认目录和额外人物卡目录，已索引内容仍会保留。"));
         browse.Click += (_, _) => { var picker = new OpenFolderDialog { Title = "选择包含 abdata 和 UserData 的游戏目录" }; if (picker.ShowDialog(this) == true) gamePath.Text = picker.FolderName; };
         body.Children.Add(new Separator());
         body.Children.Add(Label("额外人物卡目录"));
@@ -40,7 +44,7 @@ public sealed class SettingsWindow : Window
         removeRoot.Click += (_, _) => { if (rootsList.SelectedItem is string path) extraRoots.Remove(path); };
         body.Children.Add(Hint("扫描只建立索引；移除目录不会删除人物卡。已索引内容仍会保留。"));
         body.Children.Add(new Separator());
-        body.Children.Add(Label("独立 3D 预览 · 第一阶段"));
+        body.Children.Add(Label("独立 3D 人物预览"));
         body.Children.Add(Hint("直接读取游戏 abdata 模型资源，在本程序内显示。无需启动 Studio 或安装桥接插件。首次读取后，模型缓存在本地 Data\\NativePreview。"));
         body.Children.Add(Hint(NativePreviewService.Limitations));
         var installResult = Hint(""); body.Children.Add(installResult);
@@ -56,7 +60,9 @@ public sealed class SettingsWindow : Window
             try
             {
                 string path = Path.GetFullPath(gamePath.Text.Trim()); if (gamePath.Text.Trim().Length == 0) throw new ArgumentException("请选择游戏目录。");
-                model.Settings.GamePath = path; model.Settings.ExtraRoots = extraRoots.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList(); model.Settings.Save(model.DataDirectory); DialogResult = true;
+                model.Settings.GamePath = path; model.Settings.ExtraRoots = extraRoots.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                model.Settings.RecursiveCardSearch = recursiveSearch.IsChecked == true;
+                model.Settings.Save(model.DataDirectory); DialogResult = true;
             }
             catch (Exception ex) { Dialogs.Report(this, "设置未保存", ex.Message); }
         };

@@ -1,6 +1,6 @@
 # 本机验收记录
 
-> 以下为 1.0.0 Studio 桥接版历史记录。当前独立预览的范围与验收见 [NATIVE-PREVIEW.md](NATIVE-PREVIEW.md)。
+> 以下为 1.0.0 Studio 桥接版历史记录。1.1.0-preview.2 独立预览的范围与验收见 [NATIVE-PREVIEW.md](NATIVE-PREVIEW.md)。
 
 日期：2026-11-07。Windows x64，.NET SDK 10.0.403 / Runtime 10.0.14。游戏：本机映射盘的 HS two DX - TSYMQ，Unity 2018.4，BepInEx 5.4.17，HS2API 1.28.1。
 

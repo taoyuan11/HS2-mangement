@@ -6,27 +6,29 @@ public sealed class CardLibraryService(CardRepository repository)
 {
     private readonly CardParser parser = new();
     private readonly SemaphoreSlim scanGate = new(1, 1);
-    public async Task<ScanReport> ScanAsync(IEnumerable<string> roots, IProgress<WorkProgress>? progress, CancellationToken cancellation)
+    public async Task<ScanReport> ScanAsync(IEnumerable<string> roots, IProgress<WorkProgress>? progress, CancellationToken cancellation, bool recursive = false)
     {
         await scanGate.WaitAsync(cancellation);
-        try { return await Task.Run(() => ScanCore(roots, progress, cancellation), cancellation); }
+        try { return await Task.Run(() => ScanCore(roots, progress, cancellation, recursive), cancellation); }
         finally { scanGate.Release(); }
     }
-    private async Task<ScanReport> ScanCore(IEnumerable<string> roots, IProgress<WorkProgress>? progress, CancellationToken cancellation)
+    private async Task<ScanReport> ScanCore(IEnumerable<string> roots, IProgress<WorkProgress>? progress, CancellationToken cancellation, bool recursive)
     {
         int candidates = 0, valid = 0, invalid = 0, unchanged = 0; var warnings = new List<string>();
         var handled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (string root in roots.Select(System.IO.Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             cancellation.ThrowIfCancellationRequested();
-            var previous = repository.All().Where(c => string.Equals(c.Root, root, StringComparison.OrdinalIgnoreCase) && c.Availability != FileAvailability.Quarantined).ToList();
+            // Entries outside this scan's depth retain their cached availability.
+            var previous = repository.All().Where(c => string.Equals(c.Root, root, StringComparison.OrdinalIgnoreCase) && c.Availability != FileAvailability.Quarantined &&
+                (recursive || string.Equals(c.Folder, Path.TrimEndingDirectorySeparator(root), StringComparison.OrdinalIgnoreCase))).ToList();
             List<string> files;
             try
             {
                 if (!Directory.Exists(root)) throw new DirectoryNotFoundException("目录离线或不存在");
                 progress?.Report(new(candidates, 0, "正在读取目录：" + root));
                 files = [];
-                foreach (var file in EnumerateCards(root, cancellation))
+                foreach (var file in EnumerateCards(root, cancellation, recursive))
                 {
                     files.Add(file);
                 }
@@ -70,7 +72,7 @@ public sealed class CardLibraryService(CardRepository repository)
         }
         return new(candidates, valid, invalid, unchanged, warnings);
     }
-    private static IEnumerable<string> EnumerateCards(string root, CancellationToken cancellation)
+    private static IEnumerable<string> EnumerateCards(string root, CancellationToken cancellation, bool recursive)
     {
         var pending = new Stack<string>(); pending.Push(root);
         while (pending.Count > 0)
@@ -79,6 +81,7 @@ public sealed class CardLibraryService(CardRepository repository)
             if (folder.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(x => x.Equals(".HS2ManagerTrash", StringComparison.OrdinalIgnoreCase))) continue;
             foreach (string file in Directory.EnumerateFiles(folder))
             { cancellation.ThrowIfCancellationRequested(); if (Path.GetExtension(file).Equals(".png", StringComparison.OrdinalIgnoreCase)) yield return file; }
+            if (!recursive) continue;
             foreach (string subfolder in Directory.EnumerateDirectories(folder))
             { if ((File.GetAttributes(subfolder) & FileAttributes.ReparsePoint) == 0) pending.Push(subfolder); }
         }

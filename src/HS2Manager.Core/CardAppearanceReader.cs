@@ -2,12 +2,29 @@ using System.Text;
 
 namespace HS2Manager.Core;
 
-public sealed record PreviewColor(float R, float G, float B)
+public sealed record PreviewColor(float R, float G, float B, float A = 1)
 {
     public static PreviewColor Skin { get; } = new(.72f, .59f, .51f);
 }
-public sealed record AppearancePart(string Label, int Category, int Id, PreviewColor Color, bool IsMod);
-public sealed record CardAppearance(int Sex, PreviewColor Skin, IReadOnlyList<AppearancePart> Parts);
+public sealed record AppearancePart(string Label, int Category, int Id, PreviewColor Color, bool IsMod)
+{
+    public ModReference? Reference { get; init; }
+    public string Parent { get; init; } = "";
+    public float[] Adjustment { get; init; } = [];
+    public PreviewColor[] Colors { get; init; } = [];
+    public bool[] HideOptions { get; init; } = [];
+    public int Slot { get; init; } = -1;
+}
+public sealed record CardAppearance(int Sex, PreviewColor Skin, IReadOnlyList<AppearancePart> Parts)
+{
+    public Dictionary<string, object?> Face { get; init; } = [];
+    public Dictionary<string, object?> Body { get; init; } = [];
+    public Dictionary<string, object?> Hair { get; init; } = [];
+    public IReadOnlyList<NativeBoneAdjustment> BoneModifiers { get; init; } = [];
+    public IReadOnlyList<NativeRendererOverride> Renderers { get; init; } = [];
+    public IReadOnlySet<string> HandledExtensions { get; init; } = new HashSet<string>();
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
 
 /// <summary>Reads data only. Game assemblies and plugin code are never loaded.</summary>
 public static class CardAppearanceReader
@@ -27,7 +44,8 @@ public static class CardAppearanceReader
         var table = Map(new BoundedMessagePack(stream, end).Read()); stream.Position = end;
         long length = reader.ReadInt64(), start = stream.Position;
         if (length < 0 || length > stream.Length - start) throw new InvalidDataException("人物数据长度越界。");
-        Dictionary<string, object?> face = [], body = [], hair = [];
+        Dictionary<string, object?> face = [], body = [], hair = [], clothes = [], accessory = [];
+        var extensions = new NativeCardExtensions();
         foreach (var item in List(table, "lstInfo"))
         {
             cancellation.ThrowIfCancellationRequested(); var block = Map(item);
@@ -37,6 +55,8 @@ public static class CardAppearanceReader
             switch (Text(block, "name"))
             {
                 case "Custom": face = Part(); body = Part(); hair = Part(); break;
+                case "Coordinate": clothes = Part(); accessory = Part(); break;
+                case "KKEx": extensions.Read(stream, blockEnd, card, cancellation); break;
             }
             Dictionary<string, object?> Part()
             {
@@ -60,16 +80,48 @@ public static class CardAppearanceReader
             var part = Map(hairs[i]);
             Add(hairLabels[i], 300 + i, part, "id", Color(part, "baseColor", new(.2f, .17f, .14f)), $"hair.parts[{i}].id");
         }
-        // Clothes, skin textures, masks and bone morphs require additional game-specific composition.
-        // Do not display unmasked clothing over the body and imply a faithful character preview.
-        return new(card.Sex, skin, parts);
+        string[] clothesLabels = ["上衣", "下装", "内衣", "内裤", "手套", "连裤袜", "袜子", "鞋子"];
+        var clothing = List(clothes, "parts");
+        for (int i = 0; i < Math.Min(8, clothing.Count); i++)
+        {
+            if (card.Sex == 0 && i is 2 or 3 or 5 or 6) continue;
+            var part = Map(clothing[i]);
+            var colors = List(part, "colorInfo").Select(c => Color(Map(c), "baseColor", new(1, 1, 1))).ToArray();
+            Add(clothesLabels[i], (card.Sex == 0 ? 140 : 240) + i, part, "id", colors.FirstOrDefault() ?? new(1, 1, 1), $"clothes.parts[{i}].id");
+            parts[^1] = parts[^1] with { Slot = i, Colors = colors, HideOptions = List(part, "hideOpt").Select(v => v is true).ToArray() };
+        }
+        var accessories = List(accessory, "parts");
+        for (int i = 0; i < Math.Min(256, accessories.Count); i++)
+        {
+            var part = Map(accessories[i]); int type = checked((int)Integer(part, "type"));
+            if (type is < 351 or > 399) continue;
+            var colors = List(part, "colorInfo").Select(c => Color(Map(c), "color", new(1, 1, 1))).ToArray();
+            Add($"配饰 {i + 1}", type, part, "id", colors.FirstOrDefault() ?? new(1, 1, 1), $"accessory.parts[{i}].id");
+            var move = List(part, "addMove");
+            parts[^1] = parts[^1] with { Slot = i, Colors = colors, Parent = Text(part, "parentKey"), Adjustment = Flatten(move.Count == 3 && move[2] is List<object?> ? move[2] : move).ToArray() };
+        }
+        parts.AddRange(extensions.Accessories);
+        return new(card.Sex, skin, parts) { Face = face, Body = body, Hair = hair, BoneModifiers = extensions.Bones, Renderers = extensions.Renderers, HandledExtensions = extensions.Handled, Warnings = extensions.Warnings };
 
         void Add(string label, int category, Dictionary<string, object?> value, string key, PreviewColor color, string property)
         {
             int id = checked((int)Integer(value, key));
-            bool mod = card.Dependencies.Any(d => d.Category == category || d.Property.EndsWith(property, StringComparison.Ordinal));
-            parts.Add(new(label, category, id, color, mod));
+            var reference = FindReference(card, category, property);
+            parts.Add(new(label, category, id, color, reference != null) { Reference = reference });
         }
+    }
+    internal static ModReference? FindReference(CardRecord card, int category, string property)
+    {
+        var candidates = card.Dependencies.Where(d => d.Category == category).ToArray();
+        var exact = candidates.FirstOrDefault(d => d.Property.EndsWith(property, StringComparison.OrdinalIgnoreCase));
+        if (exact != null) return exact;
+        int start = property.IndexOf('['), end = property.IndexOf(']');
+        if (start >= 0 && end > start && int.TryParse(property[(start+1)..end], out int slot))
+        {
+            if (category >= 351) return candidates.FirstOrDefault(d => ("." + d.Property).Contains($".accessory{slot}.", StringComparison.OrdinalIgnoreCase));
+            if (category == 317) return candidates.FirstOrDefault(d => d.Property.EndsWith($".Eye{slot+1}", StringComparison.OrdinalIgnoreCase));
+        }
+        return candidates.Length == 1 && category < 351 ? candidates[0] : null;
     }
     private static string ReadString(BinaryReader reader)
     {
@@ -81,7 +133,12 @@ public static class CardAppearanceReader
     internal static List<object?> List(Dictionary<string, object?> value, string key) => value.GetValueOrDefault(key) as List<object?> ?? [];
     internal static string Text(Dictionary<string, object?> value, string key) => value.GetValueOrDefault(key) as string ?? "";
     internal static long Integer(Dictionary<string, object?> value, string key) => value.GetValueOrDefault(key) is long n ? n : 0;
-    private static PreviewColor Color(Dictionary<string, object?> value, string key, PreviewColor fallback)
+    internal static IEnumerable<float> Flatten(object? value)
+    {
+        if (value is List<object?> list) { foreach (var item in list) foreach (var n in Flatten(item)) yield return n; }
+        else if (value is float or double or long) { float n = Convert.ToSingle(value); if (!float.IsFinite(n)) throw new InvalidDataException("外观参数无效。"); yield return n; }
+    }
+    internal static PreviewColor Color(Dictionary<string, object?> value, string key, PreviewColor fallback)
     {
         var list = List(value, key); if (list.Count < 3) return fallback;
         float Component(int i)
@@ -90,6 +147,6 @@ public static class CardAppearanceReader
             if (!float.IsFinite(n)) throw new InvalidDataException("外观颜色无效。");
             return Math.Clamp(n, 0, 1);
         }
-        return new(Component(0), Component(1), Component(2));
+        return new(Component(0), Component(1), Component(2), list.Count > 3 ? Component(3) : 1);
     }
 }

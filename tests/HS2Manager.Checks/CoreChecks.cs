@@ -7,6 +7,7 @@ internal static class CoreChecks
 {
     public static async Task Run(string game, string output)
     {
+        await ScanSettingsChecks.Run(output);
         var sandbox = Path.Combine(output, "core-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(sandbox);
         int passed = 0;
@@ -42,7 +43,7 @@ internal static class CoreChecks
             Check(Hash(imported[0].Destination!) == originalHash && Hash(second[0].Destination!) == originalHash, "Import preserves complete PNG and tail SHA-256");
             var first = repo.FindByPath(imported[0].Destination!)!;
             repo.UpdateMetadata([first.Id], c => { c.Favorite = true; c.Tags = ["测试", "常用"]; c.Collection = "原创"; c.Notes = "持久化检查"; });
-            var scan = await library.ScanAsync([cardRoot], null, none);
+            var scan = await library.ScanAsync([cardRoot], null, none, recursive: true);
             Check(scan.Valid == 2 && repo.FindById(first.Id)!.Favorite, "Incremental scan preserves user metadata");
             var dupes = await library.FindDuplicatesAsync(null, none);
             Check(dupes.Count == 1 && dupes[0].Count == 2, "Duplicates compare complete file hashes");
@@ -54,16 +55,16 @@ internal static class CoreChecks
             Check(Hash(first.Path) == originalHash && first.Collection == "原创", "Move preserves complete data and virtual collection");
             string restoreTo = first.Path; await files.QuarantineAsync(first, fakeGame, none); first = repo.FindById(first.Id)!;
             Check(first.Availability == FileAvailability.Quarantined && !File.Exists(restoreTo) && File.Exists(first.Path), "Quarantine is recoverable outside character folders");
-            var wideScan = await library.ScanAsync([fakeGame], null, none);
+            var wideScan = await library.ScanAsync([fakeGame], null, none, recursive: true);
             Check(wideScan.Candidates == 1 && repo.FindById(first.Id)!.Availability == FileAvailability.Quarantined, "Quarantine excluded even when scanning a parent folder");
             File.Copy(source, restoreTo); await files.RestoreAsync(first, none); first = repo.FindById(first.Id)!;
             Check(first.Path != restoreTo && File.Exists(restoreTo) && Hash(first.Path) == originalHash && first.Favorite, "Restore collision keeps existing file and metadata");
-            await library.ScanAsync([cardRoot], null, none);
+            await library.ScanAsync([cardRoot], null, none, recursive: true);
 
             string unavailable = cardRoot + "-offline"; Directory.Move(cardRoot, unavailable);
-            var offline = await library.ScanAsync([cardRoot], null, none);
+            var offline = await library.ScanAsync([cardRoot], null, none, recursive: true);
             Check(offline.Warnings.Count == 1 && repo.All().Where(c => c.Root == cardRoot).All(c => c.Availability == FileAvailability.Offline), "Offline root retains cached cards without marking deleted");
-            Directory.Move(unavailable, cardRoot); await library.ScanAsync([cardRoot], null, none);
+            Directory.Move(unavailable, cardRoot); await library.ScanAsync([cardRoot], null, none, recursive: true);
             Check(repo.FindById(first.Id)!.Availability == FileAvailability.Available, "Reconnect restores availability");
             first = repo.FindById(first.Id)!;
             using (var locked = new FileStream(first.Path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
@@ -91,9 +92,9 @@ internal static class CoreChecks
             Check(File.Exists(first.Path) && !File.Exists(interrupted.Staging) && files.Operations().Single(x => x.Id == interrupted.Id).Phase == "RolledBack", "Interrupted copy recovery removes only its staged partial copy");
 
             File.Copy(bad, Path.Combine(cardRoot, "坏卡.png")); File.Copy(image, Path.Combine(cardRoot, "图片.png"));
-            var mixed = await library.ScanAsync([cardRoot, Path.Combine(cardRoot, "male")], null, none);
+            var mixed = await library.ScanAsync([cardRoot, Path.Combine(cardRoot, "male")], null, none, recursive: true);
             Check(mixed.Invalid == 2 && mixed.Valid == 3, "Bad file does not abort scan; overlapping roots deduplicated");
-            string missingPath = repo.All().First(c => c.Path == restoreTo).Path; File.Delete(missingPath); await library.ScanAsync([cardRoot], null, none);
+            string missingPath = repo.All().First(c => c.Path == restoreTo).Path; File.Delete(missingPath); await library.ScanAsync([cardRoot], null, none, recursive: true);
             Check(repo.FindByPath(missingPath)!.Availability == FileAvailability.Missing, "Confirmed missing file retained as a missing index entry");
             string backup = Path.Combine(sandbox, "Backup", "library.db"); Directory.CreateDirectory(Path.GetDirectoryName(backup)!); repo.Backup(backup);
             Check(new CardRepository(Path.GetDirectoryName(backup)!).FindById(first.Id)!.Notes == "持久化检查", "SQLite backup contains persisted metadata");

@@ -6,7 +6,7 @@ using HS2Manager.Core;
 
 internal static class NativePreviewChecks
 {
-    public static async Task Run(string game, string data)
+    public static async Task Run(string game, string data, string? modSample = null)
     {
         string output = Path.Combine(data, "native-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(output);
         var before = GameProcesses();
@@ -47,6 +47,7 @@ internal static class NativePreviewChecks
         var partial = await service.LoadAsync(game, output, maleCard, null, default);
         if (!partial.Warnings.Any(w => w.Contains("头部") && w.Contains("MOD")) || partial.Meshes.Any(m => m.Name.StartsWith("o_head/"))) throw new Exception("MOD head was silently substituted");
         Console.WriteLine("PASS explicit unsupported MOD diagnostics");
+        await NativeAppearanceChecks.Run(game, output, female, modSample);
         if (GameProcesses().Except(before).Any()) throw new Exception("Native preview started a game process");
         if (AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name is "UnityEngine" or "Assembly-CSharp" or "BepInEx")) throw new Exception("Game assembly loaded into native process");
         Console.WriteLine("PASS no Studio / game runtime loaded");
@@ -59,7 +60,7 @@ internal static class NativePreviewChecks
             foreach (var process in Process.GetProcessesByName(name)) using (process) result.Add(process.Id);
         return result;
     }
-    private static void Validate(NativePreviewScene scene)
+    internal static void Validate(NativePreviewScene scene)
     {
         if (scene.Meshes.Count == 0) throw new Exception("No native geometry");
         foreach (var mesh in scene.Meshes)

@@ -187,6 +187,7 @@ public partial class MainWindow : Window
     private void Viewport_MouseWheel(object sender, MouseWheelEventArgs e) { ViewModel.Zoom(e.Delta); e.Handled = true; }
     private void Angle_Click(object sender, RoutedEventArgs e) => ViewModel.SetAngle(float.Parse((string)((Button)sender).Tag, System.Globalization.CultureInfo.InvariantCulture));
     private void ResetCamera_Click(object sender, RoutedEventArgs e) => ViewModel.ResetCamera();
+    private void FocusFace_Click(object sender, RoutedEventArgs e) => ViewModel.FocusFace();
     private void Environment_Changed(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateEnvironment();
     private void Background_Changed(object sender, SelectionChangedEventArgs e) => UpdateEnvironment();
     private void UpdateEnvironment()

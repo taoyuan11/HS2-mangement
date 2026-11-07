@@ -12,6 +12,15 @@ public sealed class NativeMesh
     public float[] UV { get; set; } = [];
     public int[] Indices { get; set; } = [];
     public PreviewColor Color { get; set; } = PreviewColor.Skin;
+    public List<int[]> Submeshes { get; set; } = [];
+    public List<NativeMaterial> Materials { get; set; } = [];
+    public string[] Bones { get; set; } = [];
+    public float[][] BindPoses { get; set; } = [];
+    public float[] Weights { get; set; } = [];
+    public int[] BoneIndices { get; set; } = [];
+    public float[] Transform { get; set; } = [];
+    public int OptionMask { get; set; }
+    public int ClothingGroup { get; set; } = -1;
 }
 
 /// <summary>Unity 2018 uncompressed vertex streams, including separate streams and half floats.</summary>
@@ -39,6 +48,15 @@ internal static class UnityMeshDecoder
         for (int i = 0; i < stride.Length; i++) { offsets[i] = checked((int)total); total = (total + (long)stride[i] * count + 15) & ~15L; }
         if (total - 15 > data.Length) throw new InvalidDataException("顶点缓冲区截断。");
         var result = new NativeMesh { Name = mesh["m_Name"].AsString, Positions = new float[count * 3], Normals = new float[count * 3], UV = new float[count * 2] };
+        result.Transform = NativeMath.Array(transform);
+        if (channels.Count > 13 && channels[12]["dimension"].AsInt > 0)
+        {
+            result.Weights = new float[count * 4]; result.BoneIndices = new int[count * 4];
+            for (int i = 0; i < count; i++) for (int j = 0; j < 4; j++)
+            { result.Weights[i * 4 + j] = Read(12, i, j); result.BoneIndices[i * 4 + j] = checked((int)Read(13, i, j)); }
+        }
+        if (!mesh["m_BindPose"].IsDummy)
+            result.BindPoses = mesh["m_BindPose"]["Array"].Children.Select(m => Enumerable.Range(0, 16).Select(i => m[$"e{i % 4}{i / 4}"].AsFloat).ToArray()).ToArray();
         if (!Matrix4x4.Invert(transform, out var inverse)) throw new InvalidDataException("网格变换不可逆。");
         var normalMatrix = Matrix4x4.Transpose(inverse);
         for (int i = 0; i < count; i++)
@@ -58,6 +76,7 @@ internal static class UnityMeshDecoder
         bool mirrored = transform.GetDeterminant() < 0;
         foreach (var submesh in mesh["m_SubMeshes"]["Array"].Children)
         {
+            int start = indices.Count;
             if (submesh["topology"].AsInt != 0) throw new NotSupportedException("暂不支持非三角形网格。");
             int first = submesh["firstByte"].AsInt, number = submesh["indexCount"].AsInt, baseVertex = submesh["baseVertex"].AsInt;
             if (first < 0 || number < 0 || number % 3 != 0 || number > 3000000 || (long)first + (long)number * indexSize > buffer.Length) throw new InvalidDataException("三角形索引越界。");
@@ -66,6 +85,7 @@ internal static class UnityMeshDecoder
                 int a = Index(i), b = Index(i + 1), c = Index(i + 2);
                 indices.Add(a); indices.Add(mirrored ? b : c); indices.Add(mirrored ? c : b);
             }
+            result.Submeshes.Add(indices.Skip(start).ToArray());
             int Index(int i)
             {
                 var span = buffer.AsSpan(first + i * indexSize, indexSize);
@@ -90,6 +110,13 @@ internal static class UnityMeshDecoder
                 1 => (float)BitConverter.UInt16BitsToHalf(BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2))),
                 2 => data[pos] / 255f,
                 3 => Math.Max(-1, (sbyte)data[pos] / 127f),
+                4 => BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2)) / 65535f,
+                5 => Math.Max(-1, BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(pos, 2)) / 32767f),
+                6 => data[pos], 7 => (sbyte)data[pos],
+                8 => BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos, 2)),
+                9 => BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(pos, 2)),
+                10 => BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4)),
+                11 => BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(pos, 4)),
                 _ => throw new NotSupportedException($"暂不支持顶点格式 {format}。")
             };
             if (!float.IsFinite(value)) throw new InvalidDataException("网格包含非有限坐标。"); return value;

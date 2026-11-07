@@ -38,7 +38,9 @@ internal static class Program
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
             int index = Array.IndexOf(args, "--game");
-            NativePreviewUiChecks.Run(app, root, index >= 0 ? args[index + 1] : @"Z:\games\hs2\HS two DX - TSYMQ"); return 0;
+            int sample = Array.IndexOf(args, "--card");
+            try { NativePreviewUiChecks.Run(app, root, index >= 0 ? args[index + 1] : @"Z:\games\hs2\HS two DX - TSYMQ", sample >= 0 ? args[sample + 1] : null); return 0; }
+            finally { app.Shutdown(); }
         }
         var settings = new AppSettings { GamePath = Path.Combine(output, "NoGame"), WindowWidth = 1440, WindowHeight = 900 };
         using var model = new MainViewModel(Path.Combine(output, "Data"), settings);

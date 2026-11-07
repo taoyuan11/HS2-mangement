@@ -120,7 +120,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             bool connected = Directory.Exists(Settings.GamePath);
             Application.Current.Dispatcher.Invoke(() => { gameConnected = connected; Changed(nameof(GameConnection)); });
-            var report = await Library.ScanAsync(Settings.ScanRoots, progress, ct);
+            var report = await Library.ScanAsync(Settings.ScanRoots, progress, ct, Settings.RecursiveCardSearch);
             if (report.Warnings.Count > 0) WriteLog("扫描", string.Join(Environment.NewLine, report.Warnings));
             return $"扫描完成：{report.Valid} 张人物卡，{report.Invalid} 个其他或异常文件，{report.Unchanged} 项无需更新" + (report.Warnings.Count > 0 ? $"；{report.Warnings.Count} 项目录/文件警告，详见日志" : "");
         });
@@ -251,7 +251,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             int done = 0;
             foreach (var card in cards) { ct.ThrowIfCancellationRequested(); progress.Report(new(done, cards.Count, card.FileName)); await Files.MoveAsync(card, folder, ct); done++; }
-            Application.Current.Dispatcher.Invoke(() => { if (!Settings.ScanRoots.Any(root => IsWithin(folder, root) || root.Equals(folder, StringComparison.OrdinalIgnoreCase))) Settings.ExtraRoots.Add(folder); Settings.Save(DataDirectory); });
+            Application.Current.Dispatcher.Invoke(() => { if (!Settings.ScanRoots.Any(root => (Settings.RecursiveCardSearch && IsWithin(folder, root)) || root.Equals(folder, StringComparison.OrdinalIgnoreCase))) Settings.ExtraRoots.Add(folder); Settings.Save(DataDirectory); });
             return $"已移动 {done} 张人物卡";
         });
     }
@@ -305,6 +305,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private CardRecord? previewCard;
     private double yaw, pitch = 8, distance = 30, previewAspect = 16d / 9;
     private Point3D center;
+    private Rect3D faceBounds = Rect3D.Empty;
     private bool autoFrame = true;
     public double CameraDistance => distance;
     public Task OpenPreviewAsync(CardRecord? card = null)
@@ -330,6 +331,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             var scene = await nativePreview.LoadAsync(Settings.GamePath, DataDirectory, card, progress, cancellation.Token);
             var model = await Task.Run(() => NativePreviewRenderer.Build(scene, cancellation.Token), cancellation.Token);
             if (generation != previewGeneration || !IsPreview) return;
+            faceBounds = Rect3D.Empty;
+            foreach (var mesh in scene.Meshes.Where(m => m.Name.StartsWith("o_head/", StringComparison.Ordinal)))
+                for (int i = 0; i < mesh.Positions.Length; i += 3) faceBounds.Union(new Point3D(mesh.Positions[i],mesh.Positions[i+1],mesh.Positions[i+2]));
             PreviewModel = model; ResetCamera();
             PreviewWarnings = string.Join("\n", scene.Warnings);
             PreviewStatus = $"独立 3D · {scene.Meshes.Sum(m => m.Indices.Length / 3):N0} 个三角形 · 资源加载 {scene.LoadSeconds:F2} 秒 · {scene.CacheHits} 项本地缓存";
@@ -368,6 +372,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         distance = Math.Max(bounds.SizeX, bounds.SizeY * previewAspect) / (2 * tangent) * 1.12 + bounds.SizeZ;
         yaw = 0; pitch = 5; autoFrame = true; UpdateCamera();
     }
+    public void FocusFace()
+    {
+        if (PreviewModel == null || faceBounds.IsEmpty) return;
+        var b = faceBounds; center = new(b.X+b.SizeX/2,b.Y+b.SizeY/2,b.Z+b.SizeZ/2);
+        distance = Math.Max(b.SizeX,b.SizeY*previewAspect)/(2*Math.Tan(35*Math.PI/360))*1.25+b.SizeZ;
+        yaw = 0; pitch = 0; autoFrame = false; UpdateCamera();
+    }
     private void UpdateCamera()
     {
         double y = yaw * Math.PI / 180, p = pitch * Math.PI / 180;
@@ -385,7 +396,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public Task RetryPreviewAsync() => OpenPreviewAsync(previewCard);
     public async Task ClosePreviewAsync()
     {
-        ++previewGeneration; IsPreview = false; previewCancellation?.Cancel(); PreviewModel = null; PreviewBusy = false;
+        ++previewGeneration; IsPreview = false; previewCancellation?.Cancel(); PreviewModel = null; PreviewBusy = false; faceBounds = Rect3D.Empty;
         var pending = previewLoads.ToArray(); if (pending.Length > 0) await Task.WhenAll(pending);
     }
     public void Dispose() { operationCancellation?.Cancel(); previewCancellation?.Cancel(); }

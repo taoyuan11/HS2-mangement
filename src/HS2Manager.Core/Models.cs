@@ -46,12 +46,13 @@ public sealed class AppSettings
 {
     public string GamePath { get; set; } = @"Z:\games\hs2\HS two DX - TSYMQ";
     public List<string> ExtraRoots { get; set; } = [];
+    public bool RecursiveCardSearch { get; set; } = false;
     public List<string> Collections { get; set; } = [];
     public string Theme { get; set; } = "System";
     public string Sort { get; set; } = "名称";
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 900;
-    public IEnumerable<string> ScanRoots => new[] { System.IO.Path.Combine(GamePath, "UserData", "chara") }.Concat(ExtraRoots).Distinct(StringComparer.OrdinalIgnoreCase);
+    public IEnumerable<string> ScanRoots => new[] { System.IO.Path.Combine(GamePath, "UserData", "chara", "female") }.Concat(ExtraRoots).Distinct(StringComparer.OrdinalIgnoreCase);
     public static AppSettings Load(string directory)
     {
         var path = System.IO.Path.Combine(directory, "settings.json");

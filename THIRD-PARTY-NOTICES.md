@@ -6,7 +6,9 @@ HS2 Manager is an independent utility. HoneySelect 2, Studio, Unity assets and g
 - SQLitePCLRaw: Eric Sink and contributors, Apache-2.0. Source: https://github.com/ericsink/SQLitePCL.raw.
 - SQLite: public domain. https://www.sqlite.org/copyright.html.
 - AssetsTools.NET 3.0.5: nesrak1, MIT. Reads serialized Unity data without loading the Unity runtime. License included in `licenses/AssetsTools.NET-LICENSE.txt`. Source: https://github.com/nesrak1/AssetsTools.NET.
+- AssetsTools.NET.Texture 3.0.2: nesrak1, MIT; shares the AssetsTools.NET license above. Managed Unity texture decoding.
+- AssetRipper.TextureDecoder 1.3.0: ds5678, MIT. Transitive texture decoder dependency; license included in `licenses/AssetRipper.TextureDecoder-LICENSE.txt`. Source: https://github.com/AssetRipper/TextureDecoder.
 - BepInEx is referenced only from the user's existing installation and is not bundled. https://github.com/BepInEx/BepInEx.
 - Microsoft.NETFramework.ReferenceAssemblies.net46 is a build-only dependency and is not included in the application package.
 
-The standalone preview reads the user's local `abdata` resources and caches decoded geometry locally. No character cards, preview screenshots, model caches, MOD packages or proprietary game DLLs are bundled. The legacy bridge source remains available separately and is not built or shipped by the default build.
+The standalone preview reads the user's local `abdata` and MOD archives and caches decoded geometry and textures locally. Shape formulas are read from the installed game's PE metadata with a restricted numeric evaluator; game assemblies and plugin code are never loaded or invoked. No character cards, preview screenshots, model caches, MOD packages or proprietary game DLLs are bundled. The legacy bridge source remains available separately and is not built or shipped by the default build.
