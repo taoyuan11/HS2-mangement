@@ -18,7 +18,7 @@ function Invoke-Dotnet([string[]]$Arguments) {
 }
 if ($PreviewTest -and !(Test-Path -LiteralPath (Join-Path $GamePath 'abdata\chara\oo_base.unity3d'))) { throw "游戏资源目录无效：$GamePath" }
 $releaseRoot = Join-Path $projectRoot 'artifacts\release'
-$packageName = 'HS2Manager-1.1.0-preview2-win-x64'
+$packageName = 'HS2Manager-1.1.0-preview3-win-x64'
 $package = Join-Path $releaseRoot $packageName
 $staging = Join-Path $releaseRoot ($packageName + '-staging-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $staging -Force | Out-Null

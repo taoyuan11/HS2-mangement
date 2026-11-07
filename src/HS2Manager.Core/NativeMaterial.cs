@@ -23,6 +23,7 @@ public sealed class NativeMaterial
     public bool Tint { get; set; }
     public bool Hair { get; set; }
     public bool MaskOnly { get; set; }
+    public float AlphaCutoff { get; set; } = .45f;
     public PreviewColor[] Colors { get; set; } = [];
     public List<NativeTexture> VisibilityMasks { get; set; } = [];
     public List<NativeTextureLayer> Layers { get; set; } = [];

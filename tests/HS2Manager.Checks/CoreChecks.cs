@@ -7,6 +7,7 @@ internal static class CoreChecks
 {
     public static async Task Run(string game, string output)
     {
+        NativeRenderingDataChecks.Run();
         await ScanSettingsChecks.Run(output);
         var sandbox = Path.Combine(output, "core-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(sandbox);

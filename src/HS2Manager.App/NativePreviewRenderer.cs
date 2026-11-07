@@ -1,6 +1,5 @@
 using System.IO;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Media.Media3D;
@@ -10,10 +9,10 @@ namespace HS2Manager.App;
 
 public static class NativePreviewRenderer
 {
+    public static readonly DependencyProperty AlphaCutoffProperty = DependencyProperty.RegisterAttached("AlphaCutoff", typeof(float), typeof(NativePreviewRenderer), new PropertyMetadata(.45f));
     public static Model3DGroup Build(NativePreviewScene scene, CancellationToken cancellation)
     {
         var model = new Model3DGroup();
-        var cutouts = new List<GeometryModel3D>();
         foreach (var part in scene.Meshes)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -50,14 +49,11 @@ public static class NativePreviewRenderer
                 var materials = new MaterialGroup(); materials.Children.Add(new DiffuseMaterial(brush));
                 if (!material.Transparent && material.VisibilityMasks.Count == 0) materials.Children.Add(new SpecularMaterial(new SolidColorBrush(Color.FromRgb(24, 24, 24)), 28));
                 materials.Freeze();
-                var geometry = new GeometryModel3D(mesh, materials) { BackMaterial = materials }; geometry.Freeze();
-                // WPF writes depth for transparent texels. Draw cutouts after the opaque surface
-                // beneath them, otherwise eyelash quads punch rectangular holes in the face.
-                if (material.Transparent || material.AlphaMask != null || material.VisibilityMasks.Count > 0) cutouts.Add(geometry);
-                else model.Children.Add(geometry);
+                var geometry = new GeometryModel3D(mesh, materials) { BackMaterial = materials };
+                geometry.SetValue(AlphaCutoffProperty, material.AlphaCutoff); geometry.Freeze();
+                model.Children.Add(geometry);
             }
         }
-        foreach (var geometry in cutouts) model.Children.Add(geometry);
         model.Freeze(); return model;
     }
     public static Model3DGroup Lights(double strength)
@@ -74,12 +70,9 @@ public static class NativePreviewRenderer
         var screenshotCamera = camera.Clone();
         // WPF FieldOfView is horizontal. Preserve vertical framing when exporting a wider viewport.
         screenshotCamera.FieldOfView = Math.Atan(Math.Tan(camera.FieldOfView * Math.PI / 360) * (1280d / 720) / sourceAspect) * 360 / Math.PI;
-        var viewport = new Viewport3D { Camera = screenshotCamera };
-        viewport.Children.Add(new ModelVisual3D { Content = lights });
-        viewport.Children.Add(new ModelVisual3D { Content = model });
-        var grid = new Grid { Width = 1280, Height = 720, Background = background }; grid.Children.Add(viewport);
-        grid.Measure(new Size(1280, 720)); grid.Arrange(new Rect(0, 0, 1280, 720)); grid.UpdateLayout();
-        var frame = new RenderTargetBitmap(1280, 720, 96, 96, PixelFormats.Pbgra32); frame.Render(grid);
+        // Supersampling preserves thin hair/eyelash coverage and smooth silhouettes in the export.
+        var large = PreviewRasterizer.Render(model, screenshotCamera, lights, (background as SolidColorBrush)?.Color ?? Colors.Black, 2560, 1440);
+        var frame = new TransformedBitmap(large, new ScaleTransform(.5, .5));
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(frame));
         using var stream = File.Create(path); encoder.Save(stream);
     }

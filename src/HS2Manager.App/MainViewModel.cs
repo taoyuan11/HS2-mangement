@@ -304,6 +304,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private int previewGeneration;
     private CardRecord? previewCard;
     private double yaw, pitch = 8, distance = 30, previewAspect = 16d / 9;
+    private double previewWidth = 1280;
     private Point3D center;
     private Rect3D faceBounds = Rect3D.Empty;
     private bool autoFrame = true;
@@ -353,16 +354,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
     public void SetPreviewAspect(double width, double height)
-    { if (width > 0 && height > 0) { previewAspect = width / height; if (autoFrame) ResetCamera(); } }
+    { if (width > 0 && height > 0) { previewWidth = width; previewAspect = width / height; if (autoFrame) ResetCamera(); } }
     public void Rotate(double dx, double dy) { autoFrame = false; yaw += dx * .45; pitch = Math.Clamp(pitch + dy * .3, -80, 80); UpdateCamera(); }
     public void Pan(double dx, double dy)
     {
-        autoFrame = false; double amount = dx * distance * .0008, radians = yaw * Math.PI / 180;
-        center.X -= amount * Math.Cos(radians); center.Z -= amount * Math.Sin(radians);
-        center.Y += dy * distance * .0008; UpdateCamera();
+        autoFrame = false;
+        var forward = PreviewCamera.LookDirection; forward.Normalize();
+        var right = Vector3D.CrossProduct(forward, PreviewCamera.UpDirection); right.Normalize();
+        var up = Vector3D.CrossProduct(right, forward);
+        double unitsPerPixel = 2 * distance * Math.Tan(PreviewCamera.FieldOfView * Math.PI / 360) / previewWidth;
+        // Drag the model with the pointer in the camera plane, including tilted views.
+        center += -right * (dx * unitsPerPixel) + up * (dy * unitsPerPixel); UpdateCamera();
     }
     public void Zoom(int delta) { autoFrame = false; distance = Math.Clamp(distance * Math.Exp(-delta / 120d * .12), .1, 500); UpdateCamera(); }
-    public void SetAngle(float angle) { yaw = angle; pitch = 0; UpdateCamera(); }
+    public void SetAngle(float angle) { autoFrame = false; yaw = angle; pitch = 0; UpdateCamera(); }
     public void ResetCamera()
     {
         if (PreviewModel == null) return;

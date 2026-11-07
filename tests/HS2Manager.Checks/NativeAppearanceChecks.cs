@@ -107,7 +107,7 @@ internal static class NativeAppearanceChecks
         input.Position=0;using var output=File.Create(destination);using var binary=new BinaryWriter(output);binary.Write(reader.ReadBytes(headerPosition));
         byte[] table=Pack(header);binary.Write(table.Length);binary.Write(table);binary.Write(data.Length);data.Position=0;data.CopyTo(output);
     }
-    private static byte[] Pack(object? value)
+    internal static byte[] Pack(object? value)
     {
         using var stream=new MemoryStream();Write(value);return stream.ToArray();
         void Number(byte prefix,ulong n,int count) {stream.WriteByte(prefix);for(int i=count-1;i>=0;i--)stream.WriteByte((byte)(n>>(8*i)));}

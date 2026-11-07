@@ -7,12 +7,16 @@ namespace HS2Manager.Core;
 
 public sealed record NativeBoneAdjustment(string Name, float[] Scale, float Length, float[] Position, float[] Rotation);
 public sealed record NativeRendererOverride(int ObjectType, int Slot, string Name, bool Enabled);
+public sealed record NativeMaterialColorOverride(int ObjectType, int Slot, string Name, string Property, PreviewColor Color);
+public sealed record NativeMaterialFloatOverride(int ObjectType, int Slot, string Name, string Property, float Value);
 
 internal sealed class NativeCardExtensions
 {
     public List<AppearancePart> Accessories { get; } = [];
     public List<NativeBoneAdjustment> Bones { get; } = [];
     public List<NativeRendererOverride> Renderers { get; } = [];
+    public List<NativeMaterialColorOverride> MaterialColors { get; } = [];
+    public List<NativeMaterialFloatOverride> MaterialFloats { get; } = [];
     public HashSet<string> Handled { get; } = [];
     public List<string> Warnings { get; } = [];
     public void Read(Stream stream, long end, CardRecord card, CancellationToken cancellation)
@@ -31,7 +35,7 @@ internal sealed class NativeCardExtensions
             for (int entry = 0; entry < entries; entry++)
             {
                 string field = reader.Read() as string ?? throw new InvalidDataException("扩展参数名称无效。");
-                if (field is "additionalAccessories" or "boneData" or "RendererPropertyList") data[field] = reader.Read();
+                if (field is "additionalAccessories" or "boneData" or "RendererPropertyList" or "MaterialColorPropertyList" or "MaterialFloatPropertyList") data[field] = reader.Read();
                 else
                 {
                     long position = stream.Position; int marker = stream.ReadByte(); stream.Position = position;
@@ -46,7 +50,8 @@ internal sealed class NativeCardExtensions
                 else if (key == "com.deathweasel.bepinex.materialeditor")
                 {
                     ReadRenderers(data);
-                    if (otherMaterialData) Warnings.Add("MaterialEditor：已应用部件显示状态；自定义材质、贴图与着色器修改尚未还原。");
+                    ReadMaterialProperties(data);
+                    if (otherMaterialData) Warnings.Add("MaterialEditor：已应用部件显示、基础颜色与透明裁切；自定义贴图与着色器修改尚未还原。");
                 }
                 else
                 {
@@ -57,6 +62,55 @@ internal sealed class NativeCardExtensions
             }
             catch (Exception ex) when (ex is InvalidDataException or IOException or XmlException or NotSupportedException or ArgumentException)
             { Warnings.Add(key + "：" + ex.Message); }
+        }
+    }
+    private void ReadMaterialProperties(Dictionary<string, object?> data)
+    {
+        bool unsupported = false;
+        foreach (var value in Properties("MaterialColorPropertyList"))
+        {
+            string property = CardAppearanceReader.Text(value, "Property").TrimStart('_');
+            if (property is not ("Color" or "Color2" or "Color3" or "Color4" or "BaseColor")) { unsupported = true; continue; }
+            MaterialColors.Add(new(checked((int)CardAppearanceReader.Integer(value, "ObjectType")), checked((int)CardAppearanceReader.Integer(value, "Slot")),
+                CardAppearanceReader.Text(value, "MaterialName"), property, CardAppearanceReader.Color(value, "Value", new(1, 1, 1))));
+        }
+        foreach (var value in Properties("MaterialFloatPropertyList"))
+        {
+            string property = CardAppearanceReader.Text(value, "Property").TrimStart('_');
+            if (property != "Cutoff") { unsupported = true; continue; }
+            if (!float.TryParse(CardAppearanceReader.Text(value, "Value"), NumberStyles.Float, CultureInfo.InvariantCulture, out float number) || !float.IsFinite(number))
+                throw new InvalidDataException("材质编辑器参数不是有效数值。");
+            MaterialFloats.Add(new(checked((int)CardAppearanceReader.Integer(value, "ObjectType")), checked((int)CardAppearanceReader.Integer(value, "Slot")),
+                CardAppearanceReader.Text(value, "MaterialName"), property, Math.Clamp(number, 0, 1)));
+        }
+        if (unsupported) Warnings.Add("MaterialEditor：部分光照、颜色或着色器参数不受独立预览支持。");
+        IEnumerable<Dictionary<string, object?>> Properties(string field)
+        {
+            if (data.GetValueOrDefault(field) is not byte[] bytes) yield break;
+            using var input = new MemoryStream(bytes);
+            if (new BoundedMessagePack(input, input.Length, 4 * 1024 * 1024).Read() is not List<object?> list || list.Count > 4096)
+                throw new InvalidDataException("材质编辑器属性列表无效。");
+            foreach (var item in list)
+            {
+                var value = CardAppearanceReader.Map(item);
+                if (CardAppearanceReader.Integer(value, "CoordinateIndex") == 0) yield return value;
+            }
+        }
+    }
+    public static void ApplyMaterials(IEnumerable<NativeMesh> meshes, CardAppearance appearance, int objectType, int slot)
+    {
+        foreach (var material in meshes.SelectMany(m => m.Materials))
+        {
+            string name = material.Name.Replace("(Instance)", "", StringComparison.Ordinal).Trim();
+            foreach (var change in appearance.MaterialColors.Where(c => c.ObjectType == objectType && (objectType == 4 || c.Slot == slot) && c.Name == name))
+            {
+                int channel = change.Property switch { "Color2" => 1, "Color3" => 2, "Color4" => 3, _ => 0 };
+                var colors = Enumerable.Range(0, Math.Max(channel + 1, material.Colors.Length)).Select(i => material.Colors.Length > 0 ? material.Colors[Math.Min(i, material.Colors.Length - 1)] : material.Color).ToArray();
+                colors[channel] = change.Color; material.Colors = colors;
+                if (channel == 0) { material.Color = change.Color; material.Tint = material.ColorMask == null; }
+            }
+            foreach (var change in appearance.MaterialFloats.Where(c => c.ObjectType == objectType && (objectType == 4 || c.Slot == slot) && c.Name == name))
+                material.AlphaCutoff = change.Value;
         }
     }
     private void ReadRenderers(Dictionary<string, object?> data)

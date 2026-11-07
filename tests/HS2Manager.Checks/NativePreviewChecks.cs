@@ -11,6 +11,19 @@ internal static class NativePreviewChecks
         string output = Path.Combine(data, "native-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(output);
         var before = GameProcesses();
         var service = new NativePreviewService();
+        // Optional real-world regression fixture: an extensionless texture named "shoes"
+        // precedes the equally named GameObject in this MOD's AssetBundle container.
+        string collisionBundle = Path.Combine(game, "abdata", "wen", "wenwujianxian.unity3d");
+        if (File.Exists(collisionBundle))
+        {
+            using var bundle = new NativeAssetBundle(collisionBundle);
+            var shoes = bundle.ReadPrefab("shoes", default);
+            if (!shoes.Bones.ContainsKey("shoes") || shoes.Meshes.Count == 0) throw new Exception("Duplicate asset name did not select the prefab GameObject");
+            var skirt = bundle.ReadPrefab("bot", default);
+            if (skirt.Meshes.Count == 0 || !skirt.Warnings.Any(w => w.Contains("可选组件"))) throw new Exception("Unsupported helper component discarded the garment");
+            Console.WriteLine("PASS duplicate-name texture/prefab resolves the GameObject");
+            Console.WriteLine("PASS unsupported MOD component retains renderable garment meshes");
+        }
         var parser = new CardParser();
         string male = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara", "male"), "*.png", SearchOption.AllDirectories).First();
         string female = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara", "navi"), "*.png", SearchOption.AllDirectories).First();

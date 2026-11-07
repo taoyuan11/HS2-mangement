@@ -1,10 +1,10 @@
 # HS2 Manager
 
-中文 Windows 11 人物卡管理器。C# / WPF / .NET 10，便携部署。提供独立静态 3D 人物预览：读取游戏和 MOD 的模型、贴图与骨骼，在 WPF 3D 视口内显示，不启动 Studio。
+中文 Windows 11 人物卡管理器。C# / WPF / .NET 10，便携部署。提供独立静态 3D 人物预览：读取游戏和 MOD 的模型、贴图与骨骼，在应用内完成深度测试和透明裁切，不启动 Studio。
 
 ## 开始使用
 
-1. 将 `HS2Manager-1.1.0-preview2-win-x64.zip` 解压到本机磁盘，例如 `D:\Apps\HS2Manager`。请完整解压，保持程序与其他文件相对位置。
+1. 将 `HS2Manager-1.1.0-preview3-win-x64.zip` 解压到本机磁盘，例如 `D:\Apps\HS2Manager`。请完整解压，保持程序与其他文件相对位置。
 2. 双击 `HS2Manager.exe`。已包含 .NET 运行时，无需另行安装。
 3. 默认游戏目录为 `Z:\games\hs2\HS two DX - TSYMQ`。在左下角“设置与连接”可修改，也可添加其他人物卡目录。
 4. 首次启动默认仅扫描女性人物卡目录 `UserData\chara\female` 的当前层，建立本地封面和元数据索引，再读取 MOD 清单。在“设置与连接”可开启“递归检索人物卡（包含子目录）”，该开关默认关闭，同时适用于默认目录和额外人物卡目录。关闭递归后，已索引的子目录内容仍会保留。NAS 首次扫描需要一些时间；底部显示进度并提供取消。
@@ -33,11 +33,13 @@ NAS 离线时保留既有索引与封面；完整目录枚举失败时不会把�
 
 ## 独立 3D 预览
 
-双击有效人物卡，按卡片的头部、发型、服装、配饰、颜色、捏脸与体型加载静态模型。支持 Sideloader GUID/Slot 资源、ABMX v2 骨骼调整、MoreAccessories 扩展配饰及 MaterialEditor 部件显示状态。不启动 Studio、不安装插件、不执行游戏或插件代码。
+双击有效人物卡，按卡片的头部、发型、服装、配饰、颜色、捏脸与体型加载静态模型。支持 Sideloader GUID/Slot 资源、ABMX v2 骨骼调整、MoreAccessories 扩展配饰及 MaterialEditor 部件显示、基础颜色和透明裁切参数。不启动 Studio、不安装插件、不执行游戏或插件代码。
+
+preview3 修复头发、睫毛和服装透明区域互相遮挡：逐像素裁切后才写入深度，不依赖模型绘制顺序。采用透视校正、双线性贴图过滤和线性空间光照，眼睛读取虹膜细节、瞳孔尺寸/颜色及高光；截图以双倍尺寸渲染后缩小，改善细发丝和轮廓边缘。视口按需在后台绘制，连续拖动合并镜头更新，静止或关闭后不持续占用渲染线程。
 
 **独立预览仍不等同于游戏内完整还原。** 已接入贴图、蒙皮和服装遮罩，但游戏 Shader、动态物理、动画、画质插件和部分覆盖贴图/材质扩展尚未复现；眉毛、妆容、眼睛为近似合成，复杂 MOD 仍可能有颜色或局部位置差异。界面的“预览兼容性说明”列出缺失资源及未支持扩展。详细范围见 [独立预览说明](docs/NATIVE-PREVIEW.md)。
 
-首次预览建立基础资源和 MOD 索引；NAS 首次读取可能较慢。模型、贴图和所需 MOD 包缓存到 `Data\NativePreview\native-v5`，源文件变化后重新解析；每张卡重新应用外观参数，损坏缓存自动重建。关闭程序后可以删除 `Data\NativePreview` 释放空间。需要游戏资源与 `HoneySelect2_Data\Managed\Assembly-CSharp.dll` 在线，缓存不能代替游戏安装。
+首次预览建立基础资源和 MOD 索引；NAS 首次读取可能较慢。模型、贴图和所需 MOD 包缓存到 `Data\NativePreview\native-v6`，源文件变化后重新解析；每张卡重新应用外观参数，损坏缓存自动重建。旧缓存会保留但不复用，升级后首次打开需要重新解析。关闭程序后可以删除 `Data\NativePreview` 释放空间。需要游戏资源与 `HoneySelect2_Data\Managed\Assembly-CSharp.dll` 在线，缓存不能代替游戏安装。
 
 | 操作 | 效果 |
 | --- | --- |
@@ -79,6 +81,8 @@ NAS 离线时保留既有索引与封面；完整目录枚举失败时不会把�
 ## 源码构建
 
 Windows x64，.NET 10 SDK。可先执行 `bootstrap-dotnet.ps1` 下载到项目 `.tools`；脚本从微软官方发布清单选取 SDK 并核验 SHA-512。
+
+日常从源码启动可直接双击根目录的 `start.cmd`：优先使用 `.tools\dotnet` 中的 SDK，否则使用系统 `dotnet`，以 Release 配置增量构建并启动当前源码。首次运行需要联网还原依赖；失败时窗口会保留错误信息。数据默认位于构建输出目录旁的 `Data`，也可在命令行通过 `start.cmd --data "D:\HS2ManagerData"` 指定。
 
 ```powershell
 .\bootstrap-dotnet.ps1

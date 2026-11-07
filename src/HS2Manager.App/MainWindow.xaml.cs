@@ -43,7 +43,7 @@ public partial class MainWindow : Window
         closing = true;
         ViewModel.Settings.WindowWidth = RestoreBounds.Width; ViewModel.Settings.WindowHeight = RestoreBounds.Height; ViewModel.Settings.Save(ViewModel.DataDirectory);
         SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
-        ViewModel.BeginShutdown(); await ViewModel.ClosePreviewAsync(); await ViewModel.WaitForOperationAsync(); ViewModel.Dispose();
+        ViewModel.BeginShutdown(); await ViewModel.ClosePreviewAsync(); await NativeViewport.StopAsync(); await ViewModel.WaitForOperationAsync(); ViewModel.Dispose();
         // Cleanup can complete synchronously. Let this Closing event return before closing again.
         _ = Dispatcher.BeginInvoke(() => { shutdownComplete = true; Close(); });
     }

@@ -22,6 +22,8 @@ public sealed record CardAppearance(int Sex, PreviewColor Skin, IReadOnlyList<Ap
     public Dictionary<string, object?> Hair { get; init; } = [];
     public IReadOnlyList<NativeBoneAdjustment> BoneModifiers { get; init; } = [];
     public IReadOnlyList<NativeRendererOverride> Renderers { get; init; } = [];
+    public IReadOnlyList<NativeMaterialColorOverride> MaterialColors { get; init; } = [];
+    public IReadOnlyList<NativeMaterialFloatOverride> MaterialFloats { get; init; } = [];
     public IReadOnlySet<string> HandledExtensions { get; init; } = new HashSet<string>();
     public IReadOnlyList<string> Warnings { get; init; } = [];
 }
@@ -101,7 +103,8 @@ public static class CardAppearanceReader
             parts[^1] = parts[^1] with { Slot = i, Colors = colors, Parent = Text(part, "parentKey"), Adjustment = Flatten(move.Count == 3 && move[2] is List<object?> ? move[2] : move).ToArray() };
         }
         parts.AddRange(extensions.Accessories);
-        return new(card.Sex, skin, parts) { Face = face, Body = body, Hair = hair, BoneModifiers = extensions.Bones, Renderers = extensions.Renderers, HandledExtensions = extensions.Handled, Warnings = extensions.Warnings };
+        return new(card.Sex, skin, parts) { Face = face, Body = body, Hair = hair, BoneModifiers = extensions.Bones, Renderers = extensions.Renderers,
+            MaterialColors = extensions.MaterialColors, MaterialFloats = extensions.MaterialFloats, HandledExtensions = extensions.Handled, Warnings = extensions.Warnings };
 
         void Add(string label, int category, Dictionary<string, object?> value, string key, PreviewColor color, string property)
         {
@@ -119,7 +122,7 @@ public static class CardAppearanceReader
         if (start >= 0 && end > start && int.TryParse(property[(start+1)..end], out int slot))
         {
             if (category >= 351) return candidates.FirstOrDefault(d => ("." + d.Property).Contains($".accessory{slot}.", StringComparison.OrdinalIgnoreCase));
-            if (category == 317) return candidates.FirstOrDefault(d => d.Property.EndsWith($".Eye{slot+1}", StringComparison.OrdinalIgnoreCase));
+            if (category is 317 or 318) return candidates.FirstOrDefault(d => d.Property.EndsWith($".{(category == 317 ? "Eye" : "EyeBlack")}{slot+1}", StringComparison.OrdinalIgnoreCase));
         }
         return candidates.Length == 1 && category < 351 ? candidates[0] : null;
     }

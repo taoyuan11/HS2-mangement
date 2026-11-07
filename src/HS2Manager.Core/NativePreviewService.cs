@@ -19,7 +19,7 @@ public sealed record NativeAssetEntry(int Category, int Id, string Bundle, strin
 public sealed class NativePreviewService
 {
     public const string Limitations = "独立静态预览 · 眉眼妆容为近似还原，不含游戏着色器、物理及未支持的插件效果；资源缺失会列出原因。";
-    private const string CacheVersion = "native-v5";
+    private const string CacheVersion = "native-v6";
     private readonly SemaphoreSlim gate = new(1, 1);
 
     public async Task<NativePreviewScene> LoadAsync(string gamePath, string dataPath, CardRecord card, IProgress<string>? progress, CancellationToken cancellation)
@@ -51,6 +51,7 @@ public sealed class NativePreviewService
         var body = Prefab("chara/oo_base.unity3d", appearance.Sex == 0 ? "p_cm_body_00" : "p_cf_body_00");
         var bodyTexture = SelectedTexture(appearance.Sex == 0 ? 131 : 231, appearance.Body, "skinId", "body.skinId", "MainTex");
         Add(body, appearance.Skin, "身体", Matrix4x4.Identity, skeleton, bodyTexture);
+        NativeCardExtensions.ApplyMaterials(meshes, appearance, 4, 0);
         var headTransform = skeleton.GetValueOrDefault("cf_J_Head", Matrix4x4.Identity);
         bool headLoaded = false;
         var worn = new Dictionary<int, NativeAssetEntry>();
@@ -104,6 +105,27 @@ public sealed class NativePreviewService
                 }
                 else { NativeCardExtensions.Apply(prefab, appearance.BoneModifiers, skeleton); bones = NativeShapeRig.World(prefab, placement, skeleton); }
                 int firstMesh = meshes.Count;
+                if (hair || prefab.HairAccessory)
+                {
+                    // Sideloader hair lists select the diffuse/coverage textures separately
+                    // from the prefab. They can live in a stock bundle outside the MOD archive.
+                    foreach (var (key, main) in new[] { ("TexD", true), ("TexC", false) })
+                    {
+                        if (entry.Get("TexAB") is "" or "0" || entry.Get(key) is "" or "0") continue;
+                        try
+                        {
+                            var selected = Texture(entry.Get("TexAB"), entry.Get(key), entry.Archive);
+                            foreach (var material in prefab.Meshes.SelectMany(m => m.Materials).Where(m => m.Transparent || m.Name.Contains("hair", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                if (main) material.MainTexture = selected; else material.ColorMask = selected;
+                                string property = main ? "_MainTex" : "_ColorMask";
+                                prefab.Warnings.RemoveAll(w => w.StartsWith(material.Name + " " + property + "：", StringComparison.Ordinal));
+                            }
+                        }
+                        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+                        { warnings.Add(part.Label + "贴图：" + ex.Message); }
+                    }
+                }
                 var partColor = prefab.HairAccessory ? appearance.Parts.FirstOrDefault(p => p.Category == 300)?.Color ?? part.Color : part.Color;
                 Add(prefab, partColor, part.Label, placement, bones, texture, prefab.HairAccessory ? [partColor] : part.Colors, head, hair || prefab.HairAccessory, clothing);
                 if (head) headLoaded = prefab.Meshes.Any(m => m.Name.StartsWith("o_head/", StringComparison.Ordinal));
@@ -125,6 +147,7 @@ public sealed class NativePreviewService
                     Mask("OverInnerBMask", "clothes[3]/"); Mask("OverPanstMask", "clothes[5]/");
                 }
                 else if (part.Category >= 351) foreach (var mesh in meshes.Skip(firstMesh)) mesh.Name = $"accessory[{part.Slot}]/" + mesh.Name;
+                NativeCardExtensions.ApplyMaterials(meshes.Skip(firstMesh), appearance, objectType, objectSlot);
 
                 void Mask(string key, string target)
                 {
@@ -214,7 +237,13 @@ public sealed class NativePreviewService
                             int eye = mesh.Name.Contains("_R", StringComparison.Ordinal) && pupils.Count > 1 ? 1 : 0;
                             var pupil = CardAppearanceReader.Map(pupils[eye]);
                             var iris = SelectedTexture(317, pupil, "pupilId", $"face.pupil[{eye}].pupilId", "AddTex");
-                            if (iris != null) material.MainTexture = NativeTextureComposer.Eye(iris, pupil, cancellation);
+                            if (iris != null)
+                            {
+                                var black = SelectedTexture(318, pupil, "blackId", $"face.pupil[{eye}].blackId", "AddTex");
+                                var highlight = SelectedTexture(319, appearance.Face, "hlId", "face.hlId", "AddTex");
+                                material.MainTexture = NativeTextureComposer.Eye(iris, pupil, cancellation, black, highlight, appearance.Face);
+                                material.UVTransform = [1, 1, 0, 0];
+                            }
                             material.Colors = [new(1,1,1)]; material.Tint = false; material.ColorMask = null; material.Transparent = false;
                         }
                     }
@@ -249,7 +278,7 @@ public sealed class NativePreviewService
             && m.Transform is { Length: 16 } && m.Transform.All(float.IsFinite) && m.Submeshes != null && m.Materials != null && m.Bones != null && m.BindPoses != null && m.Weights != null && m.BoneIndices != null
             && m.BindPoses.All(p => p is { Length: 16 } && p.All(float.IsFinite)) && m.Weights.All(w => float.IsFinite(w) && w >= 0)
             && m.BoneIndices.Length == m.Weights.Length && (m.Weights.Length == 0 || m.Weights.Length == m.Positions.Length / 3 * 4)
-            && m.Materials.All(a => a != null && a.Name != null && a.UVTransform is { Length: 4 } && a.UVTransform.All(float.IsFinite) && (a.MainTexture == null || a.MainTexture.IsValid) && (a.ColorMask == null || a.ColorMask.IsValid) && (a.AlphaMask == null || a.AlphaMask.IsValid))
+            && m.Materials.All(a => a != null && a.Name != null && float.IsFinite(a.AlphaCutoff) && a.AlphaCutoff is >= 0 and <= 1 && a.UVTransform is { Length: 4 } && a.UVTransform.All(float.IsFinite) && (a.MainTexture == null || a.MainTexture.IsValid) && (a.ColorMask == null || a.ColorMask.IsValid) && (a.AlphaMask == null || a.AlphaMask.IsValid))
             && m.Submeshes.All(s => s != null && s.Length % 3 == 0 && s.All(i => i >= 0 && i < m.Positions.Length / 3))
             && m.Indices.Length % 3 == 0 && m.Positions.All(float.IsFinite) && m.Normals.All(float.IsFinite) && m.UV.All(float.IsFinite)
             && m.Indices.All(i => i >= 0 && i < m.Positions.Length / 3));

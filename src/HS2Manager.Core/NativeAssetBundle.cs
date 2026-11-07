@@ -87,7 +87,9 @@ internal sealed class NativeAssetBundle : IDisposable
         var f = Field(id); var result = new NativeMaterial { Name = f["m_Name"].AsString };
         var props = f["m_SavedProperties"];
         foreach (var pair in props["m_Colors"]["Array"].Children)
-            if (pair["first"].AsString == "_Color") { var c = pair["second"]; result.Color = new(c["r"].AsFloat, c["g"].AsFloat, c["b"].AsFloat); }
+            if (pair["first"].AsString == "_Color") { var c = pair["second"]; result.Color = new(c["r"].AsFloat, c["g"].AsFloat, c["b"].AsFloat, c["a"].AsFloat); }
+        foreach (var pair in props["m_Floats"]["Array"].Children)
+            if (pair["first"].AsString == "_Cutoff") result.AlphaCutoff = Math.Clamp(pair["second"].AsFloat, 0, 1);
         string keywords = f["m_ShaderKeywords"].AsString;
         result.Transparent = keywords.Contains("ALPHA", StringComparison.OrdinalIgnoreCase) || result.Name.Contains("hair", StringComparison.OrdinalIgnoreCase) || result.Name.Contains("eyelashes", StringComparison.OrdinalIgnoreCase);
         foreach (var pair in props["m_TexEnvs"]["Array"].Children)
@@ -137,8 +139,12 @@ internal sealed class NativeAssetBundle : IDisposable
     {
         var containerInfo = file.file.GetAssetsOfType(AssetClassID.AssetBundle).FirstOrDefault() ?? throw new InvalidDataException("资源包缺少目录。");
         var container = Field(containerInfo.PathId)["m_Container"]["Array"].Children;
-        var entry = container.FirstOrDefault(e => Path.GetFileNameWithoutExtension(e["first"].AsString).Equals(assetName, StringComparison.OrdinalIgnoreCase));
-        if (entry == null) throw new InvalidDataException($"资源包中找不到 {assetName}。");
+        // MOD containers can contain a texture/material and prefab with exactly the same name
+        // (including extensionless keys). Unity LoadAsset<GameObject> selects by type as well.
+        var entry = container.FirstOrDefault(e => Path.GetFileNameWithoutExtension(e["first"].AsString).Equals(assetName, StringComparison.OrdinalIgnoreCase)
+            && e["second"]["asset"]["m_FileID"].AsInt == 0
+            && file.file.GetAssetInfo(e["second"]["asset"]["m_PathID"].AsLong)?.TypeId == (int)AssetClassID.GameObject);
+        if (entry == null) throw new InvalidDataException($"资源包中找不到可加载的模型对象 {assetName}。");
         long root = Pointer(entry["second"]["asset"]);
         var result = new NativePrefab(); var visited = new HashSet<long>();
         var visibility = new Dictionary<long, bool>();
@@ -151,6 +157,7 @@ internal sealed class NativeAssetBundle : IDisposable
             cancellation.ThrowIfCancellationRequested();
             if (depth > 128 || !visited.Add(gameObjectId) || visited.Count > 20000) throw new InvalidDataException("模型层级循环或过深。");
             var obj = Field(gameObjectId); string name = obj["m_Name"].AsString;
+            if (obj["m_IsActive"].IsDummy) throw new InvalidDataException($"模型节点 {name} 缺少对象状态。");
             active &= visibility.GetValueOrDefault(gameObjectId, obj["m_IsActive"].AsBool);
             optionMask |= options.GetValueOrDefault(gameObjectId);
             var components = obj["m_Component"]["Array"].Children.Select(c => Pointer(c["component"])).Where(p => p != 0).ToArray();
@@ -164,7 +171,14 @@ internal sealed class NativeAssetBundle : IDisposable
                 Position = [p.X,p.Y,p.Z], Rotation = [q["x"].AsFloat,q["y"].AsFloat,q["z"].AsFloat,q["w"].AsFloat], Scale = [s.X,s.Y,s.Z] });
             foreach (var component in components.Where(p => file.file.GetAssetInfo(p).TypeId == (int)AssetClassID.MonoBehaviour))
             {
-                var c = Field(component);
+                AssetTypeValueField c;
+                try { c = Field(component); }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+                {
+                    // Third-party behaviour layouts can differ from the bundled type tree.
+                    // A physics/helper component must not discard otherwise valid clothing meshes.
+                    result.Warnings.Add(name + " 可选组件未应用：" + ex.Message); continue;
+                }
                 if (!c["typeHair"].IsDummy) result.HairAccessory |= c["typeHair"].AsBool;
                 for (int group = 0; group < 3; group++)
                     if (!c[$"rendNormal0{group+1}"].IsDummy)
@@ -231,7 +245,12 @@ internal sealed class NativeAssetBundle : IDisposable
     private AssetTypeValueField Field(long id)
     {
         if (id == 0) throw new InvalidDataException("模型包含空资源引用。");
-        if (!fields.TryGetValue(id, out var value)) fields[id] = value = manager.GetBaseField(file, file.file.GetAssetInfo(id) ?? throw new InvalidDataException("模型资源引用不存在。"));
+        if (!fields.TryGetValue(id, out var value))
+        {
+            var info = file.file.GetAssetInfo(id) ?? throw new InvalidDataException("模型资源引用不存在。");
+            try { fields[id] = value = manager.GetBaseField(file, info); }
+            catch (IOException ex) { throw new InvalidDataException($"{(AssetClassID)info.TypeId} 资源 #{id} 数据无法读取：{ex.Message}", ex); }
+        }
         return value;
     }
     private static long Pointer(AssetTypeValueField value)
