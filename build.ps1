@@ -15,19 +15,21 @@ function Invoke-Dotnet([string[]]$Arguments) {
     & $dotnet @Arguments
     if ($LASTEXITCODE -ne 0) { throw "dotnet 执行失败，退出码 $LASTEXITCODE" }
 }
-if (!(Test-Path -LiteralPath (Join-Path $GamePath 'StudioNEOV2.exe'))) { throw "游戏目录无效：$GamePath" }
+if ($PreviewTest -and !(Test-Path -LiteralPath (Join-Path $GamePath 'abdata\chara\oo_base.unity3d'))) { throw "游戏资源目录无效：$GamePath" }
 $releaseRoot = Join-Path $projectRoot 'artifacts\release'
-$packageName = 'HS2Manager-1.0.0-win-x64'
+$packageName = 'HS2Manager-1.1.0-preview1-win-x64'
 $package = Join-Path $releaseRoot $packageName
 $staging = Join-Path $releaseRoot ($packageName + '-staging-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
 try {
-    Invoke-Dotnet @('build', (Join-Path $projectRoot 'src\HS2Manager.Bridge'), '-c', 'Release', "-p:GamePath=$GamePath", '-p:UseSharedCompilation=false', '--disable-build-servers', '--nologo')
     if (!$SkipTests) {
         Invoke-Dotnet @('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.Checks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--core', '--game', $GamePath)
         Invoke-Dotnet @('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.UiChecks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false')
     }
-    if ($PreviewTest) { Invoke-Dotnet @('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.Checks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--preview', '--game', $GamePath) }
+    if ($PreviewTest) {
+        Invoke-Dotnet @('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.Checks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--native-preview', '--game', $GamePath)
+        Invoke-Dotnet @('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.UiChecks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--native-preview', '--game', $GamePath)
+    }
     Invoke-Dotnet @('publish', (Join-Path $projectRoot 'src\HS2Manager.App'), '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:UseSharedCompilation=false', '--disable-build-servers', '-o', $staging, '--nologo')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $staging '使用说明.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md') -Destination $staging

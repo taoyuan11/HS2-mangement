@@ -13,8 +13,8 @@ namespace HS2Manager.App;
 public partial class MainWindow : Window
 {
     public MainViewModel ViewModel { get; }
-    private readonly DispatcherTimer frameTimer;
-    private bool closing, dragging, panning;
+
+    private bool closing, shutdownComplete, dragging, panning;
     private Point lastPointer;
     public MainWindow(MainViewModel model)
     {
@@ -31,18 +31,21 @@ public partial class MainWindow : Window
         }, DispatcherPriority.Loaded);
         Loaded += async (_, _) => await ViewModel.InitializeAsync();
         Closing += Window_Closing;
-        frameTimer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
-        frameTimer.Tick += (_, _) => ViewModel.PumpFrame(); frameTimer.Start();
         SystemEvents.UserPreferenceChanged += SystemPreferenceChanged;
     }
     private void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     { if (ViewModel.Settings.Theme == "System") Dispatcher.BeginInvoke(() => ThemeService.Apply("System")); }
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (closing) return; e.Cancel = true; closing = true;
+        if (shutdownComplete) return;
+        e.Cancel = true;
+        if (closing) return;
+        closing = true;
         ViewModel.Settings.WindowWidth = RestoreBounds.Width; ViewModel.Settings.WindowHeight = RestoreBounds.Height; ViewModel.Settings.Save(ViewModel.DataDirectory);
-        frameTimer.Stop(); SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
-        ViewModel.BeginShutdown(); await ViewModel.ClosePreviewAsync(); await ViewModel.WaitForOperationAsync(); ViewModel.Dispose(); Close();
+        SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
+        ViewModel.BeginShutdown(); await ViewModel.ClosePreviewAsync(); await ViewModel.WaitForOperationAsync(); ViewModel.Dispose();
+        // Cleanup can complete synchronously. Let this Closing event return before closing again.
+        _ = Dispatcher.BeginInvoke(() => { shutdownComplete = true; Close(); });
     }
     private async void Navigate_Click(object sender, RoutedEventArgs e)
     { if (ViewModel.IsPreview) await ViewModel.ClosePreviewAsync(); CollectionList.SelectedItem = null; ViewModel.Navigate((string)((Button)sender).Tag); }
@@ -158,11 +161,16 @@ public partial class MainWindow : Window
     private void ToggleRail_Click(object sender, RoutedEventArgs e) => ViewModel.ShowPreviewRail = !ViewModel.ShowPreviewRail;
     private void Screenshot_Click(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.PreviewBitmap == null || ViewModel.PreviewBusy) return;
+        if (ViewModel.PreviewModel == null || ViewModel.PreviewBusy) return;
         string safeName = string.Concat(ViewModel.PreviewName.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
         var dialog = new SaveFileDialog { Title = "保存预览截图", Filter = "PNG 图片|*.png", FileName = safeName + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png", DefaultExt = ".png" };
-        if (dialog.ShowDialog(this) == true) ViewModel.SaveScreenshot(dialog.FileName);
+        if (dialog.ShowDialog(this) == true)
+        {
+            try { ViewModel.SaveScreenshot(dialog.FileName); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Dialogs.Report(this, "截图未保存", ex.Message); }
+        }
     }
+    private void Viewport_SizeChanged(object sender, SizeChangedEventArgs e) => ViewModel.SetPreviewAspect(e.NewSize.Width, e.NewSize.Height);
     private void Viewport_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (ViewModel.PreviewBusy || ViewModel.HasPreviewError) return;

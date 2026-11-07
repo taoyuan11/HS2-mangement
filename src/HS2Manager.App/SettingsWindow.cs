@@ -28,7 +28,7 @@ public sealed class SettingsWindow : Window
         var browse = new Button { Content = "浏览…", Margin = new Thickness(8, 0, 0, 0) }; DockPanel.SetDock(browse, Dock.Right); pathRow.Children.Add(browse);
         gamePath = new TextBox { Text = model.Settings.GamePath }; pathRow.Children.Add(gamePath); body.Children.Add(pathRow);
         body.Children.Add(Hint("自动扫描游戏目录中的 UserData\\chara，包含所有子目录。"));
-        browse.Click += (_, _) => { var picker = new OpenFolderDialog { Title = "选择包含 StudioNEOV2.exe 的游戏目录" }; if (picker.ShowDialog(this) == true) gamePath.Text = picker.FolderName; };
+        browse.Click += (_, _) => { var picker = new OpenFolderDialog { Title = "选择包含 abdata 和 UserData 的游戏目录" }; if (picker.ShowDialog(this) == true) gamePath.Text = picker.FolderName; };
         body.Children.Add(new Separator());
         body.Children.Add(Label("额外人物卡目录"));
         extraRoots = new(model.Settings.ExtraRoots);
@@ -40,17 +40,10 @@ public sealed class SettingsWindow : Window
         removeRoot.Click += (_, _) => { if (rootsList.SelectedItem is string path) extraRoots.Remove(path); };
         body.Children.Add(Hint("扫描只建立索引；移除目录不会删除人物卡。已索引内容仍会保留。"));
         body.Children.Add(new Separator());
-        body.Children.Add(Label("内嵌 3D 预览"));
-        body.Children.Add(Hint("首次打开预览时会安装专用桥接插件并启动后台 Studio。关闭预览会释放该进程；普通卡片浏览无需启动游戏。"));
-        var install = new Button { Content = "安装 / 检查预览插件", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0) }; body.Children.Add(install);
+        body.Children.Add(Label("独立 3D 预览 · 第一阶段"));
+        body.Children.Add(Hint("直接读取游戏 abdata 模型资源，在本程序内显示。无需启动 Studio 或安装桥接插件。首次读取后，模型缓存在本地 Data\\NativePreview。"));
+        body.Children.Add(Hint(NativePreviewService.Limitations));
         var installResult = Hint(""); body.Children.Add(installResult);
-        install.Click += async (_, _) =>
-        {
-            install.IsEnabled = false;
-            try { var game = gamePath.Text.Trim(); await Task.Run(() => PreviewSessionService.InstallPlugin(game, Path.Combine(AppContext.BaseDirectory, "Bridge", "HS2Manager.Bridge.dll"))); installResult.Text = "插件已就绪，仅使用 BepInEx\\plugins\\HS2Manager 子目录。"; }
-            catch (Exception ex) { installResult.Text = ex.Message; }
-            finally { install.IsEnabled = true; }
-        };
         body.Children.Add(new Separator()); body.Children.Add(Label("便携数据"));
         body.Children.Add(Hint(model.DataDirectory));
         body.Children.Add(Hint("移动整个便携文件夹即可保留标签、收藏、设置与缩略图。人物卡原文件仍保存在各自来源目录。"));

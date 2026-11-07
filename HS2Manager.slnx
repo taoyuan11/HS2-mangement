@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/HS2Manager.App/HS2Manager.App.csproj" />
-    <Project Path="src/HS2Manager.Bridge/HS2Manager.Bridge.csproj" />
     <Project Path="src/HS2Manager.Core/HS2Manager.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">

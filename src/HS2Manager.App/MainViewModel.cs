@@ -3,9 +3,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using System.Windows.Media.Media3D;
 using HS2Manager.Core;
-using HS2Manager.Protocol;
+
 
 namespace HS2Manager.App;
 
@@ -17,7 +17,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public CardLibraryService Library { get; }
     public CardFileService Files { get; }
     public ModDependencyService Mods { get; }
-    public PreviewSessionService Preview { get; } = new();
+    private readonly NativePreviewService nativePreview = new();
     private List<CardItemViewModel> allCards = [];
     private ObservableCollection<CardItemViewModel> visibleCards = [];
     public ObservableCollection<CardItemViewModel> VisibleCards { get => visibleCards; private set { Set(ref visibleCards, value); Changed(nameof(Empty)); Changed(nameof(ResultSummary)); } }
@@ -106,7 +106,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         DataDirectory = dataDirectory; Settings = settings; sort = settings.Sort;
         Repository = new(dataDirectory); Library = new(Repository); Files = new(Repository); Mods = new(Repository);
-        Preview.Message += OnPreviewMessage; ReloadCards();
+        ReloadCards();
     }
     public async Task InitializeAsync()
     {
@@ -280,123 +280,113 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void RefreshDependencyColors() { if (SelectedCard != null) { DetailDependencies = new(Mods.Diagnose(SelectedCard.Record, Settings.GamePath, gameConnected).Select(x => new DependencyItem(x))); Changed(nameof(DependencySummary)); } }
 
     private bool isPreview, previewBusy, showRail = true;
-    private string previewStatus = "", previewError = "", previewName = "";
-    private string readbackMode = "异步读回";
+    private string previewStatus = "", previewError = "", previewName = "", previewWarnings = "";
     public bool IsPreview { get => isPreview; private set => Set(ref isPreview, value); }
     public bool PreviewBusy { get => previewBusy; private set => Set(ref previewBusy, value); }
     public string PreviewStatus { get => previewStatus; private set => Set(ref previewStatus, value); }
     public string PreviewError { get => previewError; private set { Set(ref previewError, value); Changed(nameof(HasPreviewError)); } }
     public bool HasPreviewError => PreviewError.Length > 0;
     public string PreviewName { get => previewName; private set => Set(ref previewName, value); }
+    public string PreviewLimitations => NativePreviewService.Limitations;
+    public string PreviewWarnings { get => previewWarnings; private set { Set(ref previewWarnings, value); Changed(nameof(HasPreviewWarnings)); } }
+    public bool HasPreviewWarnings => PreviewWarnings.Length > 0;
     public bool ShowPreviewRail { get => showRail; set => Set(ref showRail, value); }
-    private WriteableBitmap? previewBitmap;
-    public WriteableBitmap? PreviewBitmap { get => previewBitmap; private set => Set(ref previewBitmap, value); }
-    private readonly byte[] frameBytes = new byte[BridgeWire.FrameBytes];
-    private Task? startTask;
-    private Task? closeTask;
+    private Model3DGroup? previewModel;
+    public Model3DGroup? PreviewModel { get => previewModel; private set => Set(ref previewModel, value); }
+    private PerspectiveCamera previewCamera = new();
+    public PerspectiveCamera PreviewCamera { get => previewCamera; private set => Set(ref previewCamera, value); }
+    private Model3DGroup previewLighting = NativePreviewRenderer.Lights(1);
+    public Model3DGroup PreviewLighting { get => previewLighting; private set => Set(ref previewLighting, value); }
+    private Brush previewBackground = new SolidColorBrush(Color.FromRgb(32, 38, 44));
+    public Brush PreviewBackground { get => previewBackground; private set => Set(ref previewBackground, value); }
+    private readonly HashSet<Task> previewLoads = [];
     private CancellationTokenSource? previewCancellation;
     private int previewGeneration;
-    private string requestId = "";
     private CardRecord? previewCard;
-    private BridgeMessage camera = new();
-    private readonly Stopwatch frameClock = Stopwatch.StartNew();
-    private int frameCount;
-    public double CameraDistance => camera.Distance;
-    public async Task OpenPreviewAsync(CardRecord? card = null)
+    private double yaw, pitch = 8, distance = 30, previewAspect = 16d / 9;
+    private Point3D center;
+    private bool autoFrame = true;
+    public double CameraDistance => distance;
+    public Task OpenPreviewAsync(CardRecord? card = null)
     {
-        if (shuttingDown) return;
-        if (closeTask != null) await closeTask;
-        card ??= SelectedCard?.Record; if (card is not { Status: CardStatus.Valid, Availability: FileAvailability.Available }) return;
+        if (shuttingDown) return Task.CompletedTask;
+        card ??= SelectedCard?.Record;
+        if (card is not { Status: CardStatus.Valid, Availability: FileAvailability.Available }) return Task.CompletedTask;
+        previewCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource(); previewCancellation = cancellation;
         int generation = ++previewGeneration;
-        IsPreview = true; PreviewBusy = true; PreviewError = ""; PreviewName = card.Name; previewCard = card;
-        PreviewStatus = Preview.IsReady ? "正在载入人物…" : "正在启动 Studio，首次启动需要读取 MOD…";
+        var task = LoadPreviewAsync(card, generation, cancellation);
+        previewLoads.Add(task);
+        return Track();
+        async Task Track() { try { await task; } finally { previewLoads.Remove(task); } }
+    }
+    private async Task LoadPreviewAsync(CardRecord card, int generation, CancellationTokenSource cancellation)
+    {
+        IsPreview = true; PreviewBusy = true; PreviewError = ""; PreviewWarnings = ""; PreviewModel = null;
+        PreviewName = card.Name; previewCard = card; PreviewStatus = "正在读取独立预览资源…";
         try
         {
-            if (!Preview.IsReady)
-            {
-                if (startTask == null)
-                {
-                    previewCancellation = new();
-                    var token = previewCancellation.Token;
-                    startTask = Task.Run(() => Preview.StartAsync(Settings.GamePath, DataDirectory, Path.Combine(AppContext.BaseDirectory, "Bridge", "HS2Manager.Bridge.dll"), token));
-                }
-                await startTask;
-            }
+            var progress = new Progress<string>(text => { if (generation == previewGeneration && IsPreview && PreviewBusy) PreviewStatus = text; });
+            var scene = await nativePreview.LoadAsync(Settings.GamePath, DataDirectory, card, progress, cancellation.Token);
+            var model = await Task.Run(() => NativePreviewRenderer.Build(scene, cancellation.Token), cancellation.Token);
             if (generation != previewGeneration || !IsPreview) return;
-            PreviewBitmap ??= new WriteableBitmap(BridgeWire.Width, BridgeWire.Height, 96, 96, PixelFormats.Bgra32, null);
-            requestId = Preview.LoadCard(card.Path, card.Sex);
+            PreviewModel = model; ResetCamera();
+            PreviewWarnings = string.Join("\n", scene.Warnings);
+            PreviewStatus = $"独立 3D · {scene.Meshes.Sum(m => m.Indices.Length / 3):N0} 个三角形 · 资源加载 {scene.LoadSeconds:F2} 秒 · {scene.CacheHits} 项本地缓存";
+            if (scene.Warnings.Count > 0) WriteLog("独立 3D 兼容性", PreviewWarnings);
         }
-        catch (OperationCanceledException) { if (generation == previewGeneration) PreviewBusy = false; }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
-        { if (generation == previewGeneration) { PreviewError = ex.Message; PreviewStatus = "预览未就绪"; PreviewBusy = false; } WriteLog("3D 预览", ex.ToString()); startTask = null; }
-    }
-    private void OnPreviewMessage(BridgeMessage message)
-    {
-        Application.Current.Dispatcher.BeginInvoke(() =>
         {
-            if (!IsPreview) return;
-            switch (message.Kind)
-            {
-                case "Connected": PreviewStatus = message.Text; break;
-                case "Ready": case "Status":
-                    PreviewStatus = message.Text;
-                    if (message.Text.Contains("兼容")) readbackMode = "兼容读回";
-                    else if (message.Kind == "Ready") readbackMode = "异步读回";
-                    break;
-                case "Loading": if (message.Id == requestId) { PreviewBusy = true; PreviewStatus = message.Text; } break;
-                case "Loaded": if (message.Id == requestId) { PreviewBusy = false; PreviewStatus = "拖动旋转 · 滚轮缩放 · 右键平移"; frameCount = 0; frameClock.Restart(); } break;
-                case "CameraState": if (message.Id.Length == 0 || message.Id == requestId) camera = message; break;
-                case "Error": if (message.Id.Length == 0 || message.Id == requestId) { PreviewError = message.Text; PreviewBusy = false; } break;
-                case "Disconnected": PreviewError = message.Text; PreviewBusy = false; startTask = null; break;
-            }
-        });
-    }
-    public void PumpFrame()
-    {
-        if (!IsPreview || PreviewBitmap == null || PreviewBusy) return;
-        if (Preview.TryReadFrame(frameBytes, out _))
+            if (generation == previewGeneration && IsPreview) { PreviewError = ex.Message; PreviewStatus = "独立预览未就绪"; }
+            WriteLog("独立 3D 预览", ex.ToString());
+        }
+        finally
         {
-            PreviewBitmap.WritePixels(new Int32Rect(0, 0, BridgeWire.Width, BridgeWire.Height), frameBytes, BridgeWire.Width * 4, 0); frameCount++;
-            if (frameClock.Elapsed.TotalSeconds >= 2)
-            { PreviewStatus = $"1280 × 720  ·  {frameCount / frameClock.Elapsed.TotalSeconds:F0} fps  ·  {readbackMode}  ·  拖动旋转，滚轮缩放，右键平移"; frameClock.Restart(); frameCount = 0; }
+            if (generation == previewGeneration) PreviewBusy = false;
+            if (ReferenceEquals(previewCancellation, cancellation)) previewCancellation = null;
+            cancellation.Dispose();
         }
     }
-    public void Rotate(double dx, double dy) { camera.Yaw += (float)dx * .45f; camera.Pitch = Math.Clamp(camera.Pitch + (float)dy * .3f, -80, 80); SendCamera(); }
+    public void SetPreviewAspect(double width, double height)
+    { if (width > 0 && height > 0) { previewAspect = width / height; if (autoFrame) ResetCamera(); } }
+    public void Rotate(double dx, double dy) { autoFrame = false; yaw += dx * .45; pitch = Math.Clamp(pitch + dy * .3, -80, 80); UpdateCamera(); }
     public void Pan(double dx, double dy)
     {
-        float amount = (float)dx * camera.Distance * .0008f, radians = camera.Yaw * MathF.PI / 180;
-        camera.PanX -= amount * MathF.Cos(radians); camera.PanZ += amount * MathF.Sin(radians);
-        camera.PanY += (float)dy * camera.Distance * .0008f; SendCamera();
+        autoFrame = false; double amount = dx * distance * .0008, radians = yaw * Math.PI / 180;
+        center.X -= amount * Math.Cos(radians); center.Z -= amount * Math.Sin(radians);
+        center.Y += dy * distance * .0008; UpdateCamera();
     }
-    public void Zoom(int delta) { camera.Distance = Math.Clamp(camera.Distance * MathF.Exp(-delta / 120f * .12f), .2f, 150); SendCamera(); }
-    public void SetAngle(float yaw) { camera.Yaw = yaw; camera.Pitch = 0; SendCamera(); }
-    public void ResetCamera() { if (Preview.IsReady) Preview.Send(new BridgeMessage { Kind = "Frame" }); }
-    private void SendCamera()
+    public void Zoom(int delta) { autoFrame = false; distance = Math.Clamp(distance * Math.Exp(-delta / 120d * .12), .1, 500); UpdateCamera(); }
+    public void SetAngle(float angle) { yaw = angle; pitch = 0; UpdateCamera(); }
+    public void ResetCamera()
     {
-        if (!Preview.IsReady || PreviewBusy) return;
-        camera.Kind = "Camera";
-        try { Preview.Send(camera); } catch (IOException ex) { PreviewError = ex.Message; }
+        if (PreviewModel == null) return;
+        var bounds = PreviewModel.Bounds; if (bounds.IsEmpty) return;
+        center = new(bounds.X + bounds.SizeX / 2, bounds.Y + bounds.SizeY / 2, bounds.Z + bounds.SizeZ / 2);
+        double tangent = Math.Tan(35 * Math.PI / 360);
+        distance = Math.Max(bounds.SizeX, bounds.SizeY * previewAspect) / (2 * tangent) * 1.12 + bounds.SizeZ;
+        yaw = 0; pitch = 5; autoFrame = true; UpdateCamera();
+    }
+    private void UpdateCamera()
+    {
+        double y = yaw * Math.PI / 180, p = pitch * Math.PI / 180;
+        var offset = new Vector3D(Math.Sin(y) * Math.Cos(p), Math.Sin(p), -Math.Cos(y) * Math.Cos(p)) * distance;
+        PreviewCamera = new PerspectiveCamera(center + offset, -offset, new(0, 1, 0), 35) { NearPlaneDistance = .01, FarPlaneDistance = 2000 };
     }
     public void SetEnvironment(Color background, double light)
-    { if (Preview.IsReady) Preview.Send(new BridgeMessage { Kind = "Environment", R = background.R / 255f, G = background.G / 255f, B = background.B / 255f, Light = (float)light }); }
+    { PreviewBackground = new SolidColorBrush(background); PreviewLighting = NativePreviewRenderer.Lights(light); }
     public void SaveScreenshot(string path)
     {
-        if (PreviewBitmap == null || PreviewBusy) return;
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(PreviewBitmap));
-        using var file = new FileStream(path, FileMode.Create, FileAccess.Write); encoder.Save(file); Status = "截图已保存：" + path;
+        if (PreviewModel == null || PreviewBusy || HasPreviewError) return;
+        NativePreviewRenderer.SaveScreenshot(path, PreviewModel, PreviewCamera, PreviewLighting, PreviewBackground, previewAspect);
+        Status = "截图已保存：" + path;
     }
     public Task RetryPreviewAsync() => OpenPreviewAsync(previewCard);
-    public Task ClosePreviewAsync() => closeTask ??= ClosePreviewCore();
-    private async Task ClosePreviewCore()
+    public async Task ClosePreviewAsync()
     {
-        ++previewGeneration; IsPreview = false; previewCancellation?.Cancel();
-        try
-        {
-            await Task.Run(Preview.Stop);
-            if (startTask != null) { try { await startTask; } catch { } }
-            startTask = null; PreviewBitmap = null; PreviewBusy = false; previewCancellation?.Dispose(); previewCancellation = null;
-        }
-        finally { closeTask = null; }
+        ++previewGeneration; IsPreview = false; previewCancellation?.Cancel(); PreviewModel = null; PreviewBusy = false;
+        var pending = previewLoads.ToArray(); if (pending.Length > 0) await Task.WhenAll(pending);
     }
-    public void Dispose() { operationCancellation?.Cancel(); previewCancellation?.Cancel(); Preview.Dispose(); }
+    public void Dispose() { operationCancellation?.Cancel(); previewCancellation?.Cancel(); }
 }

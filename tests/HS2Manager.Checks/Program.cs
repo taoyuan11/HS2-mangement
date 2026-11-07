@@ -8,7 +8,8 @@ var gameArg = Array.IndexOf(args, "--game");
 var game = gameArg >= 0 ? args[gameArg + 1] : @"Z:\games\hs2\HS two DX - TSYMQ";
 var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
-if (args.Contains("--core")) await CoreChecks.Run(game, data);
+if (args.Contains("--native-preview")) await NativePreviewChecks.Run(game, data);
+else if (args.Contains("--core")) await CoreChecks.Run(game, data);
 else if (args.Contains("--scan"))
 {
     var repo = new CardRepository(Path.Combine(data, "library"));
@@ -95,7 +96,7 @@ else if (args.Contains("--preview"))
     if (preview.ProcessId != null || preview.IsRunning) throw new Exception("Cancelled startup left a process");
     Console.WriteLine("PASS: Cancellation during Studio startup cleans up process");
 }
-else Console.WriteLine("Use --core, --scan, --mods or --preview. Optional: --game <game directory>.");
+else Console.WriteLine("Use --core, --scan, --mods or --native-preview. Legacy Studio bridge test: --preview. Optional: --game <game directory>.");
 }
 catch (Exception ex)
 {

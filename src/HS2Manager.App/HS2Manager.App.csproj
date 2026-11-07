@@ -2,8 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF>
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><AssemblyName>HS2Manager</AssemblyName>
-    <ApplicationManifest>app.manifest</ApplicationManifest><Version>1.0.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest><Version>1.1.0-preview.1</Version>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../HS2Manager.Core/HS2Manager.Core.csproj" /></ItemGroup>
-  <ItemGroup><Content Include="../HS2Manager.Bridge/bin/Release/net46/HS2Manager.Bridge.dll" Link="Bridge/HS2Manager.Bridge.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
 </Project>

@@ -11,12 +11,12 @@ using HS2Manager.Core;
 internal static class Program
 {
     [STAThread]
-    static int Main()
+    static int Main(string[] args)
     {
-        try { return Run(); }
+        try { return Run(args); }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
-    static int Run()
+    static int Run(string[] args)
     {
         string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         string output = Path.Combine(root, "artifacts", "ui-checks"); Directory.CreateDirectory(output);
@@ -28,12 +28,26 @@ internal static class Program
         resources.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "x", "http://schemas.microsoft.com/winfx/2006/xaml");
         resources.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "local", "clr-namespace:HS2Manager.App;assembly=HS2Manager");
         app.Resources = (ResourceDictionary)System.Windows.Markup.XamlReader.Parse(resources.ToString().Replace("clr-namespace:HS2Manager.App\"", "clr-namespace:HS2Manager.App;assembly=HS2Manager\""));
+        if (args.Contains("--window-close"))
+        {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+            try { WindowCloseUiChecks.Run(root); return 0; }
+            finally { app.Shutdown(); }
+        }
+        if (args.Contains("--native-preview"))
+        {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+            int index = Array.IndexOf(args, "--game");
+            NativePreviewUiChecks.Run(app, root, index >= 0 ? args[index + 1] : @"Z:\games\hs2\HS two DX - TSYMQ"); return 0;
+        }
         var settings = new AppSettings { GamePath = Path.Combine(output, "NoGame"), WindowWidth = 1440, WindowHeight = 900 };
         using var model = new MainViewModel(Path.Combine(output, "Data"), settings);
         for (int i = 0; i < 80; i++) model.Repository.Save(new CardRecord { Id = "fixture" + i, Path = Path.Combine(output, "cards", $"角色{i:000}.png"), Root = Path.Combine(output, "cards"), Name = "示例人物 " + i, Sex = i % 2, Status = CardStatus.Valid, Size = 128000, ModifiedUtcTicks = DateTime.UtcNow.Ticks, Favorite = i % 3 == 0, Tags = ["示例"] });
         model.ReloadCards(); model.Status = "布局验收 · 1920 × 1040 物理像素";
         try
         {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+            WindowCloseUiChecks.Run(root);
             foreach (string theme in new[] { "Light", "Dark", "System" })
             {
                 settings.Theme = theme;
