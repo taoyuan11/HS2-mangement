@@ -21,7 +21,15 @@ public sealed record NativePushUp(NativePushUpClothes Bra, NativePushUpClothes T
         }
         return new(true, Number("LIFT"), Number("PUSH_TOGETHER"), Number("SQUEEZE"), Number("CENTER_NIPPLES"),
             plugin.Read(prefix+"FLATTEN_NIPPLES") is true, plugin.Read(prefix+"HIDE_NIPPLES") is true,
-            plugin.Read(prefix+"HIDE_ACCESSORIES") is true, Number("CORSET"));
+            plugin.Read(prefix+"HIDE_ACCESSORIES") is true, Number("CORSET"), plugin.HasValue(prefix+"FIRMNESS")?Number("FIRMNESS"):0);
+    }
+
+    internal float EffectiveSoftness(float original,bool braWorn,bool topWorn)
+    {
+        float value=original;
+        if(braWorn&&Bra.Enabled)value=Math.Min(value,1-Bra.Firmness);
+        if(topWorn&&Top.Enabled)value=Math.Min(value,1-Top.Firmness);
+        return value;
     }
 
     internal bool Apply(NativePrefab rig, float[] body, bool braWorn, bool topWorn, byte[] animation)
@@ -81,4 +89,4 @@ public sealed record NativePushUp(NativePushUpClothes Bra, NativePushUpClothes T
         }
     }
 }
-public sealed record NativePushUpClothes(bool Enabled,float Lift,float Together,float Squeeze,float Center,bool Flatten,bool HideNipples,bool HideAccessories,float Corset);
+public sealed record NativePushUpClothes(bool Enabled,float Lift,float Together,float Squeeze,float Center,bool Flatten,bool HideNipples,bool HideAccessories,float Corset,float Firmness=0);

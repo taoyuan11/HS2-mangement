@@ -3,7 +3,8 @@ param(
     [string]$GamePath = 'Z:\games\hs2\HS two DX - TSYMQ',
     [switch]$SkipTests,
     [switch]$PreviewTest,
-    [string]$PreviewCard = ''
+    [string]$PreviewCard = '',
+    [string]$UnityPlayerDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
@@ -20,7 +21,10 @@ function Invoke-Dotnet([string[]]$Arguments) {
 }
 if ($PreviewTest -and !(Test-Path -LiteralPath (Join-Path $GamePath 'abdata\chara\oo_base.unity3d'))) { throw "游戏资源目录无效：$GamePath" }
 $releaseRoot = Join-Path $projectRoot 'artifacts\release'
-$packageName = 'HS2Manager-1.1.0-preview5-win-x64'
+$packageName = 'HS2Manager-1.2.0-preview1-win-x64'
+if(!$UnityPlayerDirectory){$UnityPlayerDirectory=Join-Path $projectRoot ('artifacts\unity-preview\release-'+[Guid]::NewGuid().ToString('N')); & (Join-Path $projectRoot 'build-unity-preview.ps1') -OutputPath $UnityPlayerDirectory}
+$UnityPlayerDirectory=(Resolve-Path -LiteralPath $UnityPlayerDirectory).Path
+foreach($required in @('HS2Manager.UnityPreview.exe','UnityPlayer.dll','HS2Manager.UnityPreview_Data','MonoBleedingEdge')){if(!(Test-Path -LiteralPath (Join-Path $UnityPlayerDirectory $required))){throw "独立 Unity 发布文件缺失：$required"}}
 $package = Join-Path $releaseRoot $packageName
 $staging = Join-Path $releaseRoot ($packageName + '-staging-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
@@ -31,11 +35,16 @@ try {
     }
     if ($PreviewTest) {
         $sampleArguments = if ($PreviewCard) { @('--card', $PreviewCard) } else { @() }
-        Invoke-Dotnet (@('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.Checks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--native-preview', '--game', $GamePath) + $sampleArguments)
-        Invoke-Dotnet @('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.UiChecks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--native-preview', '--game', $GamePath)
-        if ($PreviewCard) { Invoke-Dotnet (@('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.UiChecks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--native-preview', '--game', $GamePath) + $sampleArguments) }
+        $player=Join-Path $UnityPlayerDirectory 'HS2Manager.UnityPreview.exe'
+        Invoke-Dotnet (@('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.Checks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--prepare-unity-character', '--game', $GamePath) + $sampleArguments)
+        Invoke-Dotnet @('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.Checks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--unity-session', '--player', $player, '--definition', (Join-Path $projectRoot 'artifacts\checks\unity-character.json'))
+        Invoke-Dotnet (@('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.UiChecks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--unity-preview', '--game', $GamePath, '--player', $player) + $sampleArguments)
     }
     Invoke-Dotnet @('publish', (Join-Path $projectRoot 'src\HS2Manager.App'), '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:UseSharedCompilation=false', '-o', $staging, '--nologo')
+    $unityTarget=Join-Path $staging 'UnityPreview';New-Item -ItemType Directory -Path $unityTarget|Out-Null
+    foreach($name in @('HS2Manager.UnityPreview.exe','UnityPlayer.dll','HS2Manager.UnityPreview_Data','MonoBleedingEdge')){Copy-Item -LiteralPath (Join-Path $UnityPlayerDirectory $name) -Destination $unityTarget -Recurse}
+    $forbidden=@(Get-ChildItem -LiteralPath $staging -Recurse -File|Where-Object {$_.Name -match '^(Assembly-CSharp|IL|BepInEx|HS2_|HS2Manager\.Bridge|HS2Manager\.GameReference)' -or $_.Extension -in '.zipmod','.unity3d'})
+    if($forbidden.Count){throw ('发布包包含游戏、插件或测试资源：'+($forbidden.Name -join ', '))}
     Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $staging '使用说明.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md') -Destination $staging
     Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses') -Destination $staging -Recurse

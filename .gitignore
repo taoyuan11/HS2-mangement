@@ -5,3 +5,13 @@ Data/
 artifacts/
 *.user
 *.suo
+**/Library/
+**/Temp/
+**/Logs/
+**/UserSettings/
+src/HS2Manager.UnityPreview/Assets/Generated/
+src/HS2Manager.UnityPreview/Assets/Generated.meta
+*.alf
+*.ulf
+__pycache__/
+*_wpftmp.csproj

@@ -17,9 +17,11 @@ internal sealed class NativeShapeRig : IDisposable
     private readonly FileStream stream;
     private readonly PEReader pe;
     private readonly MetadataReader metadata;
+    private readonly bool unlockedSliders;
     private static readonly Dictionary<short, OpCode> Opcodes = typeof(OpCodes).GetFields().Where(f => f.FieldType == typeof(OpCode)).Select(f => (OpCode)f.GetValue(null)!).ToDictionary(o => o.Value);
-    public NativeShapeRig(string game)
+    public NativeShapeRig(string game, bool unlockedSliders = false)
     {
+        this.unlockedSliders = unlockedSliders;
         stream = File.OpenRead(Path.Combine(game, "HoneySelect2_Data", "Managed", "Assembly-CSharp.dll"));
         try { pe = new PEReader(stream); metadata = pe.GetMetadataReader(); }
         catch { stream.Dispose(); throw; }
@@ -37,13 +39,10 @@ internal sealed class NativeShapeRig : IDisposable
             cancellation.ThrowIfCancellationRequested();
             var cells = row.Trim().Split('\t');
             if (cells.Length < 11 || !int.TryParse(cells[0], out int index) || index < 0 || index >= values.Length || !sourceIds.TryGetValue(cells[1], out int id) || !keys.TryGetValue(cells[1], out var frames)) continue;
-            float rate = Math.Clamp(values[index], 0, 1) * (frames.Length - 1); int a = (int)rate, b = Math.Min(a + 1, frames.Length - 1); float t = rate - a;
             for (int i = 0; i < 9; i++)
             {
                 if (cells[i + 2] == "0") continue;
-                float delta = frames[b][i] - frames[a][i];
-                if (i is >= 3 and < 6) delta = ((delta % 360) + 540) % 360 - 180;
-                parameters[id].Values[i] = frames[a][i] + delta * t;
+                parameters[id].Values[i] = Interpolate(frames, cells[1], values[index], i, unlockedSliders);
             }
         }
         var bones = destinations.ToDictionary(p => p.Key, p => prefab.Bones.GetValueOrDefault(p.Value) ?? new NativeBone());
@@ -56,6 +55,32 @@ internal sealed class NativeShapeRig : IDisposable
             return nested.GetFields().Select(metadata.GetFieldDefinition).Where(f => !f.GetDefaultValue().IsNil)
                 .ToDictionary(f => metadata.GetBlobReader(metadata.GetConstant(f.GetDefaultValue()).Value).ReadInt32(), f => metadata.GetString(f.Name));
         }
+    }
+    internal static float Interpolate(float[][] frames, string name, float value, int component, bool unlocked)
+    {
+        if (!float.IsFinite(value)) throw new InvalidDataException("形变参数不是有效数值。");
+        float rate = Math.Clamp(value, 0, 1) * (frames.Length - 1);
+        int a = (int)rate, b = Math.Min(a + 1, frames.Length - 1);
+        float delta = frames[b][component] - frames[a][component];
+        bool rotation = component is >= 3 and < 6;
+        if (rotation) delta = ((delta % 360) + 540) % 360 - 180;
+        float result = frames[a][component] + delta * (rate - a);
+        if (!unlocked || value is >= 0 and <= 1 || frames.Length < 2) return result;
+        // SliderUnlocker extrapolates between the first and last keys. Some
+        // rotation curves intentionally keep the game's endpoint value.
+        if (rotation && (name.Contains("cf_s_Mune") || name.Contains("cf_s_Mouth") ||
+            name.Contains("cf_s_LegLow") || name.Contains("cf_s_MayuTip") ||
+            name.Contains("thigh") && name.Contains("01") ||
+            name.StartsWith("cf_a_bust", StringComparison.Ordinal) && name.EndsWith("_size", StringComparison.Ordinal))) return result;
+        float span = frames[^1][component] - frames[0][component];
+        if (rotation)
+        {
+            bool increasing = frames[1][component] - frames[0][component] >= 0;
+            if (span > 0 && !increasing) span -= 360;
+            else if (span < 0 && increasing) span += 360;
+        }
+        float extended = frames[0][component] + span * value;
+        return float.IsFinite(extended) ? extended : throw new InvalidDataException("扩展形变参数运算越界。");
     }
     internal static Dictionary<string, float[][]> ReadKeys(byte[] bytes)
     {

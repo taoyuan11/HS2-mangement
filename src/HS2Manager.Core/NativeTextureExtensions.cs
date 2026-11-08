@@ -28,7 +28,7 @@ internal sealed partial class NativeCardExtensions
     {
         var changes = Items(plugin.Unpack("MaterialTexturePropertyList")).Where(Current).ToArray();
         var supported = new HashSet<string>(["MainTex", "BaseMap", "ColorMask", "AlphaMask"], StringComparer.Ordinal);
-        var selected = changes.Where(c => supported.Contains(CardAppearanceReader.Text(c, "Property").TrimStart('_'))).ToArray();
+        var selected = changes.Where(c => originalMaterials || supported.Contains(CardAppearanceReader.Text(c, "Property").TrimStart('_'))).ToArray();
         var wanted = selected.Where(c => c.GetValueOrDefault("TexID") is long).Select(c => CardAppearanceReader.Integer(c, "TexID")).ToHashSet();
         var textures = new Dictionary<long, NativeEmbeddedTexture>();
         if (wanted.Count > 0 && plugin.Binary("TextureDictionary") is { } packed)
@@ -51,7 +51,7 @@ internal sealed partial class NativeCardExtensions
             if (change.GetValueOrDefault("TexID") is long id && !textures.TryGetValue(id, out texture))
                 Warnings.Add($"MaterialEditor：找不到内嵌贴图 #{id}（{CardAppearanceReader.Text(change, "MaterialName")} / {property}）。");
             float[]? offset = Vector(change.GetValueOrDefault("Offset")), scale = Vector(change.GetValueOrDefault("Scale"));
-            if (property is not ("MainTex" or "BaseMap") && (offset != null || scale != null))
+            if (!originalMaterials && property is not ("MainTex" or "BaseMap") && (offset != null || scale != null))
                 Warnings.Add($"MaterialEditor：{property} 的独立平铺/偏移尚未还原。");
             MaterialTextures.Add(new(checked((int)CardAppearanceReader.Integer(change, "ObjectType")), checked((int)CardAppearanceReader.Integer(change, "Slot")),
                 CardAppearanceReader.Text(change, "MaterialName"), property, texture, offset, scale));
@@ -62,7 +62,9 @@ internal sealed partial class NativeCardExtensions
                 MaterialQueues.Add(new(checked((int)CardAppearanceReader.Integer(shader, "ObjectType")), checked((int)CardAppearanceReader.Integer(shader, "Slot")),
                     CardAppearanceReader.Text(shader, "MaterialName"), checked((int)queue)));
             string name = CardAppearanceReader.Text(shader, "ShaderName");
-            if (name.Length > 0 && name != CardAppearanceReader.Text(shader, "ShaderNameOriginal"))
+            if (originalMaterials && name.Length > 0)
+                MaterialShaders.Add(new(checked((int)CardAppearanceReader.Integer(shader,"ObjectType")),checked((int)CardAppearanceReader.Integer(shader,"Slot")),CardAppearanceReader.Text(shader,"MaterialName"),name));
+            if (!originalMaterials && name.Length > 0 && name != CardAppearanceReader.Text(shader, "ShaderNameOriginal"))
                 MaterialDiagnostics.Add(new(checked((int)CardAppearanceReader.Integer(shader,"ObjectType")),checked((int)CardAppearanceReader.Integer(shader,"Slot")),
                     CardAppearanceReader.Text(shader,"MaterialName"),"自定义着色器 "+name+"（使用基础光照近似）"));
         }

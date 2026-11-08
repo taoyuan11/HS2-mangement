@@ -10,9 +10,12 @@ public sealed record NativeRendererOverride(int ObjectType, int Slot, string Nam
 public sealed record NativeMaterialColorOverride(int ObjectType, int Slot, string Name, string Property, PreviewColor Color);
 public sealed record NativeMaterialFloatOverride(int ObjectType, int Slot, string Name, string Property, float Value);
 public sealed record NativeMaterialDiagnostic(int ObjectType, int Slot, string Name, string Message);
+public sealed record NativeMaterialShaderOverride(int ObjectType, int Slot, string Name, string Shader);
 
 internal sealed partial class NativeCardExtensions
 {
+    private readonly bool originalMaterials;
+    internal NativeCardExtensions(bool originalMaterials = false) => this.originalMaterials = originalMaterials;
     public List<AppearancePart> Accessories { get; } = [];
     public List<NativeBoneAdjustment> Bones { get; } = [];
     public List<NativeRendererOverride> Renderers { get; } = [];
@@ -21,10 +24,12 @@ internal sealed partial class NativeCardExtensions
     public List<NativeMaterialDiagnostic> MaterialDiagnostics { get; } = [];
     public List<NativeMaterialTextureOverride> MaterialTextures { get; } = [];
     public List<NativeMaterialQueueOverride> MaterialQueues { get; } = [];
+    public List<NativeMaterialShaderOverride> MaterialShaders { get; } = [];
     public List<NativeSkinOverlay> SkinOverlays { get; } = [];
     public List<NativeClothesOverlay> ClothesOverlays { get; } = [];
     public bool BodyVisible { get; private set; } = true;
     public float? EyeOpenMax { get; private set; }
+    public bool DisableBlinking { get; private set; }
     public NativePushUp? PushUp { get; private set; }
     public Dictionary<int,NativeAccessoryControl> AccessoryControls { get; } = [];
     public HashSet<string> Handled { get; } = [];
@@ -69,14 +74,14 @@ internal sealed partial class NativeCardExtensions
         foreach (var value in Properties("MaterialColorPropertyList"))
         {
             string property = CardAppearanceReader.Text(value, "Property").TrimStart('_');
-            if (property is not ("Color" or "Color2" or "Color3" or "Color4" or "BaseColor" or "EmissionColor" or "Specular"))
+            if (!originalMaterials && property is not ("Color" or "Color2" or "Color3" or "Color4" or "BaseColor" or "EmissionColor" or "Specular"))
             { Diagnostic(value,"颜色参数 "+property); continue; }
             var color=CardAppearanceReader.Color(value,"Value",new(1,1,1));
-            if(property=="EmissionColor")
+            if(property=="EmissionColor" || originalMaterials)
             {
                 var components=CardAppearanceReader.Flatten(value.GetValueOrDefault("Value")).ToArray();
-                if(components.Length is <3 or >4 || components.Any(n=>!float.IsFinite(n) || n<0 || n>64))throw new InvalidDataException("材质自发光颜色无效。");
-                color=new(components[0],components[1],components[2]);
+                if(components.Length is <3 or >4 || components.Any(n=>!float.IsFinite(n) || !originalMaterials && (n<0 || n>64)))throw new InvalidDataException("材质颜色不是有效数值。");
+                color=new(components[0],components[1],components[2],components.Length > 3 ? components[3] : 1);
             }
             MaterialColors.Add(new(checked((int)CardAppearanceReader.Integer(value, "ObjectType")), checked((int)CardAppearanceReader.Integer(value, "Slot")),
                 CardAppearanceReader.Text(value, "MaterialName"), property, color));
@@ -84,12 +89,12 @@ internal sealed partial class NativeCardExtensions
         foreach (var value in Properties("MaterialFloatPropertyList"))
         {
             string property = CardAppearanceReader.Text(value, "Property").TrimStart('_');
-            if (property is not ("Cutoff" or "Glossiness" or "Smoothness" or "Roughness" or "Metallic" or "EmissionStrength"))
+            if (!originalMaterials && property is not ("Cutoff" or "Glossiness" or "Smoothness" or "Roughness" or "Metallic" or "EmissionStrength"))
             { Diagnostic(value,"着色参数 "+property); continue; }
             if (!float.TryParse(CardAppearanceReader.Text(value, "Value"), NumberStyles.Float, CultureInfo.InvariantCulture, out float number) || !float.IsFinite(number))
                 throw new InvalidDataException("材质编辑器参数不是有效数值。");
             MaterialFloats.Add(new(checked((int)CardAppearanceReader.Integer(value, "ObjectType")), checked((int)CardAppearanceReader.Integer(value, "Slot")),
-                CardAppearanceReader.Text(value, "MaterialName"), property, Math.Clamp(number, 0, property == "EmissionStrength" ? 64 : 1)));
+                CardAppearanceReader.Text(value, "MaterialName"), property, originalMaterials ? number : Math.Clamp(number, 0, property == "EmissionStrength" ? 64 : 1)));
         }
         void Diagnostic(Dictionary<string,object?> value,string detail) => MaterialDiagnostics.Add(new(
             checked((int)CardAppearanceReader.Integer(value,"ObjectType")),checked((int)CardAppearanceReader.Integer(value,"Slot")),

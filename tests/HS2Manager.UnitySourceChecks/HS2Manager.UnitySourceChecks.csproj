@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Compile-only API check against the official editor, never against game DLLs. -->
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <UnityEditorRoot Condition="'$(UnityEditorRoot)' == ''">$(MSBuildThisFileDirectory)../../.tools/unity/2018.4.11f1/Editor</UnityEditorRoot>
+  </PropertyGroup>
+  <Target Name="RequireOfficialEditor" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(UnityEditorRoot)/Unity.exe')" Text="Install the official Unity 2018.4.11f1 editor with bootstrap-unity.ps1." />
+  </Target>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <Compile Include="../../src/HS2Manager.Preview.Contracts/*.cs" />
+    <Compile Include="../../src/HS2Manager.UnityPreview/Assets/Runtime/*.cs" />
+    <Compile Include="../../src/HS2Manager.UnityPreview/Assets/Editor/*.cs" />
+    <Reference Include="$(UnityEditorRoot)/Data/Managed/UnityEngine/*.dll"><Private>false</Private></Reference>
+    <Reference Include="UnityEditor"><HintPath>$(UnityEditorRoot)/Data/Managed/UnityEditor.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.Postprocessing.Runtime"><HintPath>../../src/HS2Manager.UnityPreview/Library/ScriptAssemblies/Unity.Postprocessing.Runtime.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

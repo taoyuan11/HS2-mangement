@@ -17,7 +17,7 @@ public sealed class NativePrefab
 }
 
 /// <summary>Interprets serialized Unity data; no Unity player, game DLLs or MonoBehaviours execute.</summary>
-internal sealed class NativeAssetBundle : IDisposable
+internal sealed partial class NativeAssetBundle : IDisposable
 {
     private readonly AssetsManager manager = new();
     private readonly AssetsFileInstance file;
@@ -141,7 +141,7 @@ internal sealed class NativeAssetBundle : IDisposable
             if (value is Dictionary<string, object?> map && CardAppearanceReader.Text(map, "mark") == "【ChaListData】") yield return map;
         }
     }
-    public NativePrefab ReadPrefab(string assetName, CancellationToken cancellation)
+    public NativePrefab ReadPrefab(string assetName, CancellationToken cancellation, bool includeGeometry = true)
     {
         // MOD containers can contain a texture/material and prefab with exactly the same name
         // (including extensionless keys). Unity LoadAsset<GameObject> selects by type as well.
@@ -212,6 +212,7 @@ internal sealed class NativeAssetBundle : IDisposable
             }
             foreach (var id in components)
             {
+                if (!includeGeometry) break;
                 if (!active) break;
                 var type = file.file.GetAssetInfo(id).TypeId;
                 if (type != (int)AssetClassID.SkinnedMeshRenderer && type != (int)AssetClassID.MeshRenderer) continue;
@@ -274,9 +275,34 @@ internal sealed class NativeAssetBundle : IDisposable
         {
             var info = file.file.GetAssetInfo(id) ?? throw new InvalidDataException("模型资源引用不存在。");
             try { fields[id] = value = manager.GetBaseField(file, info); }
-            catch (IOException ex) { throw new InvalidDataException($"{(AssetClassID)info.TypeId} 资源 #{id} 数据无法读取：{ex.Message}", ex); }
+            catch (IOException ex)
+            {
+                // Some converted old DynamicBone assets carry a new type tree over the old byte layout.
+                // Only accept the known old schema when it consumes the entire bounded payload.
+                if(info.TypeId==(int)AssetClassID.MonoBehaviour && ScriptName(info)=="DynamicBone" && TryReadLegacyDynamicBone(info,out value))
+                    fields[id]=value;
+                else throw new InvalidDataException($"{(AssetClassID)info.TypeId} 资源 #{id} 数据无法读取：{ex.Message}", ex);
+            }
         }
         return value;
+    }
+    private bool TryReadLegacyDynamicBone(AssetFileInfo info,out AssetTypeValueField value)
+    {
+        value=null!;
+        var template=manager.GetTemplateBaseField(file,info).Clone();
+        if(!template.Children.Any(c=>c.Name=="Comment"))return false;
+        template.Children.RemoveAll(c=>c.Name is "Comment" or "m_notRolls");
+        try
+        {
+            var source=file.file.Reader;source.Position=info.GetAbsoluteByteOffset(file.file);
+            using var reader=new AssetsFileReader(new MemoryStream(source.ReadBytes((int)info.ByteSize),false));
+            var candidate=template.MakeValue(reader);
+            long root=candidate["m_Root"]["m_PathID"].AsLong;
+            if(reader.Position!=info.ByteSize || candidate["m_Root"]["m_FileID"].AsInt!=0 || root!=0&&file.file.GetAssetInfo(root)?.TypeId!=(int)AssetClassID.Transform)return false;
+            foreach(string field in new[]{"m_Damping","m_Elasticity","m_Stiffness","m_Inert"})if(!float.IsFinite(candidate[field].AsFloat)||candidate[field].AsFloat is <0 or >1)return false;
+            value=candidate;return true;
+        }
+        catch(Exception error) when(error is IOException or ArgumentException or InvalidDataException){return false;}
     }
     private AssetTypeValueField? ContainerAsset(string name, AssetClassID type)
     {

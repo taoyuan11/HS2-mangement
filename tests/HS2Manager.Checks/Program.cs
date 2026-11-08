@@ -1,5 +1,5 @@
 using HS2Manager.Core;
-using HS2Manager.Protocol;
+
 
 try
 {
@@ -8,7 +8,22 @@ var gameArg = Array.IndexOf(args, "--game");
 var game = gameArg >= 0 ? args[gameArg + 1] : @"Z:\games\hs2\HS two DX - TSYMQ";
 var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
-if (args.Contains("--audit-preview")) await NativePreviewAudit.Run(game,data,Array.IndexOf(args,"--report") is int report && report>=0 ? args[report+1] : "female-audit",Array.IndexOf(args,"--file") is int only && only>=0 ? args[only+1] : null);
+if (args.Contains("--prepare-unity-catalog")) await UnityCatalogChecks.Prepare(game,data,args[Array.IndexOf(args,"--output")+1]);
+else if (args.Contains("--normalize-unity-catalog")) UnityCatalogChecks.Normalize(args[Array.IndexOf(args,"--catalog")+1],game,data,args[Array.IndexOf(args,"--output")+1]);
+else if (args.Contains("--unity-bundle-identities")) UnityBundleIdentityChecks.Run(args[Array.IndexOf(args,"--definition")+1],Path.Combine(data,"cab-check-"+Guid.NewGuid().ToString("N")));
+else if (args.Contains("--unity-session")) await UnitySessionChecks.Run(args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--definition")+1],Path.Combine(data,"unity-session"));
+else if (args.Contains("--prepare-unity-character"))
+{
+    int cardIndex = Array.IndexOf(args, "--card");
+    string cardPath = cardIndex >= 0 ? args[cardIndex + 1] : Directory.EnumerateFiles(Path.Combine(game,"UserData","chara","navi"),"*.png").First();
+    var definition = await new UnityCharacterService().PrepareAsync(game,data,new CardParser().Parse(cardPath),new Progress<string>(Console.WriteLine),default);
+    string target = Path.Combine(data,"unity-character.json");
+    File.WriteAllText(target,System.Text.Json.JsonSerializer.Serialize(definition,UnityCharacterService.JsonOptions));
+    Console.WriteLine($"Prepared {definition.Parts.Length} original parts and {definition.Selections.Length} selections: {target}");
+    foreach (string warning in definition.Diagnostics) Console.WriteLine(warning);
+}
+else if (args.Contains("--prepare-unity-probe")) UnityResourceProbeChecks.Prepare(game, data, Array.IndexOf(args,"--mod-bundle") is int modBundle && modBundle>=0 ? args[modBundle+1] : null);
+else if (args.Contains("--audit-preview")) await NativePreviewAudit.Run(game,data,Array.IndexOf(args,"--report") is int report && report>=0 ? args[report+1] : "female-audit",Array.IndexOf(args,"--file") is int only && only>=0 ? args[only+1] : null);
 else if (args.Contains("--native-preview")) await NativePreviewChecks.Run(game, data, Array.IndexOf(args,"--card") is int sample && sample >= 0 ? args[sample+1] : null);
 else if (args.Contains("--core")) await CoreChecks.Run(game, data);
 else if (args.Contains("--scan-settings")) await ScanSettingsChecks.Run(data);
@@ -35,70 +50,8 @@ else if (args.Contains("--mods"))
     foreach (var group in results.GroupBy(x => x.State)) Console.WriteLine($"{group.Key}: {group.Count()}");
     Console.WriteLine($"Partial dependency parses: {repo.All().Count(x => !x.DependenciesComplete)}");
 }
-else if (args.Contains("--preview"))
-{
-    using var preview = new PreviewSessionService();
-    var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-    BridgeMessage? camera = null;
-    string expected = "";
-    preview.Message += m => { Console.WriteLine($"{DateTime.Now:HH:mm:ss} {m.Kind}: {m.Text}"); if (m.Kind == "CameraState") camera = m; if (m.Kind == "Loaded" && (expected.Length == 0 || expected == m.Id)) loaded.TrySetResult(); if (m.Kind == "Error") loaded.TrySetException(new Exception(m.Text)); };
-    using var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(7));
-    Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
-    await preview.StartAsync(game, data, Path.Combine(root, "src", "HS2Manager.Bridge", "bin", "Release", "net46", "HS2Manager.Bridge.dll"), cancel.Token);
-    var original = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara", "male"), "*.png", SearchOption.AllDirectories).First();
-    var card = Path.Combine(data, "preview-test-card.png"); File.Copy(original, card, true);
-    expected = preview.LoadCard(card, 0);
-    await loaded.Task.WaitAsync(TimeSpan.FromMinutes(2), cancel.Token);
-    byte[] bytes = new byte[BridgeWire.FrameBytes];
-    int frames = 0; var timer = System.Diagnostics.Stopwatch.StartNew();
-    while (timer.Elapsed < TimeSpan.FromSeconds(10))
-    {
-        if (preview.TryReadFrame(bytes, out _)) frames++;
-        await Task.Delay(15, cancel.Token);
-    }
-    Console.WriteLine($"Received {frames} frames in {timer.Elapsed.TotalSeconds:F1}s, pixel range {bytes.Min()}..{bytes.Max()}");
-    if (camera == null) throw new Exception("No camera framing state");
-    var frontHash = System.Security.Cryptography.SHA256.HashData(bytes);
-    preview.Send(new BridgeMessage { Kind = "Camera", Yaw = 90, Pitch = 0, Distance = camera.Distance, PanX = camera.PanX, PanY = camera.PanY, PanZ = camera.PanZ });
-    await Task.Delay(1500, cancel.Token); preview.TryReadFrame(bytes, out _);
-    if (frontHash.SequenceEqual(System.Security.Cryptography.SHA256.HashData(bytes))) throw new Exception("Camera did not change image");
-    Console.WriteLine("PASS: Side camera changes the rendered frame");
-    byte cornerB = bytes[0], cornerG = bytes[1], cornerR = bytes[2];
-    preview.Send(new BridgeMessage { Kind = "Environment", R = .8f, G = .8f, B = .8f, Light = 1.3f });
-    await Task.Delay(1500, cancel.Token); preview.TryReadFrame(bytes, out _);
-    if (bytes[0] == cornerB && bytes[1] == cornerG && bytes[2] == cornerR) throw new Exception("Background did not change");
-    Console.WriteLine("PASS: Background changes through Studio rendering pipeline");
-    // A dependency-free BMP makes the renderer's output inspectable.
-    using (var output = new BinaryWriter(File.Create(Path.Combine(data, "preview.bmp"))))
-    {
-        output.Write((ushort)0x4d42); output.Write(54 + bytes.Length); output.Write(0); output.Write(54); output.Write(40);
-        output.Write(BridgeWire.Width); output.Write(-BridgeWire.Height); output.Write((ushort)1); output.Write((ushort)32);
-        output.Write(0); output.Write(bytes.Length); output.Write(2835); output.Write(2835); output.Write(0); output.Write(0); output.Write(bytes);
-    }
-    if (frames == 0) throw new Exception("No render frames received");
-    var femaleSource = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara", "navi"), "*.png").First();
-    string femaleCard = Path.Combine(data, "preview-female-test.png"); File.Copy(femaleSource, femaleCard, true);
-    loaded = new(TaskCreationOptions.RunContinuationsAsynchronously); expected = preview.LoadCard(femaleCard, 1);
-    await loaded.Task.WaitAsync(TimeSpan.FromMinutes(3), cancel.Token);
-    await Task.Delay(1000, cancel.Token);
-    if (!preview.TryReadFrame(bytes, out _)) throw new Exception("No female frame");
-    Console.WriteLine("PASS: Female character loads and renders through Studio API");
-    loaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    preview.LoadCard(femaleCard, 1); expected = preview.LoadCard(card, 0);
-    await loaded.Task.WaitAsync(TimeSpan.FromMinutes(3), cancel.Token);
-    Console.WriteLine("PASS: Rapid switching completes newest character request");
-    int owned = preview.ProcessId!.Value;
-    preview.Stop();
-    bool stillRunning; try { using var p = System.Diagnostics.Process.GetProcessById(owned); stillRunning = !p.HasExited; } catch (ArgumentException) { stillRunning = false; }
-    if (stillRunning) throw new Exception("Owned Studio survived stop");
-    Console.WriteLine("PASS: Preview process stopped");
-    using var startupCancel = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-    try { await preview.StartAsync(game, data, Path.Combine(root, "src", "HS2Manager.Bridge", "bin", "Release", "net46", "HS2Manager.Bridge.dll"), startupCancel.Token); throw new Exception("Startup cancellation not observed"); }
-    catch (OperationCanceledException) { }
-    if (preview.ProcessId != null || preview.IsRunning) throw new Exception("Cancelled startup left a process");
-    Console.WriteLine("PASS: Cancellation during Studio startup cleans up process");
-}
-else Console.WriteLine("Use --core, --scan, --mods or --native-preview. Legacy Studio bridge test: --preview. Optional: --game <game directory>.");
+else if (args.Contains("--preview")) throw new NotSupportedException("Studio 桥接已禁用。使用 --prepare-unity-probe 验证独立 Unity 资源。");
+else Console.WriteLine("Use --core, --scan, --mods, --native-preview or --prepare-unity-probe. Optional: --game <game directory>.");
 }
 catch (Exception ex)
 {

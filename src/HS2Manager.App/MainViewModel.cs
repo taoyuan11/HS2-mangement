@@ -287,7 +287,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string PreviewError { get => previewError; private set { Set(ref previewError, value); Changed(nameof(HasPreviewError)); } }
     public bool HasPreviewError => PreviewError.Length > 0;
     public string PreviewName { get => previewName; private set => Set(ref previewName, value); }
-    public string PreviewLimitations => NativePreviewService.Limitations;
+    public string PreviewLimitations => "原始 Unity 材质预览 · 尚未通过全部游戏画面及动态对照；环境和未支持效果见兼容性说明。";
+    private UnityPreviewSession? unitySession;
+    public UnityPreviewSession? UnitySession {get=>unitySession;private set=>Set(ref unitySession,value);}
+    public string UnityPlayerPath {get;set;}=UnityPreviewSession.DefaultPlayer;
+    private Rect3D previewBounds=Rect3D.Empty;
+    private bool previewPlaying=true;
+    public string PlaybackLabel=>previewPlaying?"暂停":"继续";
+    public string EnvironmentLabel {get;private set;}="游戏环境";
     public string PreviewWarnings { get => previewWarnings; private set { Set(ref previewWarnings, value); Changed(nameof(HasPreviewWarnings)); } }
     public bool HasPreviewWarnings => PreviewWarnings.Length > 0;
     public bool ShowPreviewRail { get => showRail; set => Set(ref showRail, value); }
@@ -324,21 +331,36 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
     private async Task LoadPreviewAsync(CardRecord card, int generation, CancellationTokenSource cancellation)
     {
+        UnitySession?.Dispose();UnitySession=null;previewBounds=Rect3D.Empty;
         IsPreview = true; PreviewBusy = true; PreviewError = ""; PreviewWarnings = ""; PreviewModel = null;
         PreviewName = card.Name; previewCard = card; PreviewStatus = "正在读取独立预览资源…";
         try
         {
             var progress = new Progress<string>(text => { if (generation == previewGeneration && IsPreview && PreviewBusy) PreviewStatus = text; });
-            var scene = await nativePreview.LoadAsync(Settings.GamePath, DataDirectory, card, progress, cancellation.Token);
-            var model = await Task.Run(() => NativePreviewRenderer.Build(scene, cancellation.Token), cancellation.Token);
+            var definition = await new UnityCharacterService().PrepareAsync(Settings.GamePath, DataDirectory, card, progress, cancellation.Token);
             if (generation != previewGeneration || !IsPreview) return;
-            faceBounds = Rect3D.Empty;
-            foreach (var mesh in scene.Meshes.Where(m => m.Name.StartsWith("o_head/", StringComparison.Ordinal)))
-                for (int i = 0; i < mesh.Positions.Length; i += 3) faceBounds.Union(new Point3D(mesh.Positions[i],mesh.Positions[i+1],mesh.Positions[i+2]));
-            PreviewModel = model; ResetCamera();
-            PreviewWarnings = string.Join("\n", scene.Warnings);
-            PreviewStatus = $"独立 3D · {scene.Meshes.Sum(m => m.Indices.Length / 3):N0} 个三角形 · 资源加载 {scene.LoadSeconds:F2} 秒 · {scene.CacheHits} 项本地缓存";
-            if (scene.Warnings.Count > 0) WriteLog("独立 3D 兼容性", PreviewWarnings);
+            string directory=Path.Combine(DataDirectory,"UnityPreview","sessions");Directory.CreateDirectory(directory);
+            string path=Path.Combine(directory,Guid.NewGuid().ToString("N")+".json");
+            var session=new UnityPreviewSession();
+            try
+            {
+                File.WriteAllText(path,System.Text.Json.JsonSerializer.Serialize(definition,UnityCharacterService.JsonOptions));
+                PreviewStatus="正在启动独立 Unity 内核…";
+                await session.StartAsync(UnityPlayerPath,DataDirectory,cancellation.Token);
+                var loaded=await session.LoadAsync(path,generation,cancellation.Token);
+                if(generation!=previewGeneration || !IsPreview){session.Dispose();return;}
+                UnitySession=session;
+                session.Failed+=text=>Application.Current.Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(UnitySession,session)){PreviewError=text;PreviewStatus="独立内核连接中断";}});
+                var b=loaded.Values;
+                previewBounds=new Rect3D(b[0]-b[3]/2,b[1]-b[4]/2,b[2]-b[5]/2,b[3],b[4],b[5]);
+                faceBounds=new Rect3D(b[6]-b[9]/2,b[7]-b[10]/2,b[8]-b[11]/2,b[9],b[10],b[11]);
+                ResetCamera();PreviewWarnings=loaded.Text;previewPlaying=true;Changed(nameof(PlaybackLabel));
+                EnvironmentLabel="游戏环境";Changed(nameof(EnvironmentLabel));
+                PreviewStatus="独立 Unity 2018.4 · 原始 Shader · "+EnvironmentLabel;
+                if(PreviewWarnings.Length>0)WriteLog("独立 Unity 兼容性",PreviewWarnings);
+            }
+            catch{session.Dispose();throw;}
+            finally{File.Delete(path);}
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -362,7 +384,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         var forward = PreviewCamera.LookDirection; forward.Normalize();
         var right = Vector3D.CrossProduct(forward, PreviewCamera.UpDirection); right.Normalize();
         var up = Vector3D.CrossProduct(right, forward);
-        double unitsPerPixel = 2 * distance * Math.Tan(PreviewCamera.FieldOfView * Math.PI / 360) / previewWidth;
+        double unitsPerPixel = 2 * distance * Math.Tan(35 * Math.PI / 360) * previewAspect / previewWidth;
         // Drag the model with the pointer in the camera plane, including tilted views.
         center += -right * (dx * unitsPerPixel) + up * (dy * unitsPerPixel); UpdateCamera();
     }
@@ -370,39 +392,53 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public void SetAngle(float angle) { autoFrame = false; yaw = angle; pitch = 0; UpdateCamera(); }
     public void ResetCamera()
     {
-        if (PreviewModel == null) return;
-        var bounds = PreviewModel.Bounds; if (bounds.IsEmpty) return;
+        var bounds = previewBounds; if (bounds.IsEmpty) return;
         center = new(bounds.X + bounds.SizeX / 2, bounds.Y + bounds.SizeY / 2, bounds.Z + bounds.SizeZ / 2);
         double tangent = Math.Tan(35 * Math.PI / 360);
-        distance = Math.Max(bounds.SizeX, bounds.SizeY * previewAspect) / (2 * tangent) * 1.12 + bounds.SizeZ;
+        distance = Math.Max(bounds.SizeX / previewAspect, bounds.SizeY) / (2 * tangent) * 1.12 + bounds.SizeZ;
         yaw = 0; pitch = 5; autoFrame = true; UpdateCamera();
     }
     public void FocusFace()
     {
-        if (PreviewModel == null || faceBounds.IsEmpty) return;
+        if (UnitySession == null || faceBounds.IsEmpty) return;
         var b = faceBounds; center = new(b.X+b.SizeX/2,b.Y+b.SizeY/2,b.Z+b.SizeZ/2);
-        distance = Math.Max(b.SizeX,b.SizeY*previewAspect)/(2*Math.Tan(35*Math.PI/360))*1.25+b.SizeZ;
+        distance = Math.Max(b.SizeX/previewAspect,b.SizeY)/(2*Math.Tan(35*Math.PI/360))*1.25+b.SizeZ;
         yaw = 0; pitch = 0; autoFrame = false; UpdateCamera();
     }
     private void UpdateCamera()
     {
         double y = yaw * Math.PI / 180, p = pitch * Math.PI / 180;
-        var offset = new Vector3D(Math.Sin(y) * Math.Cos(p), Math.Sin(p), -Math.Cos(y) * Math.Cos(p)) * distance;
+        var offset = new Vector3D(Math.Sin(y) * Math.Cos(p), Math.Sin(p), Math.Cos(y) * Math.Cos(p)) * distance;
         PreviewCamera = new PerspectiveCamera(center + offset, -offset, new(0, 1, 0), 35) { NearPlaneDistance = .01, FarPlaneDistance = 2000 };
+        var eye=center+offset;
+        UnitySession?.Send(new HS2Manager.Preview.Contracts.KernelMessage{Kind="Camera",Load=previewGeneration,Values=[(float)eye.X,(float)eye.Y,(float)eye.Z,(float)center.X,(float)center.Y,(float)center.Z,35]});
     }
     public void SetEnvironment(Color background, double light)
-    { PreviewBackground = new SolidColorBrush(background); PreviewLighting = NativePreviewRenderer.Lights(light); }
+    {
+        PreviewBackground = new SolidColorBrush(background); PreviewLighting = NativePreviewRenderer.Lights(light);
+        if(UnitySession!=null){UnitySession.Send(new HS2Manager.Preview.Contracts.KernelMessage{Kind="Environment",Values=[background.R/255f,background.G/255f,background.B/255f,(float)light]});EnvironmentLabel="自定义环境";Changed(nameof(EnvironmentLabel));PreviewStatus="独立 Unity · "+EnvironmentLabel;}
+    }
+    public void TogglePlayback(){previewPlaying=!previewPlaying;UnitySession?.Send(new HS2Manager.Preview.Contracts.KernelMessage{Kind="Play",Playing=previewPlaying});Changed(nameof(PlaybackLabel));}
+    public void RestoreEnvironment()
+    {
+        if(UnitySession==null)return;
+        UnitySession.Send(new HS2Manager.Preview.Contracts.KernelMessage{Kind="Environment",Load=previewGeneration,Text="restore"});
+        EnvironmentLabel="游戏环境";Changed(nameof(EnvironmentLabel));PreviewStatus="独立 Unity · "+EnvironmentLabel;
+    }
     public void SaveScreenshot(string path)
     {
-        if (PreviewModel == null || PreviewBusy || HasPreviewError) return;
-        NativePreviewRenderer.SaveScreenshot(path, PreviewModel, PreviewCamera, PreviewLighting, PreviewBackground, previewAspect);
+        if (PreviewBusy || HasPreviewError || UnitySession?.LatestFrame is not {} frame)throw new InvalidOperationException("当前没有可保存的 Unity 画面。");
+        var bitmap=System.Windows.Media.Imaging.BitmapSource.Create(frame.Width,frame.Height,96,96,PixelFormats.Bgra32,null,frame.Pixels,frame.Width*4);
+        var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using(var file=File.Create(path))encoder.Save(file);
         Status = "截图已保存：" + path;
     }
     public Task RetryPreviewAsync() => OpenPreviewAsync(previewCard);
     public async Task ClosePreviewAsync()
     {
         ++previewGeneration; IsPreview = false; previewCancellation?.Cancel(); PreviewModel = null; PreviewBusy = false; faceBounds = Rect3D.Empty;
+        UnitySession?.Dispose();UnitySession=null;previewBounds=Rect3D.Empty;
         var pending = previewLoads.ToArray(); if (pending.Length > 0) await Task.WhenAll(pending);
     }
-    public void Dispose() { operationCancellation?.Cancel(); previewCancellation?.Cancel(); }
+    public void Dispose() { operationCancellation?.Cancel(); previewCancellation?.Cancel();UnitySession?.Dispose(); }
 }

@@ -5,6 +5,8 @@ using Microsoft.VisualBasic.FileIO;
 
 namespace HS2Manager.Core;
 
+internal sealed class NativeModResolutionException(string message) : FileNotFoundException(message);
+
 internal sealed class NativeModResolver(string game, string data, string cache, IProgress<string>? progress, CancellationToken cancellation)
 {
     private ModIndex? index;
@@ -22,8 +24,8 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         }
         if (result != null) return result;
         if (UsableMods().Any(m => m.Guid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidDataException($"MOD {reference.Guid} 已安装，但没有类别 {reference.Category} / Slot {reference.Slot}，且未找到可用迁移。");
-        throw new FileNotFoundException($"缺少 MOD {reference.Guid}（类别 {reference.Category} / Slot {reference.Slot}）。");
+            throw new NativeModResolutionException($"MOD {reference.Guid} 已安装，但没有类别 {reference.Category} / Slot {reference.Slot}，且未找到可用迁移。");
+        throw new NativeModResolutionException($"缺少 MOD {reference.Guid}（类别 {reference.Category} / Slot {reference.Slot}）。");
     }
     public NativeAssetEntry? FindSavedName(int category,string name)
     {
@@ -70,6 +72,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         return null;
     }
     private IEnumerable<ModFileInfo> UsableMods() => index!.Files.Where(m => m.Compatible && m.Error.Length == 0);
+    internal IEnumerable<ModFileInfo> InstalledMods() { EnsureIndex(); return UsableMods(); }
     private void EnsureIndex()
     {
         index ??= Repository.LoadMetadata<ModIndex>("mods-v1");
@@ -119,6 +122,15 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         if (bundles!.TryGetValue(relative.Replace('\\', '/'), out var other) && Extract(other, relative) is { } found) return found;
         throw new FileNotFoundException("游戏及已安装 MOD 中缺少资源包：" + relative);
     }
+    public string? LooseTexture(string bundle,string asset,string archive="")
+    {
+        string relative=Path.ChangeExtension(bundle,null).Replace('\\','/')+"/"+asset+".png";
+        string physical=NativePreviewService.ResolveBundlePath(Path.Combine(game,"abdata"),relative);
+        if(archive.Length>0&&Extract(archive,relative) is {} own)return own;
+        if(File.Exists(physical))return physical;
+        EnsureBundles();
+        return bundles!.TryGetValue(relative,out var other)?Extract(other,relative):null;
+    }
     private void EnsureBundles()
     {
         if (bundles != null) return;
@@ -133,7 +145,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
                 foreach (var entry in zip.Entries)
                 {
                     string name = entry.FullName.Replace('\\', '/');
-                    if (name.StartsWith("abdata/", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".unity3d", StringComparison.OrdinalIgnoreCase)) bundles[name[7..]] = mod.Path;
+                    if (name.StartsWith("abdata/", StringComparison.OrdinalIgnoreCase) && (name.EndsWith(".unity3d", StringComparison.OrdinalIgnoreCase)||name.EndsWith(".png",StringComparison.OrdinalIgnoreCase))) bundles[name[7..]] = mod.Path;
                 }
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) { /* An unrelated broken archive must not stop bundle discovery. */ }
@@ -148,7 +160,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         if (entry.Length is < 1 or > 512 * 1024 * 1024) throw new InvalidDataException("MOD 资源大小超限。");
         var info = new FileInfo(archive);
         string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(info.FullName + "|" + info.Length + "|" + info.LastWriteTimeUtc.Ticks + "|" + entry.FullName)));
-        string target = Path.Combine(cache, key + ".unity3d");
+        string target = Path.Combine(cache, key + (relative.EndsWith(".png",StringComparison.OrdinalIgnoreCase)?".png":".unity3d"));
         if (File.Exists(target) && new FileInfo(target).Length == entry.Length) return target;
         string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try

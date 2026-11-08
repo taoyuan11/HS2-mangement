@@ -149,6 +149,9 @@ internal static class NativeCompatibilityChecks
         if(resolver.Resolve(new("shared",20,300,"hair.parts[0].id")).Asset!="newAsset") throw new Exception("Only the last duplicate GUID archive was searched");
         if(resolver.FindSavedName(300,"newAsset")?.Asset!="newAsset" || resolver.FindSavedName(301,"newAsset")!=null)throw new Exception("Saved-name recovery ignored category or exact name");
         if(!File.ReadAllBytes(resolver.Bundle("shared/texture.unity3d",old)).SequenceEqual(new byte[]{1,2,3,4})) throw new Exception("Cross-archive resource not resolved");
+        string loose=resolver.LooseTexture("shared/texture.unity3d","paint_clamp",old)??throw new Exception("Sideloader loose PNG not resolved across archives");
+        if(!loose.EndsWith(".png")||!File.ReadAllBytes(loose).SequenceEqual(new byte[]{137,80,78,71}))throw new Exception("Loose PNG extraction changed the payload or format");
+        try{resolver.LooseTexture("../escape.unity3d","paint",old);throw new Exception("Loose PNG traversal accepted");}catch(InvalidDataException){}
         try { resolver.Bundle("../escape.unity3d",old);throw new Exception("Traversal accepted"); } catch(InvalidDataException){}
         Archive("installed-later.zipmod","later",40,"installedLater");
         if(resolver.Resolve(new("later",40,300,"hair.parts[0].id")).Asset!="installedLater") throw new Exception("Stale MOD index not refreshed");
@@ -162,6 +165,7 @@ internal static class NativeCompatibilityChecks
             using(var writer=new StreamWriter(zip.CreateEntry("manifest.xml").Open()))writer.Write($"<manifest schema-ver=\"1\"><guid>{guid}</guid><game>hs2</game>{migration}</manifest>");
             using(var writer=new StreamWriter(zip.CreateEntry("abdata/list/characustom/test.csv").Open()))writer.Write($"300\nID,MainAB,MainData,Name\n{slot},shared/texture.unity3d,{asset},{asset}\n");
             if(name=="a-good.zipmod")using(var stream=zip.CreateEntry("abdata/shared/texture.unity3d").Open())stream.Write([1,2,3,4]);
+            if(name=="a-good.zipmod")using(var stream=zip.CreateEntry("abdata/shared/texture/paint_clamp.png").Open())stream.Write([137,80,78,71]);
             return path;
         }
     }

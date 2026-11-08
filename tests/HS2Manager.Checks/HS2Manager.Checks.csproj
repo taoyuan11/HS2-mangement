@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/HS2Manager.Core/HS2Manager.Core.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Preview.Contracts/HS2Manager.Preview.Contracts.csproj" /></ItemGroup>
 </Project>

@@ -159,9 +159,10 @@ public partial class MainWindow : Window
     private async void ClosePreview_Click(object sender, RoutedEventArgs e) => await ViewModel.ClosePreviewAsync();
     private async void RetryPreview_Click(object sender, RoutedEventArgs e) => await ViewModel.RetryPreviewAsync();
     private void ToggleRail_Click(object sender, RoutedEventArgs e) => ViewModel.ShowPreviewRail = !ViewModel.ShowPreviewRail;
+    private void Playback_Click(object sender, RoutedEventArgs e) => ViewModel.TogglePlayback();
     private void Screenshot_Click(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.PreviewModel == null || ViewModel.PreviewBusy) return;
+        if (ViewModel.UnitySession == null || ViewModel.PreviewBusy) return;
         string safeName = string.Concat(ViewModel.PreviewName.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
         var dialog = new SaveFileDialog { Title = "保存预览截图", Filter = "PNG 图片|*.png", FileName = safeName + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png", DefaultExt = ".png" };
         if (dialog.ShowDialog(this) == true)
@@ -190,6 +191,7 @@ public partial class MainWindow : Window
     private void FocusFace_Click(object sender, RoutedEventArgs e) => ViewModel.FocusFace();
     private void Environment_Changed(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateEnvironment();
     private void Background_Changed(object sender, SelectionChangedEventArgs e) => UpdateEnvironment();
+    private void RestoreEnvironment_Click(object sender,RoutedEventArgs e) => ViewModel.RestoreEnvironment();
     private void UpdateEnvironment()
     { if (ViewModel == null || LightSlider == null || BackgroundChoice == null) return; var color = BackgroundChoice.SelectedIndex switch { 1 => Color.FromRgb(105, 108, 112), 2 => Color.FromRgb(220, 223, 225), _ => Color.FromRgb(41, 44, 48) }; ViewModel.SetEnvironment(color, LightSlider.Value); }
     private async void Window_KeyDown(object sender, KeyEventArgs e)

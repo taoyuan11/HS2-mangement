@@ -14,12 +14,14 @@ public sealed record AppearancePart(string Label, int Category, int Id, PreviewC
     public PreviewColor[] Colors { get; init; } = [];
     public bool[] HideOptions { get; init; } = [];
     public int Slot { get; init; } = -1;
+    public Dictionary<string, object?> Parameters { get; init; } = [];
 }
 public sealed record CardAppearance(int Sex, PreviewColor Skin, IReadOnlyList<AppearancePart> Parts)
 {
     public Dictionary<string, object?> Face { get; init; } = [];
     public Dictionary<string, object?> Body { get; init; } = [];
     public Dictionary<string, object?> Hair { get; init; } = [];
+    public Dictionary<string, object?> Clothes { get; init; } = [];
     public IReadOnlyList<NativeBoneAdjustment> BoneModifiers { get; init; } = [];
     public IReadOnlyList<NativeRendererOverride> Renderers { get; init; } = [];
     public IReadOnlyList<NativeMaterialColorOverride> MaterialColors { get; init; } = [];
@@ -27,10 +29,12 @@ public sealed record CardAppearance(int Sex, PreviewColor Skin, IReadOnlyList<Ap
     public IReadOnlyList<NativeMaterialDiagnostic> MaterialDiagnostics { get; init; } = [];
     public IReadOnlyList<NativeMaterialTextureOverride> MaterialTextures { get; init; } = [];
     public IReadOnlyList<NativeMaterialQueueOverride> MaterialQueues { get; init; } = [];
+    public IReadOnlyList<NativeMaterialShaderOverride> MaterialShaders { get; init; } = [];
     public IReadOnlyList<NativeSkinOverlay> SkinOverlays { get; init; } = [];
     public IReadOnlyList<NativeClothesOverlay> ClothesOverlays { get; init; } = [];
     public bool BodyVisible { get; init; } = true;
     public float? EyeOpenMax { get; init; }
+    public bool DisableBlinking { get; init; }
     public NativePushUp? PushUp { get; init; }
     public IReadOnlyDictionary<int,NativeAccessoryControl> AccessoryControls { get; init; } = new Dictionary<int,NativeAccessoryControl>();
     public IReadOnlySet<string> HandledExtensions { get; init; } = new HashSet<string>();
@@ -40,7 +44,7 @@ public sealed record CardAppearance(int Sex, PreviewColor Skin, IReadOnlyList<Ap
 /// <summary>Reads data only. Game assemblies and plugin code are never loaded.</summary>
 public static class CardAppearanceReader
 {
-    public static CardAppearance Read(CardRecord card, CancellationToken cancellation = default)
+    public static CardAppearance Read(CardRecord card, CancellationToken cancellation = default, bool originalMaterials = false)
     {
         using var stream = File.OpenRead(card.Path);
         CardParser.FindPngEnd(stream, cancellation);
@@ -56,7 +60,7 @@ public static class CardAppearanceReader
         long length = reader.ReadInt64(), start = stream.Position;
         if (length < 0 || length > stream.Length - start) throw new InvalidDataException("人物数据长度越界。");
         Dictionary<string, object?> face = [], body = [], hair = [], clothes = [], accessory = [];
-        var extensions = new NativeCardExtensions();
+        var extensions = new NativeCardExtensions(originalMaterials);
         foreach (var item in List(table, "lstInfo"))
         {
             cancellation.ThrowIfCancellationRequested(); var block = Map(item);
@@ -112,17 +116,17 @@ public static class CardAppearanceReader
             parts[^1] = parts[^1] with { Slot = i, Colors = colors, Parent = Text(part, "parentKey"), Adjustment = Flatten(move.Count == 3 && move[2] is List<object?> ? move[2] : move).ToArray() };
         }
         parts.AddRange(extensions.Accessories);
-        return new(card.Sex, skin, parts) { Face = face, Body = body, Hair = hair, BoneModifiers = extensions.Bones, Renderers = extensions.Renderers,
+        return new(card.Sex, skin, parts) { Face = face, Body = body, Hair = hair, Clothes = clothes, BoneModifiers = extensions.Bones, Renderers = extensions.Renderers,
             MaterialColors = extensions.MaterialColors, MaterialFloats = extensions.MaterialFloats, MaterialTextures = extensions.MaterialTextures, MaterialDiagnostics = extensions.MaterialDiagnostics,
-            MaterialQueues = extensions.MaterialQueues, SkinOverlays = extensions.SkinOverlays, ClothesOverlays = extensions.ClothesOverlays,
-            BodyVisible = extensions.BodyVisible, EyeOpenMax = extensions.EyeOpenMax, PushUp = extensions.PushUp, AccessoryControls = extensions.AccessoryControls,
+            MaterialQueues = extensions.MaterialQueues, MaterialShaders = extensions.MaterialShaders, SkinOverlays = extensions.SkinOverlays, ClothesOverlays = extensions.ClothesOverlays,
+            BodyVisible = extensions.BodyVisible, EyeOpenMax = extensions.EyeOpenMax, DisableBlinking = extensions.DisableBlinking, PushUp = extensions.PushUp, AccessoryControls = extensions.AccessoryControls,
             HandledExtensions = extensions.Handled, Warnings = extensions.Warnings };
 
         void Add(string label, int category, Dictionary<string, object?> value, string key, PreviewColor color, string property)
         {
             int id = checked((int)Integer(value, key));
             var reference = FindReference(card, category, property);
-            parts.Add(new(label, category, id, color, reference != null) { Reference = reference });
+            parts.Add(new(label, category, id, color, reference != null) { Reference = reference, Parameters = value });
         }
     }
     internal static ModReference? FindReference(CardRecord card, int category, string property)
@@ -135,6 +139,11 @@ public static class CardAppearanceReader
         {
             if (category >= 351) return candidates.FirstOrDefault(d => ("." + d.Property).Contains($".accessory{slot}.", StringComparison.OrdinalIgnoreCase));
             if (category is 317 or 318) return candidates.FirstOrDefault(d => d.Property.EndsWith($".{(category == 317 ? "Eye" : "EyeBlack")}{slot+1}", StringComparison.OrdinalIgnoreCase));
+            if (category == 313)
+            {
+                string prefix = property.StartsWith("face", StringComparison.OrdinalIgnoreCase) ? "MakeupInfo." : "ChaFileBody.";
+                return candidates.FirstOrDefault(d => d.Property.EndsWith(prefix + "PaintID" + (slot+1), StringComparison.OrdinalIgnoreCase));
+            }
         }
         return candidates.Length == 1 && category < 351 ? candidates[0] : null;
     }

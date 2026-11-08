@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/HS2Manager.App/HS2Manager.App.csproj" />
     <Project Path="src/HS2Manager.Core/HS2Manager.Core.csproj" />
+    <Project Path="src/HS2Manager.Preview.Contracts/HS2Manager.Preview.Contracts.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/HS2Manager.Checks/HS2Manager.Checks.csproj" />

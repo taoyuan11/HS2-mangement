@@ -33,6 +33,7 @@ public sealed class ModIndex
 
 public sealed class ModDependencyService(CardRepository repository)
 {
+    private static readonly ConcurrentDictionary<string, (long Size, long Modified, string[] Guids)> PluginMetadata = new(StringComparer.OrdinalIgnoreCase);
     public ModIndex? Index { get; private set; } = repository.LoadMetadata<ModIndex>("mods-v1");
     private Dictionary<string, ModFileInfo> byGuid = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, List<ModMigration>> migrations = new(StringComparer.OrdinalIgnoreCase);
@@ -113,7 +114,7 @@ public sealed class ModDependencyService(CardRepository repository)
         }
         return result;
     }
-    private static void ReadPlugins(string folder, ModIndex index, CancellationToken cancellation)
+    internal static void ReadPlugins(string folder, ModIndex index, CancellationToken cancellation)
     {
         try
         {
@@ -122,6 +123,13 @@ public sealed class ModDependencyService(CardRepository repository)
                 cancellation.ThrowIfCancellationRequested();
                 try
                 {
+                    var info = new FileInfo(path);
+                    if (PluginMetadata.TryGetValue(path, out var cached) && cached.Size == info.Length && cached.Modified == info.LastWriteTimeUtc.Ticks)
+                    {
+                        foreach (string guid in cached.Guids) index.Plugins[guid] = Path.GetFileName(path);
+                        continue;
+                    }
+                    var guids = new List<string>();
                     using var file = File.OpenRead(path); using var pe = new PEReader(file);
                     if (!pe.HasMetadata) continue; var metadata = pe.GetMetadataReader();
                     foreach (var typeHandle in metadata.TypeDefinitions)
@@ -134,8 +142,9 @@ public sealed class ModDependencyService(CardRepository repository)
                             var type = metadata.GetTypeReference((TypeReferenceHandle)constructor.Parent);
                             if (metadata.GetString(type.Namespace) != "BepInEx" || metadata.GetString(type.Name) != "BepInPlugin") continue;
                             var blob = metadata.GetBlobReader(attribute.Value); if (blob.ReadUInt16() != 1) continue;
-                            var guid = blob.ReadSerializedString(); if (!string.IsNullOrEmpty(guid)) index.Plugins[guid] = Path.GetFileName(path);
+                            var guid = blob.ReadSerializedString(); if (!string.IsNullOrEmpty(guid)) { index.Plugins[guid] = Path.GetFileName(path); guids.Add(guid); }
                         }
+                    PluginMetadata[path] = (info.Length, info.LastWriteTimeUtc.Ticks, guids.ToArray());
                 }
                 catch (Exception ex) when (ex is IOException or BadImageFormatException or UnauthorizedAccessException) { index.Warnings.Add("插件扫描：" + Path.GetFileName(path) + " " + ex.Message); }
             }

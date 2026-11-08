@@ -1,0 +1,7 @@
+{
+  "name": "HS2Manager.UnityPreview.Editor",
+  "references": [],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false
+}

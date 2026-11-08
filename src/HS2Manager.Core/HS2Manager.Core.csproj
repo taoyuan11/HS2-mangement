@@ -3,7 +3,12 @@
   <ItemGroup><FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" /></ItemGroup>
   <ItemGroup><PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" /><PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" /></ItemGroup>
   <ItemGroup><PackageReference Include="AssetsTools.NET" Version="3.0.5" /></ItemGroup>
+  <ItemGroup><PackageReference Include="AssetsTools.NET.MonoCecil" Version="3.0.4" /></ItemGroup>
   <ItemGroup><PackageReference Include="AssetsTools.NET.Texture" Version="3.0.2" /></ItemGroup>
-  <ItemGroup><Compile Include="../Shared/BridgeProtocol.cs" Link="BridgeProtocol.cs" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../HS2Manager.Preview.Contracts/HS2Manager.Preview.Contracts.csproj" /></ItemGroup>
+  <!-- Historical Studio bridge stays as reference source, never in a production assembly. -->
+  <ItemGroup><Compile Remove="PreviewSessionService.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../scripts/OwnedToolProcess.cs" Link="OwnedToolProcess.cs" /></ItemGroup>
   <ItemGroup><InternalsVisibleTo Include="HS2Manager.Checks" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Resources/classdata.tpk" /></ItemGroup>
 </Project>

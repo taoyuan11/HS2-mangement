@@ -20,7 +20,7 @@ internal sealed partial class NativeCardExtensions
                 if (plugin.Keys.Any(k => k != "Authors")) Warnings.Add("AuthorData：存在未识别的元数据字段。");
                 break;
             case "orange.spork.earwiggle":
-                if (plugin.Read("EarWiggleEnabled") is true) Warnings.Add("EarWiggle：已启用的耳部动态物理不适用于静态预览。");
+                if (plugin.Read("EarWiggleEnabled") is true) Warnings.Add("EarWiggle：已启用的耳部动态物理尚未还原。");
                 break;
             case "KK_InvisibleBody":
                 BodyVisible = plugin.Read("Visible") switch { bool visible => visible, null => true, _ => throw new InvalidDataException("身体显示状态无效。") };
@@ -31,13 +31,13 @@ internal sealed partial class NativeCardExtensions
                 break;
             case "com.fairbair.hs2_boobsettings":
                 if (new[] { "overridePhysics", "overrideGravity", "butt_overridePhysics", "butt_overrideGravity" }.Any(k => plugin.Read(k) is true))
-                    Warnings.Add("BoobSettings：已启用的胸部/臀部动态物理不适用于静态预览。");
+                    Warnings.Add("BoobSettings：已启用的自定义胸部/臀部动态物理尚未还原。");
                 break;
             case "com.deathweasel.bepinex.eyecontrol":
                 float open = Convert.ToSingle(plugin.Read("EyeOpenMax") ?? 1f);
                 if (!float.IsFinite(open) || open is < 0 or > 1) throw new InvalidDataException("眼睑开合值无效。");
                 EyeOpenMax = open;
-                // Blinking is not simulated in a static preview, whether enabled or disabled.
+                DisableBlinking = plugin.Read("DisableBlinking") is true;
                 break;
             case "KK_PregnancyPlus":
                 if (plugin.Keys.Any(k => k is not ("pluginVersion" or "clothingOffsetVersion")))
@@ -54,7 +54,7 @@ internal sealed partial class NativeCardExtensions
             case "orange.spork.advikplugin":
                 if (new[] { "ShoulderRotatorEnabled", "EnableSpineFKHints", "EnableShoulderFKHints", "EnableToeFKHints", "EnableHeelzHoverAll", "EnableHeelzHoverLeftFoot", "EnableHeelzHoverRightFoot", "BreathingEnabled" }.Any(k => plugin.Read(k) is true)
                     || Convert.ToSingle(plugin.Read("SpineStiffness") ?? 0f) != 0)
-                    Warnings.Add("AdvIK：已启用的姿势/呼吸控制不适用于静态预览。");
+                    Warnings.Add("AdvIK：已启用的附加姿势/呼吸控制尚未还原。");
                 break;
             case "orange.spork.outfitpainter":
                 // The plugin writes edits into the standard coordinate colors/gloss values.

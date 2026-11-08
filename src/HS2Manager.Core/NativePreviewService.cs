@@ -363,7 +363,7 @@ public sealed class NativePreviewService
             && m.Submeshes.All(s => s != null && s.Length % 3 == 0 && s.All(i => i >= 0 && i < m.Positions.Length / 3))
             && m.Indices.Length % 3 == 0 && m.Positions.All(float.IsFinite) && m.Normals.All(float.IsFinite) && m.UV.All(float.IsFinite)
             && m.Indices.All(i => i >= 0 && i < m.Positions.Length / 3));
-    private static List<NativeAssetEntry> LoadIndex(string root, string cache, IProgress<string>? progress, List<string> warnings, CancellationToken cancellation)
+    internal static List<NativeAssetEntry> LoadIndex(string root, string cache, IProgress<string>? progress, List<string> warnings, CancellationToken cancellation)
     {
         string directory = Path.Combine(root, "list", "characustom");
         var files = Directory.GetFiles(directory, "*.unity3d", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase).ToArray();

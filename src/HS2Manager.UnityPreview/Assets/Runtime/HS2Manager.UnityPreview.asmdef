@@ -1,0 +1,7 @@
+{
+  "name": "HS2Manager.UnityPreview",
+  "references": ["HS2Manager.Preview.Contracts", "Unity.Postprocessing.Runtime"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false
+}

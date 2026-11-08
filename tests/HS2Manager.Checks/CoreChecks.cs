@@ -18,6 +18,9 @@ internal static class CoreChecks
         var none = CancellationToken.None;
         try
         {
+            Check(typeof(CardParser).Assembly.GetType("HS2Manager.Core.PreviewSessionService") == null
+                && typeof(CardParser).Assembly.GetType("HS2Manager.Protocol.BridgeWire") == null,
+                "Production core excludes Studio launcher and legacy bridge protocol");
             var parser = new CardParser();
             var source = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara", "male"), "*.png", SearchOption.AllDirectories).First();
             var originals = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara"), "*.png", SearchOption.AllDirectories).Select(p => new FileInfo(p)).ToList();

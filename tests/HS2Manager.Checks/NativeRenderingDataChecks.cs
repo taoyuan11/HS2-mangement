@@ -4,6 +4,12 @@ internal static class NativeRenderingDataChecks
 {
     public static void Run()
     {
+        float[][] keys = [[10,0,0,350,0,0,1,1,1],[15,0,0,355,0,0,1.5f,1,1],[20,0,0,0,0,0,2,1,1]];
+        if (NativeShapeRig.Interpolate(keys,"face",-.5f,0,true)!=5 || NativeShapeRig.Interpolate(keys,"face",1.5f,6,true)!=2.5f ||
+            NativeShapeRig.Interpolate(keys,"face",1.5f,3,true)!=365 || NativeShapeRig.Interpolate(keys,"cf_s_Mouth",1.5f,3,true)!=0 ||
+            NativeShapeRig.Interpolate(keys,"face",-.5f,0,false)!=10 || NativeShapeRig.Interpolate(keys,"face",.25f,0,true)!=12.5f)
+            throw new Exception("Slider extrapolation lost position/scale, rotation wrap, protected rotations or stock limits.");
+        Console.WriteLine("PASS unlocked shape sliders, angular wrap and stock limits");
         var colors = new List<object?>
         {
             Property(1, 0, "cloth", "Color", new List<object?> { .1f, .3f, .7f, 1f }),

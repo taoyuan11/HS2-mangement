@@ -34,12 +34,13 @@ internal static class Program
             try { WindowCloseUiChecks.Run(root); return 0; }
             finally { app.Shutdown(); }
         }
-        if (args.Contains("--native-preview"))
+        if (args.Contains("--native-preview") || args.Contains("--unity-preview"))
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
             int index = Array.IndexOf(args, "--game");
             int sample = Array.IndexOf(args, "--card");
-            try { NativePreviewUiChecks.Run(app, root, index >= 0 ? args[index + 1] : @"Z:\games\hs2\HS two DX - TSYMQ", sample >= 0 ? args[sample + 1] : null); return 0; }
+            int player=Array.IndexOf(args,"--player");
+            try { UnityPreviewUiChecks.Run(app,root,index >= 0 ? args[index + 1] : @"Z:\games\hs2\HS two DX - TSYMQ",player>=0?args[player+1]:UnityPreviewSession.DefaultPlayer,sample>=0?args[sample+1]:null);return 0; }
             finally { app.Shutdown(); }
         }
         var settings = new AppSettings { GamePath = Path.Combine(output, "NoGame"), WindowWidth = 1440, WindowHeight = 900 };
