@@ -302,6 +302,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         var cards = SelectedRecords;
         return RunWork("恢复人物卡", async (ct, progress) => { int done = 0; foreach (var card in cards) { ct.ThrowIfCancellationRequested(); progress.Report(new(done, cards.Count, card.FileName)); await Files.RestoreAsync(card, ct); done++; } return $"已恢复 {done} 张人物卡"; });
     }
+    public Task DeleteAsync(IReadOnlyList<CardDeleteRequest> cards)
+    {
+        var snapshot = cards.DistinctBy(c => c.Id).ToArray();
+        return RunWork("永久删除人物卡", async (ct, progress) =>
+        {
+            var results = await Files.DeleteAsync(snapshot, progress, ct);
+            int succeeded = results.Count(r => r.Success), failed = results.Count - succeeded, remaining = snapshot.Length - results.Count;
+            string summary = $"永久删除：完成 {succeeded} 项，失败 {failed} 项，未处理 {remaining} 项" + (ct.IsCancellationRequested ? "（已取消）" : "");
+            string details = summary + "\n\n" + string.Join("\n\n", results.Select(r => r.Source + "\n" + r.Message));
+            WriteLog("永久删除", details);
+            UiDispatcher.Post(() => ShowReport?.Invoke("永久删除结果", details));
+            return summary;
+        });
+    }
     private string Summarize(List<FileOperationResult> results)
     {
         var failures = results.Where(x => !x.Success).ToList();

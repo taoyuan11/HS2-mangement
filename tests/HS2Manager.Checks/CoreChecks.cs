@@ -11,6 +11,7 @@ internal static class CoreChecks
         await NativeCompatibilityChecks.Run(output);
         await ScanSettingsChecks.Run(output);
         await PreviewCacheChecks.Run(output);
+        await CardDeletionChecks.Run(output);
         var sandbox = Path.Combine(output, "core-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(sandbox);
         int passed = 0;

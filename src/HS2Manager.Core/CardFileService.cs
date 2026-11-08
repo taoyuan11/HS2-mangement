@@ -20,7 +20,7 @@ public sealed class FileOperationRecord
 }
 public sealed record FileOperationResult(string Source, string? Destination, bool Success, string Message);
 
-public sealed class CardFileService(CardRepository repository)
+public sealed partial class CardFileService(CardRepository repository)
 {
     private readonly CardParser parser = new();
     private string JournalPath(FileOperationRecord op) => Path.Combine(repository.DataPath, "Operations", op.Id + ".json");
@@ -192,11 +192,26 @@ public sealed class CardFileService(CardRepository repository)
     public async Task<List<string>> RecoverAsync(CancellationToken cancellation)
     {
         var messages = new List<string>();
-        foreach (var op in Operations().Where(x => x.Phase is not ("Indexed" or "RolledBack")))
+        var operations = Operations();
+        foreach (var op in operations.Where(x => x.Kind == "Delete" && x.Phase is not ("Indexed" or "RolledBack")))
+        {
+            cancellation.ThrowIfCancellationRequested();
+            try { messages.Add(RecoverDeletion(op)); }
+            catch (Exception ex) when (IsDeletionError(ex)) { messages.Add("删除清理待恢复：" + op.Source + "：" + ex.Message); }
+        }
+        foreach (var op in operations.Where(x => x.Kind != "Delete" && x.Phase is not ("Indexed" or "RolledBack" or "Superseded")))
         {
             cancellation.ThrowIfCancellationRequested();
             try
             {
+                // A historical move/import must never recreate a permanently deleted card.
+                var deletion = operations.FirstOrDefault(x => x.Kind == "Delete" && x.Card?.Id == op.Card?.Id &&
+                    op.Card != null && x.CreatedUtc >= op.CreatedUtc && x.Phase != "RolledBack");
+                if (op.Kind != "Export" && deletion != null)
+                {
+                    if (deletion.Phase is "FileDeleted" or "Indexed") { op.Phase = "Superseded"; Save(op); }
+                    messages.Add("历史操作由永久删除接管：" + op.Source); continue;
+                }
                 if (File.Exists(op.Destination) && op.Hash.Length > 0 && await HashAsync(op.Destination, cancellation) == op.Hash)
                 {
                     if (op.Kind is "Import" or "Export" || (!File.Exists(op.Source) && Directory.Exists(Path.GetDirectoryName(op.Source))))

@@ -37,7 +37,8 @@ internal sealed class CheckApplication(string[] args) : App
         try
         {
             string Arg(string key, string fallback) => Array.IndexOf(args, key) is int i && i >= 0 ? args[i + 1] : fallback;
-            if (args.Contains("--unity-interaction")) await UnityInteractionChecks.RunAsync(args);
+            if (args.Contains("--card-delete")) await CardDeletionUiChecks.RunAsync(root);
+            else if (args.Contains("--unity-interaction")) await UnityInteractionChecks.RunAsync(args);
             else if (args.Contains("--card-export")) await LayoutChecks.RunAsync(root);
             else if (args.Contains("--unity-performance")) await UnityPerformanceChecks.RunAsync(args);
             else if (args.Contains("--unity-preview") || args.Contains("--native-preview"))
@@ -45,7 +46,7 @@ internal sealed class CheckApplication(string[] args) : App
             else
             {
                 await WindowCloseUiChecks.RunAsync(root);
-                if (!args.Contains("--window-close")) await LayoutChecks.RunAsync(root);
+                if (!args.Contains("--window-close")) { await CardDeletionUiChecks.RunAsync(root); await LayoutChecks.RunAsync(root); }
             }
             if (UiTest.BindingErrors.Count > 0) throw new Exception("XAML binding errors:\n" + string.Join("\n", UiTest.BindingErrors.Distinct()));
             Console.WriteLine("ALL WINUI 3 CHECKS PASSED");

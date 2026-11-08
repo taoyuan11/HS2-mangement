@@ -6,6 +6,7 @@ namespace HS2Manager.App;
 public static class Dialogs
 {
     private static readonly SemaphoreSlim gate = new(1, 1);
+    public static bool IsOpen => gate.CurrentCount == 0;
     public static async Task<ContentDialogResult> ShowAsync(Window owner, ContentDialog dialog)
     {
         await gate.WaitAsync();
@@ -65,6 +66,23 @@ public static class Dialogs
     }
     public static async Task<bool> Confirm(Window owner, string title, string message)
         => await ShowAsync(owner, new ContentDialog { Title = title, Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap }, PrimaryButtonText = "确定", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close }) == ContentDialogResult.Primary;
+    public static async Task<bool> ConfirmDelete(Window owner, IReadOnlyList<CardDeleteRequest> cards)
+    {
+        var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
+        panel.Children.Add(new TextBlock { Text = $"永久删除选中的 {cards.Count} 项？\n\n将删除原始 PNG 文件以及收藏、标签和备注。\n不经过回收站，无法恢复。", TextWrapping = TextWrapping.Wrap });
+        foreach (var card in cards)
+        {
+            var item = new StackPanel { Spacing = 3 };
+            item.Children.Add(new TextBlock { Text = System.IO.Path.GetFileName(card.Path), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+            item.Children.Add(new TextBlock { Text = card.Path, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 12 });
+            panel.Children.Add(item);
+        }
+        return await ShowAsync(owner, new ContentDialog
+        {
+            Title = "永久删除人物卡", PrimaryButtonText = "永久删除", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close,
+            Content = new ScrollViewer { Content = panel, MaxHeight = 360, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }
+        }) == ContentDialogResult.Primary;
+    }
     public static async Task Report(Window owner, string title, string text, Action? action = null, string? actionTitle = null)
     {
         var content = new TextBox { AcceptsReturn = true, Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 460 };

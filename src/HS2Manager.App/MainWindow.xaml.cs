@@ -188,9 +188,37 @@ public partial class MainWindow : Window
     private async void Rename_Click(object sender, RoutedEventArgs e)
     { if (!ViewModel.CanModify || ViewModel.SelectionCount != 1 || ViewModel.SelectedCard == null || ViewModel.IsTrash) return; var name = await Dialogs.Prompt(this, "重命名人物卡", "修改文件名，人物卡内的角色名称与数据保持完整。", ViewModel.SelectedCard.Record.FileName); if (name != null) await ViewModel.RenameAsync(name); }
     private async void Quarantine_Click(object sender, RoutedEventArgs e)
+        => await ConfirmQuarantineAsync();
+    private async Task ConfirmQuarantineAsync()
     {
-        if (!ViewModel.CanModify || ViewModel.IsTrash) return;
+        if (!ViewModel.CanModify || ViewModel.IsTrash || ViewModel.IsPreview || Dialogs.IsOpen || closing) return;
         if (await Dialogs.Confirm(this, "移入可恢复隔离区", $"将选中的 {ViewModel.SelectionCount} 项移入隔离区？\n\n它们将暂时离开游戏人物卡目录，可随时在“可恢复隔离区”恢复。")) await ViewModel.QuarantineAsync();
+    }
+    private async void Delete_Click(object sender, RoutedEventArgs e) => await ConfirmDeleteAsync();
+    internal async Task ConfirmDeleteAsync()
+    {
+        if (!ViewModel.CanModify || ViewModel.IsPreview || Dialogs.IsOpen || closing) return;
+        var snapshot = ViewModel.SelectedRecords.Select(CardDeleteRequest.FromCard).ToArray();
+        if (await Dialogs.ConfirmDelete(this, snapshot) && !closing && !ViewModel.IsPreview) await ViewModel.DeleteAsync(snapshot);
+    }
+    private bool CanHandleDeleteKey()
+    {
+        if (!ViewModel.CanModify || ViewModel.IsPreview || Dialogs.IsOpen || closing ||
+            VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot).Count > 0) return false;
+        var focus = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
+        while (focus != null)
+        {
+            if (focus is TextBox or RichEditBox or PasswordBox or AutoSuggestBox) return false;
+            focus = VisualTreeHelper.GetParent(focus);
+        }
+        return true;
+    }
+    internal async Task<bool> HandleDeleteKeyAsync(bool shift)
+    {
+        if (!CanHandleDeleteKey()) return false;
+        if (shift) await ConfirmDeleteAsync();
+        else { if (ViewModel.IsTrash) return false; await ConfirmQuarantineAsync(); }
+        return true;
     }
     private async void Restore_Click(object sender, RoutedEventArgs e) { if (ViewModel.CanModify && ViewModel.IsTrash) await ViewModel.RestoreAsync(); }
     private void More_Click(object sender, RoutedEventArgs e)
@@ -214,11 +242,11 @@ public partial class MainWindow : Window
     }
     private async void Operations_Click(object sender, RoutedEventArgs e)
     {
-        var rows = ViewModel.Files.Operations().Take(100).Select(op => $"{op.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}  {OperationLabel(op.Kind)}  [{PhaseLabel(op.Phase)}]\n{op.Source}\n→ {op.Destination}" + (op.Error.Length > 0 ? "\n" + op.Error : ""));
+        var rows = ViewModel.Files.Operations().Take(100).Select(op => $"{op.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}  {OperationLabel(op.Kind)}  [{PhaseLabel(op.Phase)}]\n{op.Source}" + (op.Kind == "Delete" ? "" : "\n→ " + op.Destination) + (op.Error.Length > 0 ? "\n" + op.Error : ""));
         await Dialogs.Report(this, "文件操作日志", rows.Any() ? string.Join("\n\n", rows) : "还没有文件操作记录。\n扫描、标签与收藏不会修改人物卡文件。", () => _ = ViewModel.RunWork("恢复未完成操作", async (ct, _) => string.Join("；", await ViewModel.Files.RecoverAsync(ct))), "恢复未完成操作");
     }
-    private static string OperationLabel(string kind) => kind switch { "Import" => "导入", "Export" => "导出", "Move" => "移动", "Rename" => "重命名", "Quarantine" => "隔离", "Restore" => "恢复", _ => kind };
-    private static string PhaseLabel(string phase) => phase switch { "Indexed" => "完成", "RolledBack" => "已回滚", "NeedsAttention" => "需要检查", "Interrupted" => "已中断", _ => "待恢复" };
+    private static string OperationLabel(string kind) => kind switch { "Import" => "导入", "Export" => "导出", "Move" => "移动", "Rename" => "重命名", "Quarantine" => "隔离", "Restore" => "恢复", "Delete" => "永久删除", _ => kind };
+    private static string PhaseLabel(string phase) => phase switch { "Indexed" => "完成", "RolledBack" => "已回滚 / 未执行", "NeedsAttention" => "需要检查", "Interrupted" => "已中断", "FileDeleted" => "文件已删除，待清理", "Superseded" => "已由永久删除取代", _ => "待恢复" };
     private void Logs_Click(object sender, RoutedEventArgs e)
     {
         string folder = Path.Combine(ViewModel.DataDirectory, "Logs"); Directory.CreateDirectory(folder);
@@ -270,7 +298,13 @@ public partial class MainWindow : Window
         else if ((InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0 && e.Key == VirtualKey.F) { SearchBox.Focus(FocusState.Programmatic); SearchBox.SelectAll(); e.Handled = true; }
         else if ((InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0 && e.Key == VirtualKey.R && !ViewModel.IsBusy) { await ViewModel.RefreshAsync(); e.Handled = true; }
         else if ((InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0 && e.Key == VirtualKey.S) { if (ViewModel.IsPreview) Screenshot_Click(sender, e); else if (ViewModel.CanModify) ViewModel.SaveDetails(); e.Handled = true; }
-        else if (e.Key == VirtualKey.Delete && ViewModel.CanModify && FocusManager.GetFocusedElement(Root.XamlRoot) is not TextBox && !ViewModel.IsPreview) { Quarantine_Click(sender, e); e.Handled = true; }
+        else if (e.Key == VirtualKey.Delete && CanHandleDeleteKey())
+        {
+            bool shift = (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift) & CoreVirtualKeyStates.Down) != 0;
+            if (!shift && ViewModel.IsTrash) return;
+            e.Handled = true;
+            await HandleDeleteKeyAsync(shift);
+        }
         else if (e.Key == VirtualKey.F2 && ViewModel.CanModify && FocusManager.GetFocusedElement(Root.XamlRoot) is not TextBox) { Rename_Click(sender, e); e.Handled = true; }
     }
 }
