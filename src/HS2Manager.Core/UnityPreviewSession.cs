@@ -22,6 +22,7 @@ public sealed class UnityPreviewSession : IDisposable
     private readonly Dictionary<long,TaskCompletionSource<KernelMessage>> loads=[];
     private long sequence;
     private int disposed;
+    public bool IsUsable => Volatile.Read(ref disposed)==0 && !lifetime.IsCancellationRequested;
     public int ProcessId {get;private set;}
     public long CurrentLoad {get;private set;}
     public UnityFrame? LatestFrame {get;private set;}
@@ -46,6 +47,8 @@ public sealed class UnityPreviewSession : IDisposable
 
     public async Task StartAsync(string player,string data,CancellationToken cancellation)
     {
+        using var startup=CancellationTokenSource.CreateLinkedTokenSource(cancellation,lifetime.Token);
+        cancellation=startup.Token;
         if(!File.Exists(player))throw new FileNotFoundException("便携包缺少独立 Unity 内核，请重新解压完整安装包。",player);
         Directory.CreateDirectory(Path.Combine(data,"Logs"));
         pipe=new NamedPipeServerStream("HS2Manager.Unity."+session,PipeDirection.Out,1,PipeTransmissionMode.Byte,PipeOptions.Asynchronous|PipeOptions.CurrentUserOnly);
@@ -65,9 +68,9 @@ public sealed class UnityPreviewSession : IDisposable
         });
         try
         {
-            await Task.WhenAll(pipe.WaitForConnectionAsync(cancellation),events.WaitForConnectionAsync(cancellation)).WaitAsync(TimeSpan.FromSeconds(60),cancellation);
+            await Task.WhenAll(pipe.WaitForConnectionAsync(cancellation),events.WaitForConnectionAsync(cancellation)).WaitAsync(TimeSpan.FromSeconds(60),cancellation).ConfigureAwait(false);
             reader=Task.Run(Read);
-            await ready.Task.WaitAsync(TimeSpan.FromSeconds(60),cancellation);
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(60),cancellation).ConfigureAwait(false);
         }
         catch{Dispose();throw;}
     }
@@ -94,10 +97,10 @@ public sealed class UnityPreviewSession : IDisposable
     }
     private void Fault(Exception error)
     {
+        lifetime.Cancel();
         ready.TrySetException(error);
         lock(loads)foreach(var pending in loads.Values)pending.TrySetException(error);
         Failed?.Invoke(error.Message);
-        lifetime.Cancel();
     }
     public void Send(KernelMessage message)
     {
@@ -107,6 +110,7 @@ public sealed class UnityPreviewSession : IDisposable
     }
     public async Task<KernelMessage> LoadAsync(string definition,long generation,CancellationToken cancellation)
     {
+        cancellation.ThrowIfCancellationRequested();
         CurrentLoad=generation;sequence=0;LatestFrame=null;
         var completion=new TaskCompletionSource<KernelMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock(loads)loads[generation]=completion;
@@ -117,6 +121,15 @@ public sealed class UnityPreviewSession : IDisposable
             return await completion.Task.WaitAsync(TimeSpan.FromMinutes(3),cancellation);
         }
         finally{lock(loads)loads.Remove(generation);}
+    }
+    public void Unload()
+    {
+        long previous=CurrentLoad;
+        CurrentLoad=0;sequence=0;LatestFrame=null;
+        if(previous==0 || !IsUsable)return;
+        lock(loads)if(loads.TryGetValue(previous,out var pending))pending.TrySetCanceled();
+        try{Send(new KernelMessage{Kind="Cancel",Load=previous});}
+        catch(IOException ex){Fault(ex);}
     }
     public UnityFrame? ReadFrame()
     {

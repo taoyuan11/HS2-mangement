@@ -289,6 +289,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string PreviewName { get => previewName; private set => Set(ref previewName, value); }
     public string PreviewLimitations => "原始 Unity 材质预览 · 尚未通过全部游戏画面及动态对照；环境和未支持效果见兼容性说明。";
     private UnityPreviewSession? unitySession;
+    // The viewport only binds a completed load. The owned process also survives
+    // resource preparation, cancelled loads and recoverable card errors.
+    private UnityPreviewSession? ownedUnitySession;
+    private Task? unityStartup;
     public UnityPreviewSession? UnitySession {get=>unitySession;private set=>Set(ref unitySession,value);}
     public string UnityPlayerPath {get;set;}=UnityPreviewSession.DefaultPlayer;
     private Rect3D previewBounds=Rect3D.Empty;
@@ -331,26 +335,27 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
     private async Task LoadPreviewAsync(CardRecord card, int generation, CancellationTokenSource cancellation)
     {
-        UnitySession?.Dispose();UnitySession=null;previewBounds=Rect3D.Empty;
+        UnitySession=null;previewBounds=Rect3D.Empty;faceBounds=Rect3D.Empty;
         IsPreview = true; PreviewBusy = true; PreviewError = ""; PreviewWarnings = ""; PreviewModel = null;
         PreviewName = card.Name; previewCard = card; PreviewStatus = "正在读取独立预览资源…";
         try
         {
+            ownedUnitySession?.Unload();
             var progress = new Progress<string>(text => { if (generation == previewGeneration && IsPreview && PreviewBusy) PreviewStatus = text; });
             var definition = await new UnityCharacterService().PrepareAsync(Settings.GamePath, DataDirectory, card, progress, cancellation.Token);
             if (generation != previewGeneration || !IsPreview) return;
             string directory=Path.Combine(DataDirectory,"UnityPreview","sessions");Directory.CreateDirectory(directory);
             string path=Path.Combine(directory,Guid.NewGuid().ToString("N")+".json");
-            var session=new UnityPreviewSession();
             try
             {
                 File.WriteAllText(path,System.Text.Json.JsonSerializer.Serialize(definition,UnityCharacterService.JsonOptions));
-                PreviewStatus="正在启动独立 Unity 内核…";
-                await session.StartAsync(UnityPlayerPath,DataDirectory,cancellation.Token);
+                var session=await GetUnitySessionAsync(cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
+                PreviewStatus="正在加载角色模型…";
                 var loaded=await session.LoadAsync(path,generation,cancellation.Token);
-                if(generation!=previewGeneration || !IsPreview){session.Dispose();return;}
+                if(generation!=previewGeneration || !IsPreview)return;
+                session.Send(new HS2Manager.Preview.Contracts.KernelMessage{Kind="Play",Playing=true});
                 UnitySession=session;
-                session.Failed+=text=>Application.Current.Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(UnitySession,session)){PreviewError=text;PreviewStatus="独立内核连接中断";}});
                 var b=loaded.Values;
                 previewBounds=new Rect3D(b[0]-b[3]/2,b[1]-b[4]/2,b[2]-b[5]/2,b[3],b[4],b[5]);
                 faceBounds=new Rect3D(b[6]-b[9]/2,b[7]-b[10]/2,b[8]-b[11]/2,b[9],b[10],b[11]);
@@ -359,7 +364,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 PreviewStatus="独立 Unity 2018.4 · 原始 Shader · "+EnvironmentLabel;
                 if(PreviewWarnings.Length>0)WriteLog("独立 Unity 兼容性",PreviewWarnings);
             }
-            catch{session.Dispose();throw;}
             finally{File.Delete(path);}
         }
         catch (OperationCanceledException) { }
@@ -374,6 +378,41 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (ReferenceEquals(previewCancellation, cancellation)) previewCancellation = null;
             cancellation.Dispose();
         }
+    }
+    private async Task<UnityPreviewSession> GetUnitySessionAsync(CancellationToken cancellation)
+    {
+        if(ownedUnitySession is not {IsUsable:true} || unityStartup is {IsFaulted:true})
+        {
+            DisposeUnitySession();
+            var created=new UnityPreviewSession();
+            ownedUnitySession=created;
+            created.Failed+=text=>
+            {
+                long failedLoad=created.CurrentLoad;
+                Application.Current.Dispatcher.BeginInvoke(()=>
+                {
+                    if(ReferenceEquals(ownedUnitySession,created) && IsPreview && !PreviewBusy
+                        && (!created.IsUsable || failedLoad==previewGeneration))
+                    {UnitySession=null;PreviewError=text;PreviewStatus="独立内核连接中断";}
+                });
+            };
+            // Card cancellation must not terminate startup shared by the next selection.
+            unityStartup=created.StartAsync(UnityPlayerPath,DataDirectory,CancellationToken.None);
+        }
+        var session=ownedUnitySession;
+        var startup=unityStartup!;
+        if(!startup.IsCompleted)PreviewStatus="正在启动独立 Unity 内核…";
+        await startup.WaitAsync(cancellation);
+        return session;
+    }
+    private void DisposeUnitySession()
+    {
+        UnitySession=null;
+        var session=ownedUnitySession;var startup=unityStartup;
+        ownedUnitySession=null;unityStartup=null;
+        session?.Dispose();
+        // StartAsync does not need the UI dispatcher and is cancelled by Dispose.
+        try{startup?.GetAwaiter().GetResult();}catch{}
     }
     public void SetPreviewAspect(double width, double height)
     { if (width > 0 && height > 0) { previewWidth = width; previewAspect = width / height; if (autoFrame) ResetCamera(); } }
@@ -437,8 +476,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public async Task ClosePreviewAsync()
     {
         ++previewGeneration; IsPreview = false; previewCancellation?.Cancel(); PreviewModel = null; PreviewBusy = false; faceBounds = Rect3D.Empty;
-        UnitySession?.Dispose();UnitySession=null;previewBounds=Rect3D.Empty;
+        DisposeUnitySession();previewBounds=Rect3D.Empty;
         var pending = previewLoads.ToArray(); if (pending.Length > 0) await Task.WhenAll(pending);
     }
-    public void Dispose() { operationCancellation?.Cancel(); previewCancellation?.Cancel();UnitySession?.Dispose(); }
+    public void Dispose() { BeginShutdown();previewCancellation?.Cancel();DisposeUnitySession(); }
 }

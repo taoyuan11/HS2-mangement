@@ -9,7 +9,9 @@ internal static class UnitySessionChecks
 {
     public static async Task Run(string player,string definition,string output)
     {
+        output=Path.Combine(output,Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(output);
+        Console.WriteLine("Unity session check output: "+output);
         var session=new UnityPreviewSession();int pid=0;
         try
         {
@@ -39,6 +41,9 @@ internal static class UnitySessionChecks
             }
             await session.LoadAsync(definition,3,default);
             frame=await Frame(3,640,360);
+            session.Unload();
+            if(session.CurrentLoad!=0 || session.LatestFrame!=null || session.ReadFrame()!=null || !session.IsUsable || !Running(pid))
+                throw new Exception("Unloading a card retained its frame or stopped the shared kernel.");
             try{await session.LoadAsync(Path.Combine(output,"missing-definition.json"),4,default);throw new Exception("Missing resource accepted.");}catch(IOException){}
             string corrupt=Path.Combine(output,"corrupt-definition.json");File.WriteAllText(corrupt,"{broken");
             try{await session.LoadAsync(corrupt,40,default);throw new Exception("Corrupt definition accepted.");}catch(IOException){}
@@ -46,9 +51,11 @@ internal static class UnitySessionChecks
             data.BundlePaths=[..data.BundlePaths,Path.Combine(output,"disconnected-NAS","missing.unity3d")];File.WriteAllText(corrupt,JsonSerializer.Serialize(data,UnityCharacterService.JsonOptions));
             try{await session.LoadAsync(corrupt,41,default);throw new Exception("Missing bundle accepted.");}catch(IOException){}
             await session.LoadAsync(definition,5,default);frame=await Frame(5,640,360);
+            if(session.ProcessId!=pid || !session.IsUsable)throw new Exception("Reload did not preserve the healthy kernel.");
             var crash=new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);session.Failed+=message=>crash.TrySetResult(message);
             using(var owned=Process.GetProcessById(pid))owned.Kill(entireProcessTree:true);
             await crash.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            if(session.IsUsable)throw new Exception("Crashed kernel is still reusable.");
             session.Dispose();
             if(Running(pid))throw new Exception("Owned player survived disposal.");
             Console.WriteLine("PASS Unity IPC: BGRA, camera, resize, screenshot, environment restore, cancellation, latest load, missing file/bundle, corrupt definition, retry, crash detection and process cleanup");
