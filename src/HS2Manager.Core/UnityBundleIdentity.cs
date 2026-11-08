@@ -81,7 +81,6 @@ internal static class UnityBundleIdentity
             .Concat(definition.Shaders.Select(s => s.Source)).Concat(definition.Shaders.SelectMany(s => s.Defaults.Select(d => d.Texture))))
             if (reference != null && replacements.TryGetValue(reference.Bundle, out string? replacement)) reference.Bundle = replacement;
         definition.BundlePaths = paths.Select(p => replacements.GetValueOrDefault(p, p)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        definition.Diagnostics = definition.Diagnostics.Append("已在独立缓存中消除 MOD 资源包内部名称冲突，原始资源未修改。").Distinct().ToArray();
         return true;
     }
 

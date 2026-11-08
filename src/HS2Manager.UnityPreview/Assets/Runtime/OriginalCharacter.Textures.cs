@@ -56,6 +56,8 @@ namespace HS2Manager.UnityPreview
             catch(System.IO.IOException error){Diagnostics.Add("服装纹理合成未启用："+error.Message);return;}
             for (int group = 0; group < 3; group++)
             {
+                var names = config.Get("rendNormal0" + (group+1)).Children.Select(p => p.Text).Where(n=>!string.IsNullOrEmpty(n)).ToArray();
+                if(names.Length==0)continue;
                 string prefix = "clothes." + part.Slot + ".";
                 string mainKey = prefix + (group == 0 ? "MainTex" : "MainTex0" + (group + 1));
                 if (!selections.ContainsKey(mainKey)) continue;
@@ -89,7 +91,6 @@ namespace HS2Manager.UnityPreview
                 detail.SetFloat("_Metallic4",config.Float("defMetallic04"));
                 var diffuse = Compose(main,creator,main.width,main.height);
                 var properties = Compose(Texture2D.blackTexture,detail,main.width,main.height);
-                var names = config.Get("rendNormal0" + (group+1)).Children.Select(p => p.Text).ToArray();
                 foreach (var renderer in PartRenderers(part).Where(r => names.Contains(r.name)))
                 {
                     var material = renderer.sharedMaterial;

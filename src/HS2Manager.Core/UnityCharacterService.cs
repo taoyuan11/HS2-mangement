@@ -123,9 +123,10 @@ public sealed class UnityCharacterService
                 }
                 NativeCardExtensions.Apply(built.Rig, appearance.BoneModifiers);
                 built.Part.Bones = Bones(built.Rig);
-                foreach (string key in new[] { "TexD", "TexC" })
-                    if (entry.Get("TexAB") is not ("" or "0") && entry.Get(key) is not ("" or "0"))
-                        Select(role + "." + slot + "." + key, entry.Get("TexAB"), entry.Get(key), entry.Archive);
+                bool hairTexture=hair || role=="accessory" && built.Part.Components.Any(c=>c.Type=="CmpAccessory" && c.Data.Float("typeHair")!=0);
+                string hairTextureKey=CardAppearanceReader.Integer(appearance.Hair,"shaderType")==0?"TexD":"TexC";
+                if(hairTexture && entry.Get("TexAB") is not ("" or "0") && entry.Get(hairTextureKey) is not ("" or "0"))
+                    Select(role + "." + slot + "." + hairTextureKey, entry.Get("TexAB"), entry.Get(hairTextureKey), entry.Archive);
                 if (clothing) worn[slot] = entry;
                 if (clothing)
                 {
@@ -164,6 +165,7 @@ public sealed class UnityCharacterService
         var clothesParts = CardAppearanceReader.List(appearance.Clothes, "parts");
         for (int slot = 0; slot < clothesParts.Count; slot++)
         {
+            if(!worn.ContainsKey(slot))continue;
             var colors = CardAppearanceReader.List(CardAppearanceReader.Map(clothesParts[slot]), "colorInfo");
             for (int i = 0; i < colors.Count; i++)
                 SelectCategory("clothes." + slot + ".pattern." + i, 348, CardAppearanceReader.Map(colors[i]), "pattern", "outfit.clothes.parts[" + slot + "].colorInfo[" + i + "].pattern");
@@ -214,6 +216,7 @@ public sealed class UnityCharacterService
         using (PreviewPerformance.Measure("cardHash"))
             cardHash = metadata.Get("card-hash", PreviewMetadataCache.Stamp(card.Path), () =>
             { using var source = File.OpenRead(card.Path); return Convert.ToHexString(SHA256.HashDataAsync(source, cancellation).GetAwaiter().GetResult()); }, cancellation);
+        var heels = UnityHeelReader.Read(worn.GetValueOrDefault(7),warnings);
         var definition = new CharacterDefinition
         {
             Name = card.Name, Sex = appearance.Sex, CardHash = cardHash,
@@ -223,7 +226,7 @@ public sealed class UnityCharacterService
             MaterialEdits = MaterialEdits(appearance),
             Shaders = shaders,
             MotionState = pose?.Get("Clip") ?? "",
-            Heels = UnityHeelReader.Read(worn.GetValueOrDefault(7),warnings),
+            Heels = heels,
             Environment = environment,
             Overlays = appearance.SkinOverlays.Select(o => new OverlayDefinition { Type=o.Type, Texture=Embedded(o.Texture) })
                 .Concat(appearance.ClothesOverlays.Select(o => new OverlayDefinition { Name=o.Name, Replace=o.Override, Texture=Embedded(o.Texture) })).ToArray()

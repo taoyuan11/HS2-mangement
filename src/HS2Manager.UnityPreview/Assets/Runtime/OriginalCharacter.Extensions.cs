@@ -184,7 +184,9 @@ namespace HS2Manager.UnityPreview
                                 continue;
                             }
                             if(edit.Kind=="queue"){material.renderQueue=(int)edit.Number;continue;}
-                            if(!material.HasProperty(edit.Property))throw new IOException("原始材质没有属性 "+edit.Property);
+                            // Saved edits can outlive a shader change. MaterialEditor skips
+                            // properties absent from the current shader; they have no effect.
+                            if(!material.HasProperty(edit.Property))continue;
                             if(edit.Kind=="float")material.SetFloat(edit.Property,edit.Number);
                             else if(edit.Kind=="color")material.SetColor(edit.Property,new Color(edit.Values[0],edit.Values[1],edit.Values[2],edit.Values[3]));
                             else if(edit.Kind=="texture")

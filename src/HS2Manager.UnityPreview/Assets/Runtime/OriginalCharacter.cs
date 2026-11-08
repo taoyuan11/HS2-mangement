@@ -69,7 +69,10 @@ namespace HS2Manager.UnityPreview
             ApplyDryMakerState();
             InitializeHeels();
             PoseFace(1);
-            Diagnostics.Add("环境、后处理及实时动态尚未完成游戏对照验证。");
+            foreach(var entry in parts)
+                foreach(var renderer in PartRenderers(entry.Key).Where(r=>r.enabled&&r.gameObject.activeInHierarchy))
+                    if(renderer.sharedMaterials.Any(m=>m==null))
+                        Diagnostics.Add(entry.Key.Prefab.Asset+"/"+renderer.name+" 需要运行时材质分配。");
         }
 
         private void AddPart(CharacterPart part)
@@ -99,15 +102,21 @@ namespace HS2Manager.UnityPreview
             bool bindSkeleton=part.Role=="body"||part.Role=="head"||part.Role=="clothes"||part.List.String("Weights")=="1"||part.List.String("Weights")=="2"||part.Role=="accessory"&&part.List.String("Parent")=="null";
             var skinnedAccessories=new HashSet<string>(part.Components.Where(c=>c.Type=="SkinnedAccessory"&&c.Data.Float("m_Enabled",1)!=0)
                 .SelectMany(c=>c.Data.Get("meshRenderers").Children).Select(c=>c.Text));
-            foreach(var component in part.Components.Where(c=>c.Type=="BonesFramework"&&bindSkeleton))
-                foreach(var item in component.Data.Children)
+            var additionalRoots=new HashSet<string>(part.Components.Where(c=>c.Type=="BonesFramework"&&bindSkeleton)
+                .SelectMany(c=>c.Data.Children).Select(c=>c.Text).Where(n=>!string.IsNullOrEmpty(n)));
+            foreach(var rootName in additionalRoots)
                 {
-                    if(string.IsNullOrEmpty(item.Text))continue;
-                    foreach(var branch in transforms.Values.Where(t=>t.name==item.Text))
+                    foreach(var branch in transforms.Values.Where(t=>t.name==rootName))
                     {
+                        // A declared root may already belong to another declared branch.
+                        // Move the outer branch once and preserve its entire local hierarchy.
+                        bool nested=false;
+                        for(var ancestor=branch.parent;ancestor!=null&&ancestor!=copy;ancestor=ancestor.parent)
+                            if(additionalRoots.Contains(ancestor.name)){nested=true;break;}
+                        if(nested)continue;
                         Transform destination;
                         if(branch.parent!=null&&Bones.TryGetValue(branch.parent.name,out destination)&&branch!=destination)branch.SetParent(destination,false);
-                        else Diagnostics.Add("新增骨骼缺少连接点："+part.Prefab.Asset+"/"+item.Text);
+                        else Diagnostics.Add("新增骨骼缺少连接点："+part.Prefab.Asset+"/"+rootName);
                     }
                 }
             foreach(var component in part.Components.Where(c=>c.Type=="BoneImplantProcess"))
@@ -232,7 +241,7 @@ namespace HS2Manager.UnityPreview
             {
                 foreach (var material in renderer.sharedMaterials)
                 {
-                    if (material == null) { Diagnostics.Add(part.Prefab.Asset + "/" + renderer.name + " 需要运行时材质分配。"); continue; }
+                    if (material == null) continue;
                     try
                     {
                         if (material.shader == null || !material.shader.isSupported) throw new IOException("不支持原始 Shader：" + material.name);

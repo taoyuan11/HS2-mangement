@@ -17,6 +17,7 @@ namespace HS2Manager.UnityPreview
             internal string Stamp;
             internal string[] Names;
             internal readonly Dictionary<string,Object> Assets=new Dictionary<string,Object>(StringComparer.OrdinalIgnoreCase);
+            internal readonly HashSet<Type> AliasTypes=new HashSet<Type>();
         }
         private readonly Dictionary<string, BundleEntry> bundles = new Dictionary<string, BundleEntry>(StringComparer.OrdinalIgnoreCase);
         private string[] shaderSearchOrder=new string[0];
@@ -138,15 +139,27 @@ namespace HS2Manager.UnityPreview
             Object cached;if(entry.Assets.TryGetValue(key,out cached)&&cached!=null)return cached as T;
             if(entry.Names==null)entry.Names=entry.Bundle.GetAllAssetNames();
             var candidates = entry.Names.Where(name => name.Equals(reference.Asset, StringComparison.OrdinalIgnoreCase)
-                || Path.GetFileName(name).Equals(reference.Asset, StringComparison.OrdinalIgnoreCase)
-                || Path.GetFileNameWithoutExtension(name).Equals(reference.Asset, StringComparison.OrdinalIgnoreCase));
+                || AssetFileName(name).Equals(reference.Asset, StringComparison.OrdinalIgnoreCase)
+                || AssetStem(name).Equals(reference.Asset, StringComparison.OrdinalIgnoreCase));
             foreach (var candidate in candidates)
             {
                 var result = entry.Bundle.LoadAsset<T>(candidate);
                 if (result != null) {entry.Assets[key]=result;return result;}
             }
+            // Some MOD lists use the serialized object name instead of its container
+            // export name. Resolve aliases once per type, only after the normal lookup.
+            if(entry.AliasTypes.Add(typeof(T)))
+                foreach(var asset in entry.Bundle.LoadAllAssets<T>())
+                {
+                    string alias=typeof(T).FullName+"|"+asset.name;
+                    if(!entry.Assets.ContainsKey(alias))entry.Assets.Add(alias,asset);
+                }
+            if(entry.Assets.TryGetValue(key,out cached)&&cached!=null)return cached as T;
             throw new IOException("原始资源不存在：" + reference.Asset + " (" + typeof(T).Name + ") @ " + reference.Bundle);
         }
+        // Unity export names are virtual paths and may contain Windows-invalid characters.
+        private static string AssetFileName(string name) { string path=name.Replace('\\','/');return path.Substring(path.LastIndexOf('/')+1); }
+        private static string AssetStem(string name) { string file=AssetFileName(name);int dot=file.LastIndexOf('.');return dot<0?file:file.Substring(0,dot); }
         public void Dispose()
         {
             if(disposed)return;disposed=true;

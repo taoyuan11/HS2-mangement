@@ -25,14 +25,17 @@ internal static class UnityCatalogChecks
         File.WriteAllText(Path.Combine(output,"catalog.json"),JsonSerializer.Serialize(updated,new JsonSerializerOptions{WriteIndented=true}));
         Console.WriteLine("Catalog prepared: "+updated.Count);
     }
-    internal static async Task Prepare(string game,string data,string output)
+    internal static async Task Prepare(string game,string data,string output,bool femaleOnly=false)
     {
         if(Directory.Exists(output))throw new IOException("Use a fresh catalog directory.");
         Directory.CreateDirectory(output);
         var paths=Directory.EnumerateFiles(Path.Combine(game,"UserData","chara","female"),"*.png",SearchOption.TopDirectoryOnly).Order(StringComparer.OrdinalIgnoreCase).ToList();
-        if(paths.Count!=79)throw new InvalidDataException($"Expected 79 top-level female cards; found {paths.Count}.");
-        paths.Add(Path.Combine(game,"UserData","chara","navi","navi.png"));
-        paths.Add(Path.Combine(game,"UserData","chara","male","HS2_ill_M_000.png"));
+        if(paths.Count==0)throw new InvalidDataException("No top-level female cards found.");
+        if(!femaleOnly)
+        {
+            paths.Add(Path.Combine(game,"UserData","chara","navi","navi.png"));
+            paths.Add(Path.Combine(game,"UserData","chara","male","HS2_ill_M_000.png"));
+        }
         var entries=new List<Entry>();
         for(int i=0;i<paths.Count;i++)
         {
