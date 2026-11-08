@@ -17,6 +17,9 @@ namespace HS2Manager.UnityPreview
         private readonly Camera camera;
         private readonly EnvironmentDefinition data;
         private readonly List<Light> lights=new List<Light>();
+        private readonly Dictionary<Light,float> keyIntensities=new Dictionary<Light,float>();
+        private CameraClearFlags originalClearFlags;
+        private Color originalBackground;
         private PostProcessLayer layer;
         private PostProcessVolume volume;
         private IndependentTemporalAA temporal;
@@ -106,6 +109,8 @@ namespace HS2Manager.UnityPreview
                     }
                     DynamicGI.UpdateEnvironment();
                 }
+                originalClearFlags=camera.clearFlags;originalBackground=camera.backgroundColor;
+                foreach(var light in lights.Where(l=>l.name.Contains("Key")))keyIntensities.Add(light,light.intensity);
                 SetupPostProcessing();
                 originalAntialiasing=layer.antialiasingMode;
                 var interaction=Own(new GameObject("Camera interaction effects"));interaction.layer=31;
@@ -194,13 +199,20 @@ namespace HS2Manager.UnityPreview
         private Color DhhColor(int index)=>new Color(data.DhhColors[index*3]*.005f,data.DhhColors[index*3+1]*.005f,data.DhhColors[index*3+2]*.005f,1);
         private static Color ColorOf(Parameter p)=>new Color(p.Float("r"),p.Float("g"),p.Float("b"),p.Float("a",1));
         private T Own<T>(T value)where T:Object{owned.Add(value);return value;}
-        public void Customize(Color background,float intensity){camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=background;foreach(var light in lights.Where(l=>l.name.Contains("Key")))light.intensity=intensity;}
+        public void Customize(Color background,float intensity,bool useGameBackground=false,bool relativeIntensity=false)
+        {
+            camera.clearFlags=useGameBackground?originalClearFlags:CameraClearFlags.SolidColor;
+            camera.backgroundColor=useGameBackground?originalBackground:background;
+            // A backdrop choice must not replace the skybox/reflection probe used by materials.
+            // The UI uses a multiplier so 1 means the saved game lighting, even for custom scenes.
+            foreach(var entry in keyIntensities)entry.Key.intensity=relativeIntensity?entry.Value*intensity:intensity;
+            ResetHistory();
+        }
         public void Restore()
         {
-            camera.clearFlags=data.DhhEnabled&&RenderSettings.skybox!=null?CameraClearFlags.Skybox:CameraClearFlags.SolidColor;
-            camera.backgroundColor=new Color(data.Background[0],data.Background[1],data.Background[2],1);
-            foreach(var light in lights.Where(l=>l.name.Contains("Key")))
-            {var original=data.Lights.FirstOrDefault(l=>l.Name==light.name);if(original!=null)light.intensity=original.Parameters.Float("m_Intensity",1);}
+            camera.clearFlags=originalClearFlags;camera.backgroundColor=originalBackground;
+            foreach(var entry in keyIntensities)entry.Key.intensity=entry.Value;
+            ResetHistory();
         }
         public void Dispose()
         {

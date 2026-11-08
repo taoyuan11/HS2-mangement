@@ -21,7 +21,7 @@ function Invoke-Dotnet([string[]]$Arguments) {
 }
 if ($PreviewTest -and !(Test-Path -LiteralPath (Join-Path $GamePath 'abdata\chara\oo_base.unity3d'))) { throw "游戏资源目录无效：$GamePath" }
 $releaseRoot = Join-Path $projectRoot 'artifacts\release'
-$packageName = 'HS2Manager-1.2.0-preview1-win-x64'
+$packageName = 'HS2Manager-1.2.0-preview2-winui3-win-x64'
 if(!$UnityPlayerDirectory){$UnityPlayerDirectory=Join-Path $projectRoot ('artifacts\unity-preview\release-'+[Guid]::NewGuid().ToString('N')); & (Join-Path $projectRoot 'build-unity-preview.ps1') -OutputPath $UnityPlayerDirectory}
 $UnityPlayerDirectory=(Resolve-Path -LiteralPath $UnityPlayerDirectory).Path
 foreach($required in @('HS2Manager.UnityPreview.exe','UnityPlayer.dll','HS2Manager.UnityPreview_Data','MonoBleedingEdge')){if(!(Test-Path -LiteralPath (Join-Path $UnityPlayerDirectory $required))){throw "独立 Unity 发布文件缺失：$required"}}
@@ -41,6 +41,7 @@ try {
         Invoke-Dotnet (@('run', '--project', (Join-Path $projectRoot 'tests\HS2Manager.UiChecks'), '-c', 'FinalValidation', '-p:UseSharedCompilation=false', '--', '--unity-preview', '--game', $GamePath, '--player', $player) + $sampleArguments)
     }
     Invoke-Dotnet @('publish', (Join-Path $projectRoot 'src\HS2Manager.App'), '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:UseSharedCompilation=false', '-o', $staging, '--nologo')
+    if (!$SkipTests) { & (Join-Path $projectRoot 'tests\Invoke-WinUiSmoke.ps1') -Executable (Join-Path $staging 'HS2Manager.exe') }
     $unityTarget=Join-Path $staging 'UnityPreview';New-Item -ItemType Directory -Path $unityTarget|Out-Null
     foreach($name in @('HS2Manager.UnityPreview.exe','UnityPlayer.dll','HS2Manager.UnityPreview_Data','MonoBleedingEdge')){Copy-Item -LiteralPath (Join-Path $UnityPlayerDirectory $name) -Destination $unityTarget -Recurse}
     $forbidden=@(Get-ChildItem -LiteralPath $staging -Recurse -File|Where-Object {$_.Name -match '^(Assembly-CSharp|IL|BepInEx|HS2_|HS2Manager\.Bridge|HS2Manager\.GameReference)' -or $_.Extension -in '.zipmod','.unity3d'})

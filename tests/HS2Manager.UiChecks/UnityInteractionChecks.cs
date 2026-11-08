@@ -1,17 +1,18 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Threading;
+using Microsoft.UI.Xaml;
+using Windows.Foundation;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
+
 using HS2Manager.App;
 using HS2Manager.Core;
 using HS2Manager.Preview.Contracts;
 
 internal static class UnityInteractionChecks
 {
-    internal static void Run(string[] args)
+    internal static async Task RunAsync(string[] args)
     {
         string Arg(string name) => args[Array.IndexOf(args, name) + 1];
         string output = Path.GetFullPath(Arg("--output"));
@@ -19,14 +20,14 @@ internal static class UnityInteractionChecks
         Directory.CreateDirectory(output);
         using var session = new UnityPreviewSession();
         var viewport = new UnityPreviewViewport();
-        var window = new Window { Content = viewport, Width = 1280, Height = 720, WindowStyle = WindowStyle.None,
-            Left = -10000, Top = -10000, ShowActivated = false, ShowInTaskbar = false };
+        var window = new Window { Content = viewport };
+        window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280,720));
         int pid = 0;
-        window.Show();
-        try { Await(Check()); }
+        window.Activate();
+        try { await Check(); }
         finally
         {
-            Await(viewport.StopAsync()); window.Close(); session.Dispose();
+            await viewport.StopAsync(); window.Close(); session.Dispose();
             if (pid > 0)
                 try { using var process = Process.GetProcessById(pid); if (!process.HasExited) throw new Exception("Player survived interaction check: " + pid); }
                 catch (ArgumentException) { }
@@ -48,7 +49,7 @@ internal static class UnityInteractionChecks
             {
                 var times = new List<double>(); long last = -1, first = -1; double sent = -100;
                 var watch = Stopwatch.StartNew();
-                void Observe(object? sender, EventArgs e)
+                void Observe(object? sender, object e)
                 {
                     if (session.LatestFrame is { } frame && frame.Sequence != last)
                     { last = frame.Sequence; if (first < 0) first = last; times.Add(watch.Elapsed.TotalMilliseconds); }
@@ -80,19 +81,19 @@ internal static class UnityInteractionChecks
             }
             // A paused character makes temporal trails visible after a single large camera change.
             session.Send(new KernelMessage { Kind = "Play", Playing = false });
-            Camera(0); await Task.Delay(1000); Save("front.png");
+            Camera(0); await Task.Delay(1000); await Save("front.png");
             Camera(Math.PI / 2); long previous = session.LatestFrame!.Sequence;
             int captured = 0; var timeout = Stopwatch.StartNew();
             while (captured < 12 && timeout.Elapsed.TotalSeconds < 5)
             {
                 if (session.LatestFrame is { } frame && frame.Sequence != previous)
-                { previous = frame.Sequence; Save($"step-{captured++:00}.png"); }
+                { previous = frame.Sequence; await Save($"step-{captured++:00}.png"); }
                 await Task.Delay(4);
             }
-            await Task.Delay(1000); Save("settled.png");
+            await Task.Delay(1000); await Save("settled.png");
             if (captured != 12) throw new Exception("Missing camera transition frames.");
             File.WriteAllText(Path.Combine(output, "interaction.json"), JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
-            viewport.Visibility = Visibility.Hidden;
+            viewport.Visibility = Visibility.Collapsed;
             await Task.Delay(150);
             long stopped = session.LatestFrame!.Sequence;
             await Task.Delay(150);
@@ -100,21 +101,11 @@ internal static class UnityInteractionChecks
             viewport.Visibility = Visibility.Visible;
             await viewport.WaitForRenderAsync();
             if (!viewport.HasFrame || viewport.RenderError != null) throw new Exception("Viewport did not resume.");
-            void Save(string name)
+            async Task Save(string name)
             {
                 var f = session.LatestFrame!;
-                var bitmap = BitmapSource.Create(f.Width, f.Height, 96, 96, PixelFormats.Bgra32, null, f.Pixels, f.Width * 4);
-                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                using var file = File.Create(Path.Combine(output, name)); encoder.Save(file);
+                await PngWriter.SaveAsync(Path.Combine(output, name), f.Width, f.Height, f.Pixels.ToArray());
             }
         }
-    }
-    private static void Await(Task task)
-    {
-        var frame = new DispatcherFrame();
-        task.ContinueWith(_ => Dispatcher.CurrentDispatcher.BeginInvoke(() => frame.Continue = false), CancellationToken.None,
-            TaskContinuationOptions.None, TaskScheduler.FromCurrentSynchronizationContext());
-        if (!task.IsCompleted) Dispatcher.PushFrame(frame);
-        task.GetAwaiter().GetResult();
     }
 }

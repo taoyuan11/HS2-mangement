@@ -1,5 +1,7 @@
 # 模型加载性能验证
 
+> 本文性能数字记录迁移前的 WPF 宿主，不代表 WinUI 3 的测量结果。当前界面和回归检查已迁移到 WinUI 3，见 [WINUI3-MIGRATION.md](WINUI3-MIGRATION.md)。
+
 2026-11-08，在同一台 Windows 电脑、同一套 `Z:\games\hs2\HS two DX - TSYMQ` NAS 资源上比较。基线为修改前 `9ee317b` 的 Release 管理器及 `safe-diagnostics-30` Player；优化版为本次 Release 管理器及 `loading-performance-release` Player，Unity 2018.4.11f1、Direct3D 11。
 
 ## 实测结果
@@ -90,7 +92,7 @@ MOD 清单同时保存归档资源目录和条目长度，人物 CSV 清单和�
 
 ```powershell
 .\.tools\dotnet\dotnet.exe build tests\HS2Manager.UiChecks -c Release --disable-build-servers -p:UseSharedCompilation=false
-.\.tools\dotnet\dotnet.exe tests\HS2Manager.UiChecks\bin\Release\net10.0-windows\HS2Manager.UiChecks.dll --unity-performance --samples artifacts\preview-performance\before\samples.json --output artifacts\preview-performance\new-run --player artifacts\unity-preview\loading-performance-release\HS2Manager.UnityPreview.exe
+.\.tools\dotnet\dotnet.exe tests\HS2Manager.UiChecks\bin\Release\net10.0-windows10.0.19041.0\win-x64\HS2Manager.UiChecks.dll --unity-performance --samples artifacts\preview-performance\before\samples.json --output artifacts\preview-performance\new-run --player artifacts\unity-preview\loading-performance-release\HS2Manager.UnityPreview.exe
 
 # 为四类人物分别执行；PrimeDefinition 使用另一人物的定义，内部执行 A→B→A。
 .\tests\Invoke-UnityCharacter.ps1 -PlayerDirectory artifacts\unity-preview\loading-performance-release -Definition artifacts\preview-performance\release\stock-female.json -PrimeDefinition artifacts\preview-performance\release\stock-male.json -OutputPath artifacts\preview-performance\new-visual\stock-female

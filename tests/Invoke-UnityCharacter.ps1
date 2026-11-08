@@ -6,7 +6,8 @@ param(
     [string]$Fixture='',
     [string]$PrimeDefinition='',
     [ValidateRange(1,900)][int]$TimeoutSeconds=180,
-    [switch]$ProbeAA
+    [switch]$ProbeAA,
+    [switch]$CheckEnvironmentControls
 )
 $ErrorActionPreference='Stop'
 $workspace=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -20,6 +21,7 @@ $arguments=@('-force-d3d11','-screen-fullscreen','0','--character',$definitionPa
 if($Fixture){$arguments+=@('--fixture',(Resolve-Path -LiteralPath $Fixture).Path)}
 if($PrimeDefinition){$arguments+=@('--prime-character',(Resolve-Path -LiteralPath $PrimeDefinition).Path)}
 if($ProbeAA){$arguments+='--probe-aa'}
+if($CheckEnvironmentControls){$arguments+='--check-environment-controls'}
 $exitCode=[HS2Manager.BuildTools.OwnedToolProcess]::Run((Join-Path $player 'HS2Manager.UnityPreview.exe'),$arguments,$player,$TimeoutSeconds,$null)
 if($exitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $output 'state.json'))){throw "Independent character validation failed ($exitCode): $output"}
 $state=Get-Content -LiteralPath (Join-Path $output 'state.json') -Raw|ConvertFrom-Json

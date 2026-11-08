@@ -1,34 +1,37 @@
-using System.Windows;
-using System.Windows.Controls;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 
 namespace HS2Manager.App;
 public static class Dialogs
 {
-    private static Window Window(Window owner, string title, double width, double height)
+    private static readonly SemaphoreSlim gate = new(1, 1);
+    public static async Task<ContentDialogResult> ShowAsync(Window owner, ContentDialog dialog)
     {
-        var dialog = new Window { Owner = owner, Title = title, Width = width, Height = height, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.CanResize, MinWidth = 400, MinHeight = 240 };
-        dialog.SourceInitialized += (_, _) => ThemeService.ApplyWindow(dialog); return dialog;
+        await gate.WaitAsync();
+        try
+        {
+            var root = (FrameworkElement)owner.Content;
+            dialog.XamlRoot = root.XamlRoot; dialog.RequestedTheme = root.ActualTheme;
+            return await dialog.ShowAsync();
+        }
+        finally { gate.Release(); }
     }
-    public static string? Prompt(Window owner, string title, string description, string initial = "")
+    public static async Task<string?> Prompt(Window owner, string title, string description, string initial = "")
     {
-        var dialog = Window(owner, title, 460, 265); dialog.ResizeMode = ResizeMode.NoResize;
-        var panel = new DockPanel { Margin = new Thickness(24) };
-        var heading = new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 18) }; DockPanel.SetDock(heading, Dock.Top); panel.Children.Add(heading);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) }; DockPanel.SetDock(actions, Dock.Bottom);
-        var cancel = new Button { Content = "取消", IsCancel = true, Margin = new Thickness(0, 0, 8, 0) }; var save = new Button { Content = "确定", IsDefault = true, Style = (Style)Application.Current.FindResource("PrimaryButton") };
-        actions.Children.Add(cancel); actions.Children.Add(save); panel.Children.Add(actions);
-        var input = new TextBox { Text = initial, VerticalAlignment = VerticalAlignment.Top, MaxLength = 1024 }; panel.Children.Add(input);
-        save.Click += (_, _) => dialog.DialogResult = true;
-        dialog.Content = panel; dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
-        return dialog.ShowDialog() == true ? input.Text : null;
+        var input = new TextBox { Text = initial, MaxLength = 1024 };
+        var panel = new StackPanel { Spacing = 16 };
+        panel.Children.Add(new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap }); panel.Children.Add(input);
+        var dialog = new ContentDialog { Title = title, Content = panel, PrimaryButtonText = "确定", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary };
+        dialog.Opened += (_, _) => { input.Focus(FocusState.Programmatic); input.SelectAll(); };
+        return await ShowAsync(owner, dialog) == ContentDialogResult.Primary ? input.Text : null;
     }
-    public static void Report(Window owner, string title, string text, Action? action = null, string? actionTitle = null)
+    public static async Task<bool> Confirm(Window owner, string title, string message)
+        => await ShowAsync(owner, new ContentDialog { Title = title, Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap }, PrimaryButtonText = "确定", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close }) == ContentDialogResult.Primary;
+    public static async Task Report(Window owner, string title, string text, Action? action = null, string? actionTitle = null)
     {
-        var dialog = Window(owner, title, 690, 460); var panel = new DockPanel { Margin = new Thickness(20) };
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) }; DockPanel.SetDock(actions, Dock.Bottom);
-        if (action != null) { var act = new Button { Content = actionTitle, Margin = new Thickness(0, 0, 8, 0) }; act.Click += (_, _) => { dialog.Close(); action(); }; actions.Children.Add(act); }
-        var close = new Button { Content = "关闭", IsCancel = true }; actions.Children.Add(close); panel.Children.Add(actions);
-        panel.Children.Add(new TextBox { Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalContentAlignment = VerticalAlignment.Top });
-        dialog.Content = panel; dialog.ShowDialog();
+        var content = new TextBox { Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 460, AcceptsReturn = true };
+        ScrollViewer.SetVerticalScrollBarVisibility(content, ScrollBarVisibility.Auto);
+        var dialog = new ContentDialog { Title = title, Content = content, CloseButtonText = "关闭", PrimaryButtonText = action == null ? "" : actionTitle ?? "执行" };
+        if (await ShowAsync(owner, dialog) == ContentDialogResult.Primary) action?.Invoke();
     }
 }

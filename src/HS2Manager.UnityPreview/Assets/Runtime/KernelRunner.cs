@@ -124,8 +124,8 @@ namespace HS2Manager.UnityPreview
                             interactionUntil=Time.unscaledTime+.15f;environment?.SetInteractive(true);
                         }
                     }
-                    else if(message.Kind=="Environment" && message.Values.Length==4)
-                    {var v=message.Values;environment?.Customize(new Color(v[0],v[1],v[2]),Mathf.Clamp(v[3],0,4));}
+                    else if(message.Kind=="Environment" && message.Load==currentLoad && message.Values.Length==4)
+                    {var v=message.Values;environment?.Customize(new Color(v[0],v[1],v[2]),Mathf.Clamp(v[3],0,4),message.Text=="game-background",message.Text=="game-background"||message.Text=="custom-background");}
                     else if(message.Kind=="Environment" && message.Text=="restore" && message.Load==currentLoad)environment?.Restore();
                     else if(message.Kind=="Screenshot" && character!=null && !loading)
                     {ReadPixels();File.WriteAllBytes(message.Path,pixels.EncodeToPNG());Send(new KernelMessage{Kind="Screenshot",Load=currentLoad,Path=message.Path});}

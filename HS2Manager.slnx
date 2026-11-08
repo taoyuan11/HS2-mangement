@@ -7,5 +7,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/HS2Manager.Checks/HS2Manager.Checks.csproj" />
     <Project Path="tests/HS2Manager.UiChecks/HS2Manager.UiChecks.csproj" />
+    <Project Path="tests/HS2Manager.LegacyRendering/HS2Manager.LegacyRendering.csproj" />
   </Folder>
 </Solution>

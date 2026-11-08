@@ -2,7 +2,8 @@
 
 HS2 Manager is an independent utility. HoneySelect 2, Studio, Unity assets and game assemblies belong to their respective owners and are not distributed with this project or the portable package.
 
-- .NET / WPF runtime and Microsoft.Data.Sqlite: Microsoft and .NET Foundation, MIT. License texts and runtime third-party notices are included in `licenses`. Source: https://github.com/dotnet/runtime and https://github.com/dotnet/wpf and https://github.com/dotnet/efcore.
+- .NET runtime and Microsoft.Data.Sqlite: Microsoft and .NET Foundation, MIT. License texts and runtime third-party notices are included in `licenses`. Source: https://github.com/dotnet/runtime and https://github.com/dotnet/efcore.
+- Windows App SDK 1.8 (including WinUI 3): Microsoft, distributed under the Microsoft Windows App SDK license terms. See `licenses/WindowsAppSDK-LICENSE.txt` and `licenses/WindowsAppSDK-NOTICE.txt`. Source: https://github.com/microsoft/WindowsAppSDK and https://github.com/microsoft/microsoft-ui-xaml. WPF is only used by independent test fixtures and the historical software-renderer diagnostic project; it is not shipped in the application.
 - SQLitePCLRaw: Eric Sink and contributors, Apache-2.0. Source: https://github.com/ericsink/SQLitePCL.raw.
 - SQLite: public domain. https://www.sqlite.org/copyright.html.
 - AssetsTools.NET 3.0.5: nesrak1, MIT. Reads serialized Unity data without loading the Unity runtime. License included in `licenses/AssetsTools.NET-LICENSE.txt`. Source: https://github.com/nesrak1/AssetsTools.NET.

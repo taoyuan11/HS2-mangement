@@ -140,6 +140,26 @@ namespace HS2Manager.UnityPreview
                 yield return null;
             }
         }
+        private void CheckEnvironmentControls(string output)
+        {
+            var flags=environmentCamera.clearFlags;var background=environmentCamera.backgroundColor;
+            var sky=RenderSettings.skybox;var reflection=RenderSettings.customReflection;
+            float ambient=RenderSettings.ambientIntensity,reflectionIntensity=RenderSettings.reflectionIntensity;
+            var keys=UnityEngine.Object.FindObjectsOfType<Light>().Where(l=>l.enabled&&l.name.Contains("Key")).ToDictionary(l=>l,l=>l.intensity);
+            if(keys.Count==0)throw new IOException("Environment check requires an original key light.");
+            environment.Customize(Color.red,1.4f,true,true);
+            if(environmentCamera.clearFlags!=flags||environmentCamera.backgroundColor!=background||keys.Any(p=>!Mathf.Approximately(p.Key.intensity,p.Value*1.4f)))
+                throw new IOException("Changing light must preserve the game background and scale the original intensity.");
+            environment.Customize(Color.gray,.8f,false,true);
+            if(environmentCamera.clearFlags!=CameraClearFlags.SolidColor||environmentCamera.backgroundColor!=Color.gray||keys.Any(p=>!Mathf.Approximately(p.Key.intensity,p.Value*.8f)))
+                throw new IOException("Changing background accumulated light multipliers.");
+            if(RenderSettings.skybox!=sky||RenderSettings.customReflection!=reflection||RenderSettings.ambientIntensity!=ambient||RenderSettings.reflectionIntensity!=reflectionIntensity)
+                throw new IOException("Background controls changed material illumination or reflections.");
+            environment.Restore();
+            if(environmentCamera.clearFlags!=flags||environmentCamera.backgroundColor!=background||keys.Any(p=>p.Key.intensity!=p.Value))
+                throw new IOException("Restore did not recover the original environment.");
+            File.WriteAllText(Path.Combine(output,"environment-controls.txt"),"PASS game background, relative lighting without accumulation, preserved reflections and ambient, exact restore.");
+        }
         private IEnumerator CaptureEnvironment(string output)
         {
             var target=new RenderTexture(1280,720,24,RenderTextureFormat.ARGB32);target.Create();environmentCamera.targetTexture=target;
@@ -147,6 +167,7 @@ namespace HS2Manager.UnityPreview
             for(int i=0;i<180;i++){character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();}
             CharacterDiagnostics.Write(character.Root,output);
             CharacterDiagnostics.WriteEnvironment(environmentCamera,output);
+            if(Environment.GetCommandLineArgs().Contains("--check-environment-controls"))CheckEnvironmentControls(output);
             string fixturePath=Argument("--fixture");
             var fixture=fixturePath==null?VisualFixture.Create(character.Root):VisualFixture.Load(fixturePath);
             VisualFixture.Save(Path.Combine(output,"fixture.json"),fixture);

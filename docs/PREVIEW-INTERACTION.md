@@ -1,5 +1,7 @@
 # 预览交互优化
 
+> 本文性能数字记录迁移前的 WPF 宿主，不代表 WinUI 3 的测量结果。当前界面和回归检查已迁移到 WinUI 3，见 [WINUI3-MIGRATION.md](WINUI3-MIGRATION.md)。
+
 2026-11-08，针对旋转、平移和缩放时的拖影及低帧率，修改 Unity 内核、共享帧传输及 WPF 视口。
 
 ## 行为
@@ -35,10 +37,10 @@
 
 ```powershell
 .\.tools\dotnet\dotnet.exe build tests\HS2Manager.UiChecks -c Release --disable-build-servers -p:UseSharedCompilation=false
-.\.tools\dotnet\dotnet.exe tests\HS2Manager.UiChecks\bin\Release\net10.0-windows\HS2Manager.UiChecks.dll --unity-interaction --animate --player artifacts\unity-preview\interaction-optimized\HS2Manager.UnityPreview.exe --definition artifacts\preview-performance\release\stock-female.json --output artifacts\interaction-performance\new-run
+.\.tools\dotnet\dotnet.exe tests\HS2Manager.UiChecks\bin\Release\net10.0-windows10.0.19041.0\win-x64\HS2Manager.UiChecks.dll --unity-interaction --animate --player artifacts\unity-preview\interaction-optimized\HS2Manager.UnityPreview.exe --definition artifacts\preview-performance\release\stock-female.json --output artifacts\interaction-performance\new-run
 
 .\.tools\dotnet\dotnet.exe build tests\HS2Manager.Checks -c InteractionChecks --disable-build-servers -p:UseSharedCompilation=false -p:Optimize=true
-.\.tools\dotnet\dotnet.exe tests\HS2Manager.Checks\bin\InteractionChecks\net10.0-windows\HS2Manager.Checks.dll --unity-session --player artifacts\unity-preview\interaction-optimized\HS2Manager.UnityPreview.exe --definition artifacts\preview-performance\release\stock-female.json
+.\.tools\dotnet\dotnet.exe tests\HS2Manager.Checks\bin\InteractionChecks\net10.0-windows10.0.19041.0\HS2Manager.Checks.dll --unity-session --player artifacts\unity-preview\interaction-optimized\HS2Manager.UnityPreview.exe --definition artifacts\preview-performance\release\stock-female.json
 ```
 
 诊断时可仅为测试进程设置 `HS2_PREVIEW_SYNC_READBACK=1`，强制验证同步兼容路径，测试结束恢复原环境变量。默认不设置。

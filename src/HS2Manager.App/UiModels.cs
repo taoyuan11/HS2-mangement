@@ -1,12 +1,11 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Windows;
-using System.Windows.Data;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using HS2Manager.Core;
 
 namespace HS2Manager.App;
@@ -26,9 +25,9 @@ public sealed class CardItemViewModel(CardRecord card, string dataDirectory) : O
     public string DetailLine => Record.FileName;
     public string Folder => Record.Folder;
     public string Modified => new DateTime(Record.ModifiedUtcTicks, DateTimeKind.Utc).ToLocalTime().ToString("yyyy-MM-dd HH:mm");
-    private BitmapSource? cover;
+    private BitmapImage? cover;
     private bool loading;
-    public BitmapSource? Cover
+    public BitmapImage? Cover
     {
         get { if (!loading && cover == null && Record.CoverFile.Length > 0) { loading = true; _ = LoadCover(); } return cover; }
     }
@@ -41,24 +40,24 @@ public sealed class CardItemViewModel(CardRecord card, string dataDirectory) : O
 internal static class ThumbnailCache
 {
     private static readonly SemaphoreSlim gate = new(4, 4);
-    private static readonly Dictionary<string, WeakReference<BitmapSource>> cache = [];
-    public static async Task<BitmapSource?> LoadAsync(string path, long stamp)
+    private static readonly Dictionary<string, WeakReference<BitmapImage>> cache = [];
+    public static async Task<BitmapImage?> LoadAsync(string path, long stamp)
     {
         string key = path + "|" + stamp;
         lock (cache) if (cache.TryGetValue(key, out var weak) && weak.TryGetTarget(out var existing)) return existing;
         await gate.WaitAsync();
         try
         {
-            return await Task.Run(() =>
+            try
             {
-                try
-                {
-                    using var stream = File.OpenRead(path); var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.DecodePixelWidth = 360; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze();
-                    lock (cache) { if (cache.Count > 1024) cache.Clear(); cache[key] = new(bitmap); } return (BitmapSource?)bitmap;
-                }
-                catch (Exception ex) when (ex is IOException or NotSupportedException or System.IO.FileFormatException or ArgumentException) { return null; }
-            });
+                var bytes = await File.ReadAllBytesAsync(path);
+                using var stream = new MemoryStream(bytes).AsRandomAccessStream();
+                var bitmap = new BitmapImage { DecodePixelWidth = 360 };
+                await bitmap.SetSourceAsync(stream);
+                lock (cache) { if (cache.Count > 1024) cache.Clear(); cache[key] = new(bitmap); }
+                return bitmap;
+            }
+            catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException or System.Runtime.InteropServices.COMException) { return null; }
         }
         finally { gate.Release(); }
     }
@@ -76,15 +75,15 @@ public sealed record DependencyItem(DependencyResult Result)
     public string Guid => Result.Guid;
     public string Detail => Result.Detail;
     public string Label => Result.State switch { DependencyState.Found => "已找到", DependencyState.Missing => "缺失", _ => "无法判断" };
-    public Brush Color => (Brush)Application.Current.FindResource(Result.State == DependencyState.Found ? "SuccessBrush" : Result.State == DependencyState.Missing ? "WarningBrush" : "MutedBrush");
+    public Brush Color => (Brush)Application.Current.Resources[Result.State == DependencyState.Found ? "SuccessBrush" : Result.State == DependencyState.Missing ? "WarningBrush" : "MutedBrush"];
 }
 public sealed class BoolVisibilityConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) { bool visible = value is true; if (parameter?.ToString() == "Invert") visible = !visible; return visible ? Visibility.Visible : Visibility.Collapsed; }
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
+    public object Convert(object value, Type targetType, object parameter, string language) { bool visible = value is true; if (parameter?.ToString() == "Invert") visible = !visible; return visible ? Visibility.Visible : Visibility.Collapsed; }
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => DependencyProperty.UnsetValue;
 }
 public sealed class NullVisibilityConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) { bool visible = value != null; if (parameter?.ToString() == "Invert") visible = !visible; return visible ? Visibility.Visible : Visibility.Collapsed; }
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
+    public object Convert(object value, Type targetType, object parameter, string language) { bool visible = value != null; if (parameter?.ToString() == "Invert") visible = !visible; return visible ? Visibility.Visible : Visibility.Collapsed; }
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => DependencyProperty.UnsetValue;
 }

@@ -1,6 +1,6 @@
 # HS2 Manager
 
-中文 Windows 11 人物卡管理器。C# / WPF / .NET 10，便携部署。采用独立 Unity 2018.4.11f1 内核预览人物，读取本机游戏和 MOD 的原始资源；日常预览不启动游戏或 Studio，不执行游戏及插件 DLL。
+中文 Windows 11 人物卡管理器。C# / WinUI 3 / .NET 10，便携部署。采用独立 Unity 2018.4.11f1 内核预览人物，读取本机游戏和 MOD 的原始资源；日常预览不启动游戏或 Studio，不执行游戏及插件 DLL。
 
 ## 开始使用
 
@@ -42,6 +42,8 @@ NAS 离线时保留既有索引与封面；完整目录枚举失败时不会把�
 **此版本尚未达到完整 1:1 还原。** 2026-11-08 已完成 81 张卡的四视角及动态对照：静态通过 15/81，动态通过 0/81，完整验收通过 0/81。游戏对照标准、报告位置和已知差异见 [独立 Unity 预览说明](docs/UNITY-PREVIEW.md)，逐卡失败项见 [验收结果](docs/UNITY-VALIDATION-RESULTS.md)。
 
 预览持续播放，可暂停或继续。调整灯光或背景后标记为“自定义环境”，点击“恢复游戏环境”恢复原始配置。加载失败提供原因和重试，不自动切换旧渲染器。关闭预览或管理器时，Windows Job Object 回收本次启动的内核及子进程。
+
+灯光滑条以游戏原始强度为基准（1 倍），调整时保留当前背景；背景菜单可选择“游戏背景”或纯色背景，纯色背景仍保留原环境反射。恢复环境或切卡会同步复位控件。预览标题和人物列表显示文件名，悬停查看完整路径，便于区分同名卡的不同材质版本。银色服装的检查与对照见 [预览材质与环境检查](docs/PREVIEW-MATERIAL-QUALITY.md)。
 
 旋转、平移或缩放时暂时停用会积累拖影的效果，停止操作后恢复原环境画质。预览目标帧率为 60 FPS，实际速度取决于模型和硬件；实测及验证方法见 [预览交互优化](docs/PREVIEW-INTERACTION.md)。
 
@@ -91,22 +93,24 @@ NAS 离线时保留既有索引与封面；完整目录枚举失败时不会把�
 
 独立 Unity 内核和管理器视口已接入。源码构建 Unity Player 需要已激活的 Unity 2018.4.11f1；便携发布不需要编辑器。构建及视觉验收见 [独立 Unity 预览说明](docs/UNITY-PREVIEW.md)。
 
-Windows x64，.NET 10 SDK。可先执行 `bootstrap-dotnet.ps1` 下载到项目 `.tools`；脚本从微软官方发布清单选取 SDK 并核验 SHA-512。
+Windows 10 2004（19041）及以上 / Windows 11 x64，.NET 10 SDK。可先执行 `bootstrap-dotnet.ps1` 下载到项目 `.tools`；脚本从微软官方发布清单选取 SDK 并核验 SHA-512。
 
-日常从源码启动可直接双击根目录的 `start.cmd`：优先使用 `.tools\dotnet` 中的 SDK，否则使用系统 `dotnet`，以 Release 配置增量构建并启动当前源码。预览使用最近一次成功构建的本机 Unity Player（先运行 `build-unity-preview.ps1`）；便携包始终使用自身附带的 Player。首次运行需要联网还原依赖；失败时窗口会保留错误信息。数据默认位于构建输出目录旁的 `Data`，也可在命令行通过 `start.cmd --data "D:\HS2ManagerData"` 指定。
+日常从源码启动可直接双击根目录的 `start.cmd`：优先使用 `.tools\dotnet` 中的 SDK，否则使用系统 `dotnet`，以 Release 配置增量构建并启动当前源码。预览使用最近一次成功构建的本机 Unity Player（先运行 `build-unity-preview.ps1`）；便携包始终使用自身附带的 Player。WinUI 3 使用 NuGet 提供的 XAML 编译工具，无需安装 Visual Studio。首次运行需要联网还原依赖；失败时窗口会保留错误信息。数据默认位于构建输出目录旁的 `Data`，也可在命令行通过 `start.cmd --data "D:\HS2ManagerData"` 指定。
 
 ```powershell
 .\bootstrap-dotnet.ps1
 .\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ'
-# 同时运行 Unity 内核通信、异常清理与 WPF 预览检查（不启动游戏）
+# 同时运行 Unity 内核通信、异常清理与 WinUI 3 预览检查（不启动游戏）
 .\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ' -PreviewTest
 ```
 
+WinUI 3 采用未打包（`WindowsPackageType=None`）部署，发布时同时携带 .NET 和 Windows App SDK 运行时，不需要安装 MSIX 或单独安装 Windows App Runtime。迁移细节和验证命令见 [WinUI 3 迁移说明](docs/WINUI3-MIGRATION.md)。源码启动时若新输出位置没有 `Data`，会继续使用同一配置下旧 `bin/<配置>/net10.0-windows/Data` 中的数据库和设置，不搬移或覆盖数据；`--data` 始终优先。
+
 构建脚本默认运行核心与布局检查，然后发布自带运行时的便携目录和 ZIP，写入 SHA-256。输出在 `artifacts\release`；若已有同名目录，创建带时间的新目录，不覆盖旧 `Data`。`-SkipTests` 可跳过核心与布局检查。
 
-默认构建不依赖任何游戏程序集；桌面端为 .NET 10 WPF、SQLite 与 AssetsTools.NET。真实资源测试需要本机游戏数据。构建脚本禁用构建服务器。旧桥接源码保留在 `src/HS2Manager.Bridge`，已移出默认解决方案和发布流程；旧 Studio 启动器和协议也不再编入生产 Core 程序集，旧 `--preview` 检查入口已禁用。
+默认构建不依赖任何游戏程序集；桌面端为 .NET 10、WinUI 3（Windows App SDK 1.8）、SQLite 与 AssetsTools.NET。真实资源测试需要本机游戏数据。构建脚本禁用构建服务器。旧桥接源码保留在 `src/HS2Manager.Bridge`，已移出默认解决方案和发布流程；旧 Studio 启动器和协议也不再编入生产 Core 程序集，旧 `--preview` 检查入口已禁用。
 
-目录：`src/HS2Manager.App`（MVVM 界面与原生视口）、`src/HS2Manager.Core`（人物/模型解析、缓存、索引、文件与依赖）、`src/HS2Manager.Bridge`（历史桥接源码）、`src/Shared`（旧桥接协议）、`tests`（核心、布局与独立预览检查）。
+目录：`src/HS2Manager.App`（WinUI 3 / MVVM 界面与 Unity 帧视口）、`src/HS2Manager.Core`（人物/模型解析、缓存、索引、文件与依赖）、`src/HS2Manager.Bridge`（历史桥接源码）、`src/Shared`（旧桥接协议）、`tests`（核心、布局与独立预览检查）。
 
 ## 范围与兼容性
 

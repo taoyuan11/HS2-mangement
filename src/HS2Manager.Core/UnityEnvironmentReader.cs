@@ -5,8 +5,6 @@ using System.Xml.Linq;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using HS2Manager.Preview.Contracts;
 
 namespace HS2Manager.Core;
@@ -105,7 +103,7 @@ internal static class UnityEnvironmentReader
                         {
                             var pixels=decoded.DecodeTextureRaw(decoded.FillPictureData(texture.file));if(pixels==null)throw new InvalidDataException("环境纹理解码失败。");
                             int stride=decoded.m_Width*4;var flipped=new byte[pixels.Length];for(int y=0;y<decoded.m_Height;y++)Buffer.BlockCopy(pixels,y*stride,flipped,(decoded.m_Height-y-1)*stride,stride);
-                            var bitmap=BitmapSource.Create(decoded.m_Width,decoded.m_Height,96,96,PixelFormats.Bgra32,null,flipped,stride);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var output=File.Create(target);png.Save(output);
+                            ImageCodec.SavePngAsync(target, decoded.m_Width, decoded.m_Height, flipped).GetAwaiter().GetResult();
                         }
                         parameters.Get(parameter.FieldName).Get("value").Text=target;
                         generated.Add(target);
