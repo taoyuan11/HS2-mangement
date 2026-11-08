@@ -46,4 +46,17 @@ internal sealed class NativePluginData
         stream.Position = range.Start;
         return stream.ReadByte() != 0xc0;
     }
+    internal void VisitStrings(string key, Action<string, string> visit, CancellationToken cancellation, bool packed = false)
+    {
+        if (!fields.TryGetValue(key, out var range)) return;
+        stream.Position = range.Start;
+        if (packed)
+        {
+            var binary = new BoundedMessagePack(stream, range.End).BinaryRange();
+            if (binary == null) return;
+            stream.Position = binary.Value.Offset;
+            new BoundedMessagePack(stream, binary.Value.Offset + binary.Value.Length).VisitStrings(visit, cancellation, key);
+        }
+        else new BoundedMessagePack(stream, range.End).VisitStrings(visit, cancellation, key);
+    }
 }

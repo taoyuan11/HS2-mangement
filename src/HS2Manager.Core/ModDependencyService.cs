@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
-using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
 using System.Xml;
 using System.Xml.Linq;
 
@@ -21,6 +19,7 @@ public sealed class ModFileInfo
     public string Error { get; set; } = "";
     public bool Compatible { get; set; } = true;
     public List<ModMigration> Migrations { get; set; } = [];
+    public ModExportMetadata? ExportMetadata { get; set; }
 }
 public sealed class ModIndex
 {
@@ -30,12 +29,12 @@ public sealed class ModIndex
     public bool MigrationEnabled { get; set; } = true;
     public List<ModFileInfo> Files { get; set; } = [];
     public Dictionary<string, string> Plugins { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<PluginFileInfo> PluginFiles { get; set; } = [];
     public List<string> Warnings { get; set; } = [];
 }
 
 public sealed class ModDependencyService(CardRepository repository)
 {
-    private static readonly ConcurrentDictionary<string, (long Size, long Modified, string[] Guids)> PluginMetadata = new(StringComparer.OrdinalIgnoreCase);
     public ModIndex? Index { get; private set; } = repository.LoadMetadata<ModIndex>("mods-v1");
     private Dictionary<string, ModFileInfo> byGuid = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, List<ModMigration>> migrations = new(StringComparer.OrdinalIgnoreCase);
@@ -75,7 +74,7 @@ public sealed class ModDependencyService(CardRepository repository)
                 ct.ThrowIfCancellationRequested(); var file = new FileInfo(path); ModFileInfo entry;
                 try
                 {
-                    if (cached.TryGetValue(path, out var old) && old.Size == file.Length && old.ModifiedUtcTicks == file.LastWriteTimeUtc.Ticks && old.Error.Length == 0 && old.ArchiveEntries != null) entry = old;
+                    if (cached.TryGetValue(path, out var old) && old.Size == file.Length && old.ModifiedUtcTicks == file.LastWriteTimeUtc.Ticks && old.Error.Length == 0 && old.ArchiveEntries != null && old.ExportMetadata != null) entry = old;
                     else entry = ReadManifest(path);
                 }
                 catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or XmlException)
@@ -103,6 +102,7 @@ public sealed class ModDependencyService(CardRepository repository)
         using var stream = manifest.Open();
         using var xml = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = 2 * 1024 * 1024 });
         var root = XDocument.Load(xml).Root ?? throw new InvalidDataException("空 MOD 清单");
+        result.ExportMetadata = ModExportMetadata.Read(root);
         if (root.Attribute("schema-ver")?.Value is not (null or "1")) throw new InvalidDataException("尚不支持的 MOD 清单版本");
         result.Guid = root.Element("guid")?.Value.Trim() ?? "";
         if (result.Guid.Length == 0) throw new InvalidDataException("MOD 清单缺少 GUID");
@@ -120,40 +120,10 @@ public sealed class ModDependencyService(CardRepository repository)
     }
     internal static void ReadPlugins(string folder, ModIndex index, CancellationToken cancellation)
     {
-        try
-        {
-            foreach (string path in Directory.EnumerateFiles(folder, "*.dll", SearchOption.AllDirectories))
-            {
-                cancellation.ThrowIfCancellationRequested();
-                try
-                {
-                    var info = new FileInfo(path);
-                    if (PluginMetadata.TryGetValue(path, out var cached) && cached.Size == info.Length && cached.Modified == info.LastWriteTimeUtc.Ticks)
-                    {
-                        foreach (string guid in cached.Guids) index.Plugins[guid] = Path.GetFileName(path);
-                        continue;
-                    }
-                    var guids = new List<string>();
-                    using var file = File.OpenRead(path); using var pe = new PEReader(file);
-                    if (!pe.HasMetadata) continue; var metadata = pe.GetMetadataReader();
-                    foreach (var typeHandle in metadata.TypeDefinitions)
-                        foreach (var attributeHandle in metadata.GetTypeDefinition(typeHandle).GetCustomAttributes())
-                        {
-                            var attribute = metadata.GetCustomAttribute(attributeHandle);
-                            if (attribute.Constructor.Kind != HandleKind.MemberReference) continue;
-                            var constructor = metadata.GetMemberReference((MemberReferenceHandle)attribute.Constructor);
-                            if (constructor.Parent.Kind != HandleKind.TypeReference) continue;
-                            var type = metadata.GetTypeReference((TypeReferenceHandle)constructor.Parent);
-                            if (metadata.GetString(type.Namespace) != "BepInEx" || metadata.GetString(type.Name) != "BepInPlugin") continue;
-                            var blob = metadata.GetBlobReader(attribute.Value); if (blob.ReadUInt16() != 1) continue;
-                            var guid = blob.ReadSerializedString(); if (!string.IsNullOrEmpty(guid)) { index.Plugins[guid] = Path.GetFileName(path); guids.Add(guid); }
-                        }
-                    PluginMetadata[path] = (info.Length, info.LastWriteTimeUtc.Ticks, guids.ToArray());
-                }
-                catch (Exception ex) when (ex is IOException or BadImageFormatException or UnauthorizedAccessException) { index.Warnings.Add("插件扫描：" + Path.GetFileName(path) + " " + ex.Message); }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { index.Warnings.Add("插件目录：" + ex.Message); }
+        index.PluginFiles = PluginFileIndex.Scan(folder, index.Warnings, cancellation);
+        foreach (var file in index.PluginFiles.OrderBy(f => PluginFileIndex.VersionOf(f.Version)))
+            foreach (var plugin in file.Plugins)
+                index.Plugins[plugin.Guid] = Path.GetFileName(file.Path);
     }
     private void RebuildLookup()
     {
@@ -181,7 +151,7 @@ public sealed class ModDependencyService(CardRepository repository)
         }
         foreach (var id in card.PluginDataIds)
         {
-            string pluginId = id is "com.bepis.sideloader.universalautoresolver" or "EC.Core.Sideloader.UniversalAutoResolver" ? "com.bepis.bepinex.sideloader" : id;
+            string pluginId = PluginFileIndex.PluginGuid(id);
             if (usable && Index!.Plugins.TryGetValue(pluginId, out var file)) results.Add(new(id, DependencyState.Found, "插件文件：" + file + "（未验证启用状态）"));
             else results.Add(new(id, DependencyState.Unknown, "扩展数据标识；无法仅凭标识确认插件依赖"));
         }

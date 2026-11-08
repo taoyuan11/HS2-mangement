@@ -33,6 +33,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public int SelectionCount => selection.Count;
     public bool HasSelection => selection.Count > 0;
     public bool CanModify => !IsBusy && HasSelection;
+    private bool multiSelectMode;
+    public bool IsMultiSelectMode { get => multiSelectMode; set { if (Set(ref multiSelectMode, value)) Changed(nameof(MultiSelectLabel)); } }
+    public string MultiSelectLabel => IsMultiSelectMode ? "退出多选" : "多选";
+    public CardExportReport? LastExportReport { get; private set; }
     public bool CanPreview => SelectedCard?.Record is { Status: CardStatus.Valid, Availability: FileAvailability.Available } && !IsBusy;
     private CardItemViewModel? selectedCard;
     public CardItemViewModel? SelectedCard
@@ -245,6 +249,36 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public Task ImportAsync(IEnumerable<string> paths) => RunWork("导入人物卡", async (ct, progress) => Summarize(await Files.ImportAsync(paths, Settings.GamePath, null, progress, ct)));
     public Task ExportAsync(string folder)
     { var cards = SelectedRecords; return RunWork("导出人物卡", async (ct, progress) => Summarize(await Files.ExportAsync(cards, folder, progress, ct))); }
+    public Task ExportResourcesAsync(IReadOnlyList<CardRecord> cards, string folder, CardExportMode mode)
+        => ExportResourcesAsync(cards, folder, new CardExportOptions(mode, CardExportLevel.Full));
+
+    public Task ExportResourcesAsync(IReadOnlyList<CardRecord> cards, string folder, CardExportOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!Enum.IsDefined(options.Level) || !Enum.IsDefined(options.Mode)) throw new ArgumentOutOfRangeException(nameof(options));
+        // Capture only immutable selection identity; the exporter rereads each original PNG.
+        var snapshot = cards.Select(c => new CardRecord { Id = c.Id, Path = c.Path, Name = c.Name }).ToArray();
+        LastExportReport = null;
+        return RunWork("导出人物卡", async (ct, progress) =>
+        {
+            await UiDispatcher.InvokeAsync(() =>
+            {
+                Settings.LastCardExportLevel = options.Level;
+                Settings.Save(DataDirectory);
+            });
+            var exporter = new CardExportService(Repository);
+            var plan = await exporter.BuildPlanAsync(snapshot, Settings.GamePath, folder, options, progress, ct);
+            var report = await exporter.ExportAsync(plan, progress, ct);
+            LastExportReport = report;
+            string detail = report.Summary + "\n\n" + report.ScopeDescription + (report.ReportPath.Length > 0 ? "\n\n导出报告：" + report.ReportPath : "") +
+                "\n\n" + string.Join("\n", report.OutputFolders);
+            if (report.Issues.Count > 0) detail += "\n\n" + string.Join("\n", report.Issues.Select(i => i.Message).Distinct());
+            if (report.Warnings.Count > 0) detail += "\n\n缩略图提示（不影响人物外观）：\n" + string.Join("\n", report.Warnings.Select(i => i.Message).Distinct());
+            WriteLog("资源导出", detail);
+            UiDispatcher.Post(() => ShowReport?.Invoke(report.StatusText, detail));
+            return report.Summary;
+        });
+    }
     public Task MoveAsync(string folder)
     {
         var cards = SelectedRecords;

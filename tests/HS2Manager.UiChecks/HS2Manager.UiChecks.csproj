@@ -10,4 +10,5 @@
     <ApplicationManifest>../../src/HS2Manager.App/app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/HS2Manager.App/HS2Manager.App.csproj" /></ItemGroup>
+  <ItemGroup><Compile Include="../HS2Manager.Checks/CardExportFixtures.cs" Link="CardExportFixtures.cs" /></ItemGroup>
 </Project>

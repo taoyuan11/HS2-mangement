@@ -44,6 +44,12 @@ public sealed class CardRecord
 
 public sealed class AppSettings
 {
+    private CardExportLevel lastCardExportLevel = CardExportLevel.WithMods;
+    public CardExportLevel LastCardExportLevel
+    {
+        get => lastCardExportLevel;
+        set => lastCardExportLevel = Enum.IsDefined(value) ? value : CardExportLevel.WithMods;
+    }
     public string GamePath { get; set; } = @"Z:\games\hs2\HS two DX - TSYMQ";
     public List<string> ExtraRoots { get; set; } = [];
     public bool RecursiveCardSearch { get; set; } = false;

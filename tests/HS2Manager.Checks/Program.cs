@@ -9,6 +9,7 @@ var game = gameArg >= 0 ? args[gameArg + 1] : @"Z:\games\hs2\HS two DX - TSYMQ";
 var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
 if (args.Contains("--preview-cache")) await PreviewCacheChecks.Run(data);
+else if (args.Contains("--card-export")) await CardExportChecks.Run(data, args.Contains("--real-export") ? game : null);
 else if (args.Contains("--audit-unity-compatibility")) await UnityCompatibilityAudit.Run(args[Array.IndexOf(args,"--catalog")+1],args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1]);
 else if (args.Contains("--prepare-unity-catalog")) await UnityCatalogChecks.Prepare(game,data,args[Array.IndexOf(args,"--output")+1],args.Contains("--female-only"));
 else if (args.Contains("--normalize-unity-catalog")) UnityCatalogChecks.Normalize(args[Array.IndexOf(args,"--catalog")+1],game,data,args[Array.IndexOf(args,"--output")+1]);

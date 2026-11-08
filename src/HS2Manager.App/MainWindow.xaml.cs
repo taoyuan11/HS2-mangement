@@ -102,9 +102,23 @@ public partial class MainWindow : Window
     private void Cards_SelectionChanged(object sender, SelectionChangedEventArgs e)
     { ViewModel.SetSelection(CardList.SelectedItems.Cast<CardItemViewModel>(), e.AddedItems.Cast<CardItemViewModel>().LastOrDefault() ?? CardList.SelectedItems.Cast<CardItemViewModel>().FirstOrDefault()); }
     private async void Cards_DoubleClick(object sender, DoubleTappedRoutedEventArgs e)
-    { if (ViewModel.CanPreview && Container(e.OriginalSource as DependencyObject) != null) await ViewModel.OpenPreviewAsync(); }
+        => await PreviewDoubleTappedCardAsync(Container(e.OriginalSource as DependencyObject));
+    internal Task PreviewDoubleTappedCardAsync(GridViewItem? item)
+        => !ViewModel.IsMultiSelectMode && ViewModel.CanPreview && item != null ? ViewModel.OpenPreviewAsync() : Task.CompletedTask;
     private void Cards_RightClick(object sender, RightTappedRoutedEventArgs e)
-    { if (Container(e.OriginalSource as DependencyObject) is GridViewItem item && !item.IsSelected) { CardList.SelectedItems.Clear(); item.IsSelected = true; } }
+    { if (Container(e.OriginalSource as DependencyObject) is GridViewItem item) SelectContextCard(item); }
+    internal void SelectContextCard(GridViewItem item)
+    { if (!item.IsSelected) { if (!ViewModel.IsMultiSelectMode) CardList.SelectedItems.Clear(); item.IsSelected = true; } }
+    private void MultiSelect_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.IsBusy) return;
+        var selected = CardList.SelectedItems.Cast<CardItemViewModel>().ToArray();
+        ViewModel.IsMultiSelectMode = !ViewModel.IsMultiSelectMode;
+        CardList.SelectionMode = ViewModel.IsMultiSelectMode ? ListViewSelectionMode.Multiple : ListViewSelectionMode.Extended;
+        foreach (var card in selected) if (!CardList.SelectedItems.Contains(card)) CardList.SelectedItems.Add(card);
+    }
+    private void SelectAllCards_Click(object sender, RoutedEventArgs e) { if (!ViewModel.IsBusy) CardList.SelectAll(); }
+    private void ClearCardSelection_Click(object sender, RoutedEventArgs e) { if (!ViewModel.IsBusy) CardList.SelectedItems.Clear(); }
     private static GridViewItem? Container(DependencyObject? element)
     { while (element != null) { if (element is GridViewItem item) return item; element = VisualTreeHelper.GetParent(element); } return null; }
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await ViewModel.RefreshAsync(true);
@@ -159,6 +173,15 @@ public partial class MainWindow : Window
     private async void RemoveCollection_Click(object sender, RoutedEventArgs e)
     { if (CollectionList.SelectedItem is string name && await Dialogs.Confirm(this, "删除虚拟分类", $"删除分类“{name}”？人物卡文件、收藏和标签都会保留。")) ViewModel.RemoveCollection(name); }
     private async void Export_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.CanModify) return;
+        var cards = ViewModel.SelectedRecords.ToArray();
+        var options = await Dialogs.ExportOptions(this, cards.Length, ViewModel.Settings.LastCardExportLevel);
+        if (options == null) return;
+        var folder = await FilePickers.Folder(this, "选择人物卡导出位置");
+        if (folder != null) await ViewModel.ExportResourcesAsync(cards, folder, options);
+    }
+    private async void ExportPng_Click(object sender, RoutedEventArgs e)
     { if (!ViewModel.CanModify) return; var folder = await FilePickers.Folder(this, "导出原始人物卡"); if (folder != null) await ViewModel.ExportAsync(folder); }
     private async void Move_Click(object sender, RoutedEventArgs e)
     { if (!ViewModel.CanModify || ViewModel.IsTrash) return; var folder = await FilePickers.Folder(this, "将选中的人物卡移动到文件夹"); if (folder != null) await ViewModel.MoveAsync(folder); }
@@ -174,6 +197,7 @@ public partial class MainWindow : Window
     {
         var menu = new MenuFlyout();
         void Add(string title, RoutedEventHandler handler) { var item = new MenuFlyoutItem { Text = title }; item.Click += handler; menu.Items.Add(item); }
+        Add("仅导出原始 PNG…", ExportPng_Click);
         if (ViewModel.IsTrash) Add("恢复到原目录", Restore_Click);
         else { Add("移动到文件夹…", Move_Click); if (ViewModel.SelectionCount == 1) Add("重命名…", Rename_Click); Add("移入可恢复隔离区…", Quarantine_Click); }
         Add("在资源管理器中显示", Reveal_Click); menu.ShowAt((FrameworkElement)sender);
@@ -242,6 +266,7 @@ public partial class MainWindow : Window
     private async void Window_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == VirtualKey.Escape && ViewModel.IsPreview) { await ViewModel.ClosePreviewAsync(); e.Handled = true; }
+        else if (e.Key == VirtualKey.Escape && ViewModel.IsMultiSelectMode) { MultiSelect_Click(sender, e); e.Handled = true; }
         else if ((InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0 && e.Key == VirtualKey.F) { SearchBox.Focus(FocusState.Programmatic); SearchBox.SelectAll(); e.Handled = true; }
         else if ((InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0 && e.Key == VirtualKey.R && !ViewModel.IsBusy) { await ViewModel.RefreshAsync(); e.Handled = true; }
         else if ((InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0 && e.Key == VirtualKey.S) { if (ViewModel.IsPreview) Screenshot_Click(sender, e); else if (ViewModel.CanModify) ViewModel.SaveDetails(); e.Handled = true; }

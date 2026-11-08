@@ -13,6 +13,8 @@ public sealed class FileOperationRecord
     public string Hash { get; set; } = "";
     public string Phase { get; set; } = "Planned";
     public string Error { get; set; } = "";
+    public long? ExpectedSize { get; set; }
+    public long? ExpectedModifiedUtcTicks { get; set; }
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public CardRecord? Card { get; set; }
 }
@@ -94,7 +96,15 @@ public sealed class CardFileService(CardRepository repository)
         var folder = Path.GetDirectoryName(card.OriginalPath)!;
         return MoveCore(card, UniqueDestination(folder, Path.GetFileName(card.OriginalPath)), "Restore", cancellation);
     }
-    private FileOperationRecord NewOperation(string kind, string source, string destination, CardRecord card)
+    /// <summary>Exports an arbitrary resource through the same verified, recoverable copy journal as a card.</summary>
+    internal async Task ExportFileAsync(string source, string destination, long size, long modifiedUtcTicks, CancellationToken cancellation)
+    {
+        var op = NewOperation("Export", source, destination, null);
+        op.ExpectedSize = size; op.ExpectedModifiedUtcTicks = modifiedUtcTicks; Save(op);
+        await CopyVerified(op, cancellation);
+        op.Phase = "Indexed"; Save(op);
+    }
+    private FileOperationRecord NewOperation(string kind, string source, string destination, CardRecord? card)
     {
         source = Path.GetFullPath(source); destination = Path.GetFullPath(destination);
         if (string.Equals(source, destination, StringComparison.OrdinalIgnoreCase)) throw new IOException("源文件与目标文件相同。");
@@ -133,6 +143,8 @@ public sealed class CardFileService(CardRepository repository)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(op.Destination)!);
             var before = new FileInfo(op.Source); long length = before.Length, modified = before.LastWriteTimeUtc.Ticks;
+            if (op.ExpectedSize is long expectedSize && expectedSize != length || op.ExpectedModifiedUtcTicks is long expectedModified && expectedModified != modified)
+                throw new IOException("源文件在生成导出计划后发生变化，请重新导出。");
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             await using (var input = new FileStream(op.Source, FileMode.Open, FileAccess.Read, FileShare.Read, 131072, true))
             await using (var output = new FileStream(op.Staging, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, true))

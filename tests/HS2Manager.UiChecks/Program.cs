@@ -38,6 +38,7 @@ internal sealed class CheckApplication(string[] args) : App
         {
             string Arg(string key, string fallback) => Array.IndexOf(args, key) is int i && i >= 0 ? args[i + 1] : fallback;
             if (args.Contains("--unity-interaction")) await UnityInteractionChecks.RunAsync(args);
+            else if (args.Contains("--card-export")) await LayoutChecks.RunAsync(root);
             else if (args.Contains("--unity-performance")) await UnityPerformanceChecks.RunAsync(args);
             else if (args.Contains("--unity-preview") || args.Contains("--native-preview"))
                 await UnityPreviewUiChecks.RunAsync(this, root, Arg("--game", @"Z:\games\hs2\HS two DX - TSYMQ"), Arg("--player", UnityPreviewSession.DefaultPlayer), Arg("--card", "") is { Length: > 0 } card ? card : null);
@@ -137,6 +138,7 @@ internal static class LayoutChecks
                 }
             }
             // Exercise actual two-way bindings and the details panel.
+            await CardExportUiChecks.RunAsync(window, model, output);
             list.SelectedItem = model.VisibleCards[0]; await Task.Delay(50);
             if (model.SelectionCount != 1) throw new Exception("Grid selection did not update the model");
             search.Text = "示例人物 1"; await Task.Delay(400);

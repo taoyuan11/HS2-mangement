@@ -119,4 +119,22 @@ internal sealed class BoundedMessagePack(Stream stream, long end, int allocation
         }
     }
     private void SkipItems(int count, int depth) { if (count > 200000) throw new InvalidDataException("项目数量超限"); for (int i = 0; i < count; i++) Skip(depth + 1); }
+
+    // Visit text values without materializing embedded textures or other binary payloads.
+    internal void VisitStrings(Action<string, string> visit, CancellationToken cancellation, string key = "", int depth = 0)
+    {
+        cancellation.ThrowIfCancellationRequested(); Guard(depth);
+        long start = stream.Position; byte marker = Byte(); stream.Position = start;
+        if (marker is >= 0x80 and <= 0x8f or 0xde or 0xdf)
+        {
+            int count = MapCount();
+            for (int i = 0; i < count; i++)
+            { string name = Read(depth + 1)?.ToString() ?? ""; VisitStrings(visit, cancellation, name, depth + 1); }
+        }
+        else if (marker is >= 0x90 and <= 0x9f or 0xdc or 0xdd)
+        { int count = ArrayCount(); for (int i = 0; i < count; i++) VisitStrings(visit, cancellation, key, depth + 1); }
+        else if (marker is >= 0xa0 and <= 0xbf or 0xd9 or 0xda or 0xdb)
+        { if (Read(depth + 1) is string value) visit(key, value); }
+        else Skip(depth + 1);
+    }
 }
