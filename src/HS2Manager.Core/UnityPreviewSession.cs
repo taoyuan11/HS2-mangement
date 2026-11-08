@@ -22,6 +22,7 @@ public sealed class UnityPreviewSession : IDisposable
     private readonly TaskCompletionSource ready=new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Dictionary<long,TaskCompletionSource<KernelMessage>> loads=[];
     private long sequence;
+    private byte[]? frameBuffer;
     private int disposed;
     private string dataDirectory="";
     private long presentationLoad,presentationStarted;
@@ -149,7 +150,8 @@ public sealed class UnityPreviewSession : IDisposable
         try{Send(new KernelMessage{Kind="Cancel",Load=previous});}
         catch(IOException ex){Fault(ex);}
     }
-    public UnityFrame? ReadFrame()
+    /// <summary>With reuseBuffer, pixels remain valid only until the next reusable read. The viewport copies them immediately.</summary>
+    public UnityFrame? ReadFrame(bool reuseBuffer=false)
     {
         if(disposed!=0 || frameLock==null || view==null)return null;
         bool locked=false;
@@ -161,7 +163,11 @@ public sealed class UnityPreviewSession : IDisposable
             if(next==sequence || load!=CurrentLoad)return null;
             int width=view.ReadInt32(24),height=view.ReadInt32(28);
             if(width<1 || width>KernelWire.MaxWidth || height<1 || height>KernelWire.MaxHeight)throw new IOException("Invalid frame size.");
-            byte[] pixels=new byte[width*height*4];view.ReadArray(KernelWire.Header,pixels,0,pixels.Length);sequence=next;
+            int size=width*height*4;
+            byte[] pixels;
+            if(reuseBuffer){if(frameBuffer?.Length!=size)frameBuffer=new byte[size];pixels=frameBuffer;}
+            else pixels=new byte[size];
+            view.ReadArray(KernelWire.Header,pixels,0,pixels.Length);sequence=next;
             return LatestFrame=new UnityFrame(width,height,pixels,next,load);
         }
         finally{if(locked)frameLock.ReleaseMutex();}
@@ -173,7 +179,7 @@ public sealed class UnityPreviewSession : IDisposable
         try{process?.GetAwaiter().GetResult();}catch{}
         try{reader?.GetAwaiter().GetResult();}catch{}
         lock(loads)foreach(var pending in loads.Values)pending.TrySetCanceled();
-        view?.Dispose();map?.Dispose();frameLock?.Dispose();lifetime.Dispose();
+        view?.Dispose();map?.Dispose();frameLock?.Dispose();lifetime.Dispose();frameBuffer=null;LatestFrame=null;
     }
 }
 public sealed record UnityFrame(int Width,int Height,byte[] Pixels,long Sequence,long Load);

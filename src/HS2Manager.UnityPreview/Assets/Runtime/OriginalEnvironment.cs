@@ -20,7 +20,21 @@ namespace HS2Manager.UnityPreview
         private PostProcessLayer layer;
         private PostProcessVolume volume;
         private IndependentTemporalAA temporal;
+        private PostProcessVolume interactionVolume;
+        private PostProcessLayer.Antialiasing originalAntialiasing;
+        private bool interactive;
         public void ResetHistory(int phase=0){if(layer!=null)layer.ResetHistory();if(temporal!=null)temporal.ResetHistory(phase);}
+        public void SetInteractive(bool value)
+        {
+            // Camera motion invalidates CTAA/SSR history. Spatial AA keeps moving edges crisp;
+            // the original effects resume with fresh history after the camera settles.
+            if(value || interactive!=value)ResetHistory();
+            if(interactive==value)return;
+            interactive=value;
+            if(layer!=null)layer.antialiasingMode=value?PostProcessLayer.Antialiasing.SubpixelMorphologicalAntialiasing:originalAntialiasing;
+            if(temporal!=null)temporal.Bypass=value;
+            if(interactionVolume!=null)interactionVolume.enabled=value;
+        }
         public OriginalEnvironment(Camera target,EnvironmentDefinition definition,OriginalAssetStore assets,Dictionary<string,AssetReference> selections)
         {
             camera=target;data=definition;
@@ -93,6 +107,12 @@ namespace HS2Manager.UnityPreview
                     DynamicGI.UpdateEnvironment();
                 }
                 SetupPostProcessing();
+                originalAntialiasing=layer.antialiasingMode;
+                var interaction=Own(new GameObject("Camera interaction effects"));interaction.layer=31;
+                interactionVolume=interaction.AddComponent<PostProcessVolume>();interactionVolume.isGlobal=true;interactionVolume.priority=float.MaxValue;
+                interactionVolume.sharedProfile=Own(ScriptableObject.CreateInstance<PostProcessProfile>());
+                var motion=interactionVolume.sharedProfile.AddSettings<MotionBlur>();owned.Add(motion);motion.enabled.Override(false);
+                interactionVolume.enabled=false;
                 if(data.BetterAA)
                 {
                     temporal=camera.gameObject.AddComponent<IndependentTemporalAA>();

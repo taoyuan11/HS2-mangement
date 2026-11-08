@@ -12,6 +12,7 @@ namespace HS2Manager.UnityPreview
         private bool initialized;
         private int sample;
         public Vector2 ReferenceResolution;
+        public bool Bypass {get;set;}
         private static readonly float[] Horizontal={.5f,-.25f,.75f,-.125f,.625f,.575f,-.875f,.0625f,-.3f,.75f,-.25f,-.625f,.325f,.975f,-.075f,.625f};
         private static readonly float[] Vertical={.33f,-.66f,.51f,.44f,-.77f,.12f,-.55f,.88f,-.83f,.14f,.71f,-.34f,.87f,-.12f,.75f,.08f};
         public void Configure(Shader resolveShader,Shader enhanceShader,float[] parameters,Vector2 referenceResolution)
@@ -25,6 +26,7 @@ namespace HS2Manager.UnityPreview
         {
             if(settings==null)return;
             cameraComponent.ResetProjectionMatrix();cameraComponent.nonJitteredProjectionMatrix=cameraComponent.projectionMatrix;
+            if(Bypass)return;
             var matrix=cameraComponent.projectionMatrix;
             matrix.m02+=(Horizontal[sample]*settings[3]*2-1)/cameraComponent.pixelWidth;
             matrix.m12+=(Vertical[sample]*settings[3]*2-1)/cameraComponent.pixelHeight;
@@ -32,7 +34,7 @@ namespace HS2Manager.UnityPreview
         }
         private void OnRenderImage(RenderTexture source,RenderTexture destination)
         {
-            if(resolve==null){Graphics.Blit(source,destination);return;}
+            if(resolve==null || Bypass){initialized=false;Graphics.Blit(source,destination);return;}
             if(previous==null||previous.width!=source.width||previous.height!=source.height||previous.format!=source.format)
             {
                 Release();previous=Buffer(source);current=Buffer(source);sharpened=Buffer(source);initialized=false;

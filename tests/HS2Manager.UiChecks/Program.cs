@@ -28,6 +28,12 @@ internal static class Program
         resources.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "x", "http://schemas.microsoft.com/winfx/2006/xaml");
         resources.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "local", "clr-namespace:HS2Manager.App;assembly=HS2Manager");
         app.Resources = (ResourceDictionary)System.Windows.Markup.XamlReader.Parse(resources.ToString().Replace("clr-namespace:HS2Manager.App\"", "clr-namespace:HS2Manager.App;assembly=HS2Manager\""));
+        if (args.Contains("--unity-interaction"))
+        {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+            try { UnityInteractionChecks.Run(args); return 0; }
+            finally { app.Shutdown(); }
+        }
         if (args.Contains("--unity-performance"))
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));

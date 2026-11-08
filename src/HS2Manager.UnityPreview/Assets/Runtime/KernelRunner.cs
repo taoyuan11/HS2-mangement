@@ -9,6 +9,9 @@ using System.Linq;
 using System.Threading;
 using HS2Manager.Preview.Contracts;
 using UnityEngine;
+using UnityEngine.Rendering;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace HS2Manager.UnityPreview
 {
@@ -36,6 +39,14 @@ namespace HS2Manager.UnityPreview
         private RenderTexture target;
         private Texture2D pixels;
         private byte[] bgra;
+        private sealed class PendingFrame
+        {
+            public AsyncGPUReadbackRequest Request;
+            public long Load;
+        }
+        private readonly Queue<PendingFrame> readbacks=new Queue<PendingFrame>();
+        private bool asyncReadback;
+        private float interactionUntil;
         private bool playing=true;
         private float elapsed;
         private void Start()
@@ -44,7 +55,9 @@ namespace HS2Manager.UnityPreview
             {
                 var args=Environment.GetCommandLineArgs();session=args[Array.IndexOf(args,"--session")+1];
                 Guid parsed;if(!Guid.TryParseExact(session,"N",out parsed))throw new IOException("Invalid session.");
-                Application.runInBackground=true;Application.targetFrameRate=30;QualitySettings.vSyncCount=0;
+                Application.runInBackground=true;Application.targetFrameRate=60;QualitySettings.vSyncCount=0;
+                asyncReadback=SystemInfo.supportsAsyncGPUReadback && Environment.GetEnvironmentVariable("HS2_PREVIEW_SYNC_READBACK")!="1";
+                Debug.Log("KERNEL: asynchronous frame readback="+asyncReadback);
                 Debug.Log("KERNEL: connecting command pipe");
                 // Mono's FileStream serializes read/write on one handle. Separate one-way
                 // pipes keep an idle blocking read from blocking status writes.
@@ -103,16 +116,23 @@ namespace HS2Manager.UnityPreview
                     else if(message.Kind=="Play")playing=message.Playing;
                     else if(message.Load==currentLoad && message.Kind=="Camera" && message.Values.Length==7)
                     {
-                        var v=message.Values;cameraComponent.transform.position=new Vector3(v[0],v[1],v[2]);cameraComponent.transform.LookAt(new Vector3(v[3],v[4],v[5]));cameraComponent.fieldOfView=Mathf.Clamp(v[6],5,100);
+                        var v=message.Values;var position=new Vector3(v[0],v[1],v[2]);
+                        var rotation=Quaternion.LookRotation(new Vector3(v[3],v[4],v[5])-position);float fov=Mathf.Clamp(v[6],5,100);
+                        if(cameraComponent.transform.position!=position || cameraComponent.transform.rotation!=rotation || cameraComponent.fieldOfView!=fov)
+                        {
+                            cameraComponent.transform.SetPositionAndRotation(position,rotation);cameraComponent.fieldOfView=fov;
+                            interactionUntil=Time.unscaledTime+.15f;environment?.SetInteractive(true);
+                        }
                     }
                     else if(message.Kind=="Environment" && message.Values.Length==4)
                     {var v=message.Values;environment?.Customize(new Color(v[0],v[1],v[2]),Mathf.Clamp(v[3],0,4));}
                     else if(message.Kind=="Environment" && message.Text=="restore" && message.Load==currentLoad)environment?.Restore();
                     else if(message.Kind=="Screenshot" && character!=null && !loading)
-                    {RenderFrame();File.WriteAllBytes(message.Path,pixels.EncodeToPNG());Send(new KernelMessage{Kind="Screenshot",Load=currentLoad,Path=message.Path});}
+                    {ReadPixels();File.WriteAllBytes(message.Path,pixels.EncodeToPNG());Send(new KernelMessage{Kind="Screenshot",Load=currentLoad,Path=message.Path});}
                 }
                 catch(Exception error){Clear();Send(new KernelMessage{Kind="Error",Load=message.Load,Text=error.Message});Debug.LogException(error);}
             }
+            if(Time.unscaledTime>=interactionUntil)environment?.SetInteractive(false);
             if(!loading && pendingLoad!=null)
             {
                 var next=pendingLoad;pendingLoad=null;
@@ -203,27 +223,71 @@ namespace HS2Manager.UnityPreview
         }
         private IEnumerator OutputFrames()
         {
+            var endOfFrame=new WaitForEndOfFrame();
             while(!disconnected)
             {
-                yield return new WaitForEndOfFrame();
+                yield return endOfFrame;
+                try{CompleteReadbacks();}catch(Exception error){Clear();Send(new KernelMessage{Kind="Error",Load=currentLoad,Text=error.Message});}
                 if(character==null || loading || currentLoad!=Interlocked.Read(ref latestLoad))continue;
-                try{RenderFrame();}catch(Exception error){Clear();Send(new KernelMessage{Kind="Error",Load=currentLoad,Text=error.Message});}
+                try
+                {
+                    if(asyncReadback)
+                    {
+                        // D3D11 readback spans three player frames. Keep that pipeline fed,
+                        // but skip captures rather than building an unbounded queue when the GPU falls behind.
+                        if(readbacks.Count<3)readbacks.Enqueue(new PendingFrame{Request=AsyncGPUReadback.Request(target,0,TextureFormat.RGBA32),Load=currentLoad});
+                    }
+                    else {ReadPixels();Publish(pixels.GetRawTextureData<uint>(),currentLoad);}
+                }
+                catch(Exception error){Clear();Send(new KernelMessage{Kind="Error",Load=currentLoad,Text=error.Message});}
             }
         }
-        private void RenderFrame()
+        private void CompleteReadbacks()
         {
+            PendingFrame newest=null;
+            while(readbacks.Count>0 && readbacks.Peek().Request.done)
+            {
+                var pending=readbacks.Dequeue();
+                if(pending.Request.hasError)
+                {
+                    asyncReadback=false;Debug.LogWarning("KERNEL: async readback failed; using synchronous capture.");
+                    // Do not let an older queued capture overwrite a newer synchronous frame.
+                    DrainReadbacks();return;
+                }
+                if(character!=null && !loading && pending.Load==currentLoad && currentLoad==Interlocked.Read(ref latestLoad))newest=pending;
+            }
+            if(newest!=null)Publish(newest.Request.GetData<uint>(),newest.Load);
+        }
+        private void DrainReadbacks()
+        {
+            // A render texture cannot be released while a readback still references it.
+            while(readbacks.Count>0)readbacks.Dequeue().Request.WaitForCompletion();
+        }
+        private void ReadPixels()
+        {
+            if(pixels==null)pixels=new Texture2D(target.width,target.height,TextureFormat.RGBA32,false);
             var previous=RenderTexture.active;
-            try{RenderTexture.active=target;pixels.ReadPixels(new Rect(0,0,target.width,target.height),0,0,false);pixels.Apply(false);}
+            // ReadPixels already updates CPU storage; Apply would upload the entire frame back to the GPU.
+            try{RenderTexture.active=target;pixels.ReadPixels(new Rect(0,0,target.width,target.height),0,0,false);}
             finally{RenderTexture.active=previous;}
-            var rgba=pixels.GetRawTextureData();int stride=target.width*4;
-            for(int y=0;y<target.height;y++)for(int x=0;x<stride;x+=4)
-            {int src=y*stride+x,dst=(target.height-1-y)*stride+x;bgra[dst]=rgba[src+2];bgra[dst+1]=rgba[src+1];bgra[dst+2]=rgba[src];bgra[dst+3]=255;}
+        }
+        private unsafe void Publish(NativeArray<uint> rgba,long load)
+        {
+            int width=target.width,height=target.height;
+            if(rgba.Length!=width*height)throw new IOException("Invalid GPU frame size.");
+            var source=(uint*)NativeArrayUnsafeUtility.GetUnsafeReadOnlyPtr(rgba);
+            fixed(byte* bytes=bgra)
+                for(int y=0;y<height;y++)
+                {
+                    uint* input=source+y*width,output=(uint*)bytes+(height-1-y)*width;
+                    for(int x=0;x<width;x++){uint color=input[x];output[x]=0xff000000u|(color&0x0000ff00u)|((color&0xffu)<<16)|((color>>16)&0xffu);}
+                }
             bool locked=false;
             try
             {
                 try{locked=frameLock.WaitOne(0);}catch(AbandonedMutexException){locked=true;}
                 if(!locked)return;
-                view.WriteArray(KernelWire.Header,bgra,0,bgra.Length);view.Write(0,KernelWire.Version);view.Write(16,currentLoad);view.Write(24,target.width);view.Write(28,target.height);view.Write(8,++sequence);
+                view.WriteArray(KernelWire.Header,bgra,0,bgra.Length);view.Write(0,KernelWire.Version);view.Write(16,load);view.Write(24,width);view.Write(28,height);view.Write(8,++sequence);
             }
             finally{if(locked)frameLock.ReleaseMutex();}
         }
@@ -231,10 +295,12 @@ namespace HS2Manager.UnityPreview
         {
             width=Mathf.Clamp(width,64,KernelWire.MaxWidth);height=Mathf.Clamp(height,64,KernelWire.MaxHeight);
             if(target!=null && target.width==width && target.height==height)return;
-            if(target!=null){cameraComponent.targetTexture=null;target.Release();Destroy(target);Destroy(pixels);}
-            target=new RenderTexture(width,height,24,RenderTextureFormat.ARGB32);target.Create();pixels=new Texture2D(width,height,TextureFormat.RGBA32,false);bgra=new byte[width*height*4];
+            DrainReadbacks();
+            if(target!=null){cameraComponent.targetTexture=null;target.Release();Destroy(target);if(pixels!=null)Destroy(pixels);pixels=null;}
+            target=new RenderTexture(width,height,24,RenderTextureFormat.ARGB32);target.Create();bgra=new byte[width*height*4];
             cameraComponent.targetTexture=target;
             cameraComponent.aspect=(float)width/height;
+            environment?.ResetHistory();
         }
         private void Send(KernelMessage message)
         {
@@ -245,7 +311,7 @@ namespace HS2Manager.UnityPreview
         {
             disconnected=true;pipe?.Dispose();events?.Dispose();if(reader!=null && reader.IsAlive)reader.Join(1000);
             StopAllCoroutines();while(loadSteps.Count>0)(loadSteps.Pop() as IDisposable)?.Dispose();
-            Clear();assets.Dispose();if(target!=null){target.Release();Destroy(target);}if(pixels!=null)Destroy(pixels);
+            DrainReadbacks();Clear();assets.Dispose();if(target!=null){target.Release();Destroy(target);}if(pixels!=null)Destroy(pixels);
             view?.Dispose();map?.Dispose();frameLock?.Dispose();
         }
     }

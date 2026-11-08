@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Threading;
 using HS2Manager.Core;
 using HS2Manager.Preview.Contracts;
 
@@ -13,20 +12,34 @@ public sealed class UnityPreviewViewport : FrameworkElement
     public UnityPreviewSession? Session {get=>(UnityPreviewSession?)GetValue(SessionProperty);set=>SetValue(SessionProperty,value);}
     private WriteableBitmap? frame;
     private long frameLoad;
-    private readonly DispatcherTimer timer;
+    private bool subscribed,resizePending;
+    private TimeSpan lastRenderingTime=TimeSpan.MinValue;
     public string? RenderError {get;private set;}
     public bool HasFrame=>frame!=null;
     public int FrameWidth=>frame?.PixelWidth??0;
     public UnityPreviewViewport()
     {
-        timer=new DispatcherTimer(DispatcherPriority.Render){Interval=TimeSpan.FromMilliseconds(33)};
-        timer.Tick+=(_,_)=>Refresh();Loaded+=(_,_)=>Start();Unloaded+=(_,_)=>Stop();
-        IsVisibleChanged+=(_,_)=>{if(IsVisible)Start();else Stop();};SizeChanged+=(_,_)=>Resize();
+        Loaded+=(_,_)=>Start();Unloaded+=(_,_)=>Stop();
+        IsVisibleChanged+=(_,_)=>{if(IsVisible)Start();else Stop();};SizeChanged+=(_,_)=>resizePending=true;
     }
     private static void Changed(DependencyObject obj,DependencyPropertyChangedEventArgs args)
     {var self=(UnityPreviewViewport)obj;self.Stop();self.Start();}
-    private void Start(){if(!IsVisible || Session==null)return;RenderError=null;timer.Start();Resize();}
-    private void Stop(){timer.Stop();frame=null;frameLoad=0;RenderError=null;InvalidateVisual();}
+    private void Start()
+    {
+        if(!IsLoaded || !IsVisible || Session==null || subscribed)return;
+        RenderError=null;lastRenderingTime=TimeSpan.MinValue;resizePending=true;
+        CompositionTarget.Rendering+=Rendering;subscribed=true;
+    }
+    private void Unsubscribe(){if(subscribed)CompositionTarget.Rendering-=Rendering;subscribed=false;}
+    private void Stop(){Unsubscribe();frame=null;frameLoad=0;RenderError=null;InvalidateVisual();}
+    private void Rendering(object? sender,EventArgs args)
+    {
+        var time=((RenderingEventArgs)args).RenderingTime;
+        if(time==lastRenderingTime)return;
+        lastRenderingTime=time;
+        if(resizePending){resizePending=false;Resize();}
+        Refresh();
+    }
     private void Resize()
     {
         if(Session==null || ActualWidth<1 || ActualHeight<1)return;
@@ -39,11 +52,11 @@ public sealed class UnityPreviewViewport : FrameworkElement
     {
         try
         {
-            var next=Session?.ReadFrame();if(next==null)return;
+            var next=Session?.ReadFrame(reuseBuffer:true);if(next==null)return;
             if(frame==null || frame.PixelWidth!=next.Width || frame.PixelHeight!=next.Height)frame=new WriteableBitmap(next.Width,next.Height,96,96,PixelFormats.Bgra32,null);
             frame.WritePixels(new Int32Rect(0,0,next.Width,next.Height),next.Pixels,next.Width*4,0);frameLoad=next.Load;RenderError=null;InvalidateVisual();
         }
-        catch(Exception ex){RenderError=ex.Message;timer.Stop();InvalidateVisual();}
+        catch(Exception ex){RenderError=ex.Message;Unsubscribe();InvalidateVisual();}
     }
     public async Task WaitForRenderAsync()
     {
@@ -52,7 +65,7 @@ public sealed class UnityPreviewViewport : FrameworkElement
         UpdateLayout();
     }
     public Task StopAsync(){Stop();return Task.CompletedTask;}
-    protected override void OnDpiChanged(DpiScale oldDpi,DpiScale newDpi){base.OnDpiChanged(oldDpi,newDpi);Resize();}
+    protected override void OnDpiChanged(DpiScale oldDpi,DpiScale newDpi){base.OnDpiChanged(oldDpi,newDpi);resizePending=true;}
     protected override void OnRender(DrawingContext context)
     {if(frame!=null){context.DrawImage(frame,new Rect(RenderSize));Session?.ReportFramePresented(frameLoad);}}
 }

@@ -37,6 +37,19 @@ internal static class UnitySessionChecks
             session.Send(new KernelMessage{Kind="Resize",Width=640,Height=360});
             var frame=await Frame(1,640,360);
             Save(frame,"front.png");
+            var snapshot=frame.Pixels.ToArray();
+            var reusable=await Frame(1,640,360,true);
+            var reusedFrame=await Frame(1,640,360,true);
+            if(!ReferenceEquals(reusable.Pixels,reusedFrame.Pixels))throw new Exception("Viewport capture allocated another full-frame buffer.");
+            if(!snapshot.SequenceEqual(frame.Pixels))throw new Exception("Reusable capture modified an independent snapshot.");
+            // Resize with readbacks in flight, including non-aligned row widths, then return to the original size.
+            foreach(var size in new[]{(321,181),(960,540),(641,361),(640,360)})
+            {
+                session.Send(new KernelMessage{Kind="Resize",Width=size.Item1,Height=size.Item2});
+                var resized=await Frame(1,size.Item1,size.Item2,true);
+                if(resized.Pixels.Length!=size.Item1*size.Item2*4 || resized.Pixels.Where((_,i)=>i%4==3).Any(a=>a!=255))
+                    throw new Exception("Invalid resized frame storage or opacity.");
+            }
             session.Send(new KernelMessage{Kind="Camera",Load=1,Values=[30,8,0,0,8,0,35]});
             await Task.Delay(150);frame=await Frame(1,640,360);Save(frame,"side.png");
             if(File.ReadAllBytes(Path.Combine(output,"front.png")).SequenceEqual(File.ReadAllBytes(Path.Combine(output,"side.png"))))throw new Exception("Camera command did not affect Unity image.");
@@ -48,7 +61,17 @@ internal static class UnitySessionChecks
             string screenshot=Path.Combine(output,"kernel-screenshot.png");if(File.Exists(screenshot))File.Delete(screenshot);
             session.Send(new KernelMessage{Kind="Screenshot",Load=1,Path=screenshot});
             for(int i=0;i<60&&!File.Exists(screenshot);i++)await Task.Delay(50);
-            using(var image=File.OpenRead(screenshot)){var decoded=new PngBitmapDecoder(image,BitmapCreateOptions.None,BitmapCacheOption.OnLoad);if(decoded.Frames[0].PixelWidth!=640||decoded.Frames[0].PixelHeight!=360)throw new Exception("Screenshot did not use the completed render target.");}
+            using(var image=File.OpenRead(screenshot))
+            {
+                var decoded=new PngBitmapDecoder(image,BitmapCreateOptions.None,BitmapCacheOption.OnLoad);
+                if(decoded.Frames[0].PixelWidth!=640||decoded.Frames[0].PixelHeight!=360)throw new Exception("Screenshot did not use the completed render target.");
+                var bitmap=new FormatConvertedBitmap(decoded.Frames[0],PixelFormats.Bgra32,null,0);
+                var reference=new byte[640*360*4];bitmap.CopyPixels(reference,640*4,0);
+                var transported=await Frame(1,640,360);
+                long error=0;for(int i=0;i<reference.Length;i++)if(i%4!=3)error+=Math.Abs(reference[i]-transported.Pixels[i]);
+                // Adjacent TAA frames can differ slightly; channel swaps, inversion and linear/sRGB mistakes cannot.
+                if(error/(640*360*3d)>3)throw new Exception("Frame transport changed screenshot colors or orientation.");
+            }
             using(var canceled=new CancellationTokenSource())
             {
                 bool reached=false;
@@ -104,12 +127,12 @@ internal static class UnitySessionChecks
         }
         finally{session.Dispose();if(pid>0 && Running(pid))throw new Exception("Owned process leak: "+pid);}
 
-        async Task<UnityFrame> Frame(long load,int width,int height)
+        async Task<UnityFrame> Frame(long load,int width,int height,bool reuseBuffer=false)
         {
             var deadline=DateTime.UtcNow.AddSeconds(30);
             while(DateTime.UtcNow<deadline)
             {
-                var next=session.ReadFrame();
+                var next=session.ReadFrame(reuseBuffer);
                 if(next!=null && next.Load==load && next.Width==width && next.Height==height)
                 {
                     if(next.Pixels.Where((_,i)=>i%4!=3).Distinct().Count()<15)throw new Exception("Empty frame.");

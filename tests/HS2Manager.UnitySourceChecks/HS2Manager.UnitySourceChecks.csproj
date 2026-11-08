@@ -5,6 +5,7 @@
     <LangVersion>7.3</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <UnityEditorRoot Condition="'$(UnityEditorRoot)' == ''">$(MSBuildThisFileDirectory)../../.tools/unity/2018.4.11f1/Editor</UnityEditorRoot>
   </PropertyGroup>
