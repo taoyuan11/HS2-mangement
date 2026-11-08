@@ -60,13 +60,29 @@ public sealed class WrapPanel : Panel
     }
     protected override Size ArrangeOverride(Size available)
     {
-        double x = 0, y = 0, rowHeight = 0;
-        foreach (var child in Children)
+        double width = 0, y = 0, rowHeight = 0;
+        int rowStart = 0;
+        void ArrangeRow(int end)
         {
-            var size = child.DesiredSize;
-            if (x > 0 && x + size.Width > available.Width) { y += rowHeight; x = rowHeight = 0; }
-            child.Arrange(new Rect(x, y, size.Width, size.Height)); x += size.Width; rowHeight = Math.Max(rowHeight, size.Height);
+            double x = 0;
+            for (int i = rowStart; i < end; i++)
+            {
+                var child = Children[i];
+                // Give every item the line height so VerticalAlignment applies to the whole row.
+                child.Arrange(new Rect(x, y, child.DesiredSize.Width, rowHeight));
+                x += child.DesiredSize.Width;
+            }
         }
+        for (int i = 0; i < Children.Count; i++)
+        {
+            var size = Children[i].DesiredSize;
+            if (width > 0 && width + size.Width > available.Width)
+            {
+                ArrangeRow(i); y += rowHeight; width = rowHeight = 0; rowStart = i;
+            }
+            width += size.Width; rowHeight = Math.Max(rowHeight, size.Height);
+        }
+        ArrangeRow(Children.Count);
         return available;
     }
 }

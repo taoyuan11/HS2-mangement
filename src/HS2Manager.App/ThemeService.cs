@@ -15,10 +15,10 @@ public static class ThemeService
     {
         Current = theme;
         IsDark = theme == "Dark" || (theme == "System" && Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1) is int n && n == 0);
-        string[] keys = ["PageBrush", "SidebarBrush", "SurfaceBrush", "HoverBrush", "BorderBrush", "TextBrush", "MutedBrush", "AccentBrush", "AccentTextBrush", "SelectedBrush", "SuccessBrush", "WarningBrush"];
+        string[] keys = ["PageBrush", "SidebarBrush", "SurfaceBrush", "HoverBrush", "BorderBrush", "TextBrush", "MutedBrush", "AccentBrush", "AccentTextBrush", "SelectedBrush", "SuccessBrush", "WarningBrush", "DangerBrush"];
         string[] values = IsDark
-            ? ["1C1D1F", "151618", "252729", "303335", "383B3C", "E8EAE6", "969D97", "E0E8DD", "1C261F", "344239", "86B69A", "D1AB70"]
-            : ["FAFAF9", "F1F1EF", "FFFFFF", "EAEAE7", "E3E3DF", "242723", "777B74", "282E29", "FFFFFF", "E1E8DE", "438464", "A26D24"];
+            ? ["1C1D1F", "151618", "252729", "303335", "383B3C", "E8EAE6", "A9B1AA", "E0E8DD", "1C261F", "344239", "86B69A", "D1AB70", "FFB4AB"]
+            : ["FAFAF9", "F1F1EF", "FFFFFF", "EAEAE7", "E3E3DF", "242723", "62685F", "282E29", "FFFFFF", "E1E8DE", "35704F", "92601D", "B42318"];
         for (int i = 0; i < keys.Length; i++)
         {
             uint rgb = Convert.ToUInt32(values[i], 16);

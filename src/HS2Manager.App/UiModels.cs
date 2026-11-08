@@ -22,6 +22,7 @@ public sealed class CardItemViewModel(CardRecord card, string dataDirectory) : O
     public string Subtitle => Record.SexLabel + "  ·  " + Record.SizeLabel;
     public bool Favorite => Record.Favorite;
     public string Status => Record.Availability == FileAvailability.Available ? Record.StatusLabel : Record.AvailabilityLabel;
+    public Brush StatusBrush => (Brush)Application.Current.Resources[Record.Availability == FileAvailability.Available && Record.Status == CardStatus.Valid ? "SuccessBrush" : "WarningBrush"];
     public string DetailLine => Record.FileName;
     public string Folder => Record.Folder;
     public string Modified => new DateTime(Record.ModifiedUtcTicks, DateTimeKind.Utc).ToLocalTime().ToString("yyyy-MM-dd HH:mm");
@@ -80,6 +81,12 @@ public sealed record DependencyItem(DependencyResult Result)
 public sealed class BoolVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language) { bool visible = value is true; if (parameter?.ToString() == "Invert") visible = !visible; return visible ? Visibility.Visible : Visibility.Collapsed; }
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => DependencyProperty.UnsetValue;
+}
+public sealed class NavigationBackgroundConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+        => value?.ToString() == parameter?.ToString() ? Application.Current.Resources["SelectedBrush"] : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
     public object ConvertBack(object value, Type targetType, object parameter, string language) => DependencyProperty.UnsetValue;
 }
 public sealed class NullVisibilityConverter : IValueConverter

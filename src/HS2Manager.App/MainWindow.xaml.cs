@@ -20,11 +20,13 @@ public partial class MainWindow : Window
     public MainViewModel ViewModel { get; }
 
     private bool closing, shutdownComplete, dragging, panning;
+    private bool previewRailSyncPending, previewRailRevealPending;
     private Point lastPointer;
     private readonly UISettings preferences = new();
     public MainWindow(MainViewModel model)
     {
         ViewModel = model; InitializeComponent(); Root.DataContext = model;
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Brand", "hs2-manager.ico"));
         UiDispatcher.Initialize();
         var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
         double scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96d;
@@ -35,6 +37,8 @@ public partial class MainWindow : Window
         ThemeService.Register(this);
         model.ShowReport += ReportRequested;
         model.SelectionRestoreRequested += RestoreSelection;
+        model.PropertyChanged += NavigationChanged;
+        model.PropertyChanged += PreviewSelectionChanged;
         Root.Loaded += async (_, _) => { if (!initialized) { initialized = true; await ViewModel.InitializeAsync(); } };
         AppWindow.Closing += Window_Closing;
         preferences.ColorValuesChanged += SystemPreferenceChanged;
@@ -72,6 +76,8 @@ public partial class MainWindow : Window
         preferences.ColorValuesChanged -= SystemPreferenceChanged;
         ViewModel.ShowReport -= ReportRequested;
         ViewModel.SelectionRestoreRequested -= RestoreSelection;
+        ViewModel.PropertyChanged -= NavigationChanged;
+        ViewModel.PropertyChanged -= PreviewSelectionChanged;
         try
         {
             if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Restored })
@@ -93,12 +99,18 @@ public partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint window);
     private async void Navigate_Click(object sender, RoutedEventArgs e)
     { if (ViewModel.IsPreview) await ViewModel.ClosePreviewAsync(); CollectionList.SelectedItem = null; ViewModel.Navigate((string)((Button)sender).Tag); }
+    private void NavigationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainViewModel.CurrentNavigation) || ViewModel.CurrentNavigation.Length == 0) return;
+        CollectionList.SelectedItem = null;
+        FolderTree.SelectedItem = null;
+    }
     private async void Duplicates_Click(object sender, RoutedEventArgs e)
     { if (ViewModel.IsPreview) await ViewModel.ClosePreviewAsync(); await ViewModel.FindDuplicatesAsync(); }
-    private void Collection_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    { if (CollectionList.SelectedItem is string name) ViewModel.NavigateCollection(name); }
-    private void Folder_Selected(TreeView sender, TreeViewSelectionChangedEventArgs e)
-    { if (sender.SelectedItem is FolderNode node) { CollectionList.SelectedItem = null; ViewModel.NavigateFolder(node); } }
+    private async void Collection_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    { if (CollectionList.SelectedItem is string name) { if (ViewModel.IsPreview) await ViewModel.ClosePreviewAsync(); FolderTree.SelectedItem = null; ViewModel.NavigateCollection(name); } }
+    private async void Folder_Selected(TreeView sender, TreeViewSelectionChangedEventArgs e)
+    { if (sender.SelectedItem is FolderNode node) { if (ViewModel.IsPreview) await ViewModel.ClosePreviewAsync(); CollectionList.SelectedItem = null; ViewModel.NavigateFolder(node); } }
     private void Cards_SelectionChanged(object sender, SelectionChangedEventArgs e)
     { ViewModel.SetSelection(CardList.SelectedItems.Cast<CardItemViewModel>(), e.AddedItems.Cast<CardItemViewModel>().LastOrDefault() ?? CardList.SelectedItems.Cast<CardItemViewModel>().FirstOrDefault()); }
     private async void Cards_DoubleClick(object sender, DoubleTappedRoutedEventArgs e)
@@ -253,8 +265,31 @@ public partial class MainWindow : Window
         Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
     }
     private async void Preview_Click(object sender, RoutedEventArgs e) { if (ViewModel.CanPreview) await ViewModel.OpenPreviewAsync(); }
+    private void PreviewSelectionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not (nameof(MainViewModel.IsPreview) or nameof(MainViewModel.PreviewCardId)
+            or nameof(MainViewModel.VisibleCards) or nameof(MainViewModel.ShowPreviewRail))) return;
+        if (e.PropertyName == nameof(MainViewModel.IsPreview)) previewRailRevealPending = ViewModel.IsPreview;
+        if (previewRailSyncPending) return;
+        // Let visibility and ItemsSource bindings settle before realizing an off-screen card.
+        previewRailSyncPending = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            previewRailSyncPending = false;
+            bool reveal = previewRailRevealPending;
+            previewRailRevealPending = false;
+            if (closing || !ViewModel.IsPreview) return;
+            var card = ViewModel.VisibleCards.FirstOrDefault(item => item.Record.Id == ViewModel.PreviewCardId);
+            PreviewRail.SelectedItem = card;
+            // Only entering preview from the library should change the scroll position.
+            if (reveal && card != null && ViewModel.ShowPreviewRail)
+            {
+                Root.UpdateLayout();
+                PreviewRail.ScrollIntoView(card, ScrollIntoViewAlignment.Leading);
+            }
+        });
+    }
     private async void PreviewRail_Selected(object sender, SelectionChangedEventArgs e)
-    { if (ViewModel.IsPreview && PreviewRail.SelectedItem is CardItemViewModel item) await ViewModel.OpenPreviewAsync(item.Record); }
+    { if (ViewModel.IsPreview && PreviewRail.SelectedItem is CardItemViewModel item && item.Record.Id != ViewModel.PreviewCardId) await ViewModel.OpenPreviewAsync(item.Record); }
     private async void ClosePreview_Click(object sender, RoutedEventArgs e) => await ViewModel.ClosePreviewAsync();
     private async void RetryPreview_Click(object sender, RoutedEventArgs e) => await ViewModel.RetryPreviewAsync();
     private void ToggleRail_Click(object sender, RoutedEventArgs e) => ViewModel.ShowPreviewRail = !ViewModel.ShowPreviewRail;

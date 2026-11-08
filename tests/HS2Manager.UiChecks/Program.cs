@@ -37,7 +37,8 @@ internal sealed class CheckApplication(string[] args) : App
         try
         {
             string Arg(string key, string fallback) => Array.IndexOf(args, key) is int i && i >= 0 ? args[i + 1] : fallback;
-            if (args.Contains("--card-delete")) await CardDeletionUiChecks.RunAsync(root);
+            if (args.Contains("--preview-rail")) await PreviewRailUiChecks.RunAsync(root);
+            else if (args.Contains("--card-delete")) await CardDeletionUiChecks.RunAsync(root);
             else if (args.Contains("--unity-interaction")) await UnityInteractionChecks.RunAsync(args);
             else if (args.Contains("--card-export")) await LayoutChecks.RunAsync(root);
             else if (args.Contains("--unity-performance")) await UnityPerformanceChecks.RunAsync(args);
@@ -46,7 +47,7 @@ internal sealed class CheckApplication(string[] args) : App
             else
             {
                 await WindowCloseUiChecks.RunAsync(root);
-                if (!args.Contains("--window-close")) { await CardDeletionUiChecks.RunAsync(root); await LayoutChecks.RunAsync(root); }
+                if (!args.Contains("--window-close")) { await PreviewRailUiChecks.RunAsync(root); await CardDeletionUiChecks.RunAsync(root); await LayoutChecks.RunAsync(root); }
             }
             if (UiTest.BindingErrors.Count > 0) throw new Exception("XAML binding errors:\n" + string.Join("\n", UiTest.BindingErrors.Distinct()));
             Console.WriteLine("ALL WINUI 3 CHECKS PASSED");
@@ -132,6 +133,7 @@ internal static class LayoutChecks
                     var genderText = UiTest.Descendants<TextBlock>(gender).FirstOrDefault(t => t.Text == model.GenderFilter);
                     if (gender.ActualWidth < 136 || genderText?.IsTextTrimmed == true)
                         throw new Exception("Gender filter text is clipped");
+                    DesignLayoutChecks.CheckLibrary(canvas);
                     int realized = Enumerable.Range(0, 80).Count(i => list.ContainerFromIndex(i) != null);
                     if (realized is 0 or >= 80) throw new Exception("WinUI card virtualization failed: " + realized);
                     await UiTest.CaptureAsync(canvas, Path.Combine(output, $"{theme}-{size.Item1}-library.png"));
@@ -139,6 +141,7 @@ internal static class LayoutChecks
                 }
             }
             // Exercise actual two-way bindings and the details panel.
+            await DesignLayoutChecks.CheckNavigationAsync(window, model, output);
             await CardExportUiChecks.RunAsync(window, model, output);
             list.SelectedItem = model.VisibleCards[0]; await Task.Delay(50);
             if (model.SelectionCount != 1) throw new Exception("Grid selection did not update the model");
@@ -160,6 +163,7 @@ internal static class LayoutChecks
             await model.OpenPreviewAsync(missingCard);
             await Task.Delay(100);
             if (!model.HasPreviewError) throw new Exception("Offline preview should report an error");
+            await DesignLayoutChecks.CheckPreviewAsync(window, model, output);
             await UiTest.CaptureAsync(canvas, Path.Combine(output, "preview-error.png"));
             await model.ClosePreviewAsync();
             Console.WriteLine("PASS selection, search, details persistence, offline preview");

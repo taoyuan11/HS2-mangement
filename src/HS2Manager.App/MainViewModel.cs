@@ -21,7 +21,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly UnityCharacterService unityCharacters = new();
     private List<CardItemViewModel> allCards = [];
     private ObservableCollection<CardItemViewModel> visibleCards = [];
-    public ObservableCollection<CardItemViewModel> VisibleCards { get => visibleCards; private set { Set(ref visibleCards, value); Changed(nameof(Empty)); Changed(nameof(ResultSummary)); } }
+    public ObservableCollection<CardItemViewModel> VisibleCards { get => visibleCards; private set { Set(ref visibleCards, value); Changed(nameof(Empty)); Changed(nameof(ResultSummary)); Changed(nameof(EmptyTitle)); Changed(nameof(EmptyDescription)); } }
     public ObservableCollection<FolderNode> Folders { get; } = [];
     public ObservableCollection<string> Collections { get; } = [];
     public ObservableCollection<string> Tags { get; } = ["全部标签"];
@@ -47,13 +47,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (!Set(ref selectedCard, value)) return;
             EditTags = value == null ? "" : string.Join(", ", value.Record.Tags); EditNotes = value?.Record.Notes ?? "";
             DetailDependencies = value == null ? [] : new(Mods.Diagnose(value.Record, Settings.GamePath, gameConnected).Select(x => new DependencyItem(x)));
-            Changed(nameof(CanPreview)); Changed(nameof(FavoriteText)); Changed(nameof(DependencySummary));
+            Changed(nameof(CanPreview)); Changed(nameof(FavoriteText)); Changed(nameof(FavoriteGlyph)); Changed(nameof(DependencySummary));
         }
     }
     private ObservableCollection<DependencyItem> dependencies = [];
     public ObservableCollection<DependencyItem> DetailDependencies { get => dependencies; private set => Set(ref dependencies, value); }
     public string DependencySummary => SelectedCard == null ? "" : $"{DetailDependencies.Count(x => x.Result.State == DependencyState.Missing)} 项缺失 · {DetailDependencies.Count(x => x.Result.State == DependencyState.Unknown)} 项待确认";
-    public string FavoriteText => SelectedCard?.Favorite == true ? "★ 已收藏" : "☆ 收藏";
+    public string FavoriteText => SelectedCard?.Favorite == true ? "已收藏" : "收藏人物卡";
+    public string FavoriteGlyph => SelectedCard?.Favorite == true ? "\uE735" : "\uE734";
     private string editTags = "", editNotes = "";
     public string EditTags { get => editTags; set => Set(ref editTags, value); }
     public string EditNotes { get => editNotes; set => Set(ref editNotes, value); }
@@ -76,6 +77,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
     private string mode = "all", folderFilter = "", collectionFilter = "";
     public string CurrentMode => mode;
+    public string CurrentNavigation => folderFilter.Length == 0 && collectionFilter.Length == 0 ? mode : "";
     private string pageTitle = "人物卡";
     public string PageTitle { get => pageTitle; private set => Set(ref pageTitle, value); }
     public bool IsTrash => mode == "trash";
@@ -88,8 +90,27 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private HashSet<string> duplicateIds = [];
     public int DuplicateCount => duplicateIds.Count;
     public bool Empty => VisibleCards.Count == 0;
+    private bool HasFilters => !string.IsNullOrWhiteSpace(SearchText) || GenderFilter != "全部性别" || TagFilter != "全部标签";
+    public string EmptyTitle => HasFilters ? "没有匹配的人物卡"
+        : collectionFilter.Length > 0 ? "这个分类还没有人物卡"
+        : folderFilter.Length > 0 ? "这个文件夹还没有人物卡" : mode switch
+    {
+        "favorites" => "还没有收藏的人物卡", "duplicates" => "没有完全重复的文件",
+        "issues" => "没有需要关注的项目", "trash" => "隔离区为空", _ => "这里还没有人物卡"
+    };
+    public string EmptyDescription => HasFilters ? "试试其他关键词，或调整性别与标签筛选。"
+        : collectionFilter.Length > 0 ? "在“全部人物卡”中选择人物卡，点击“分类”即可加入。"
+        : folderFilter.Length > 0 ? "确认目录中的 PNG 人物卡可读取，然后点击“刷新”。" : mode switch
+    {
+        "favorites" => "选中人物卡后点击收藏，即可在这里快速找到。",
+        "duplicates" => "内容完全相同的文件会在校验后显示在这里。",
+        "issues" => "异常文件和缺失的来源文件会显示在这里。",
+        "trash" => "移入隔离区的人物卡会显示在这里，可随时恢复。",
+        _ => "拖入 PNG 人物卡，或点击“导入人物卡”开始整理。"
+    };
     private bool gameConnected;
     public string GameConnection => gameConnected ? "游戏目录已连接" : "游戏目录离线";
+    public Brush GameConnectionBrush => (Brush)Microsoft.UI.Xaml.Application.Current.Resources[gameConnected ? "SuccessBrush" : "WarningBrush"];
     public string GameFolderName => Path.GetFileName(Settings.GamePath.TrimEnd(Path.DirectorySeparatorChar));
     private bool busy;
     public bool IsBusy { get => busy; private set { if (Set(ref busy, value)) { Changed(nameof(IsIdle)); Changed(nameof(CanModify)); Changed(nameof(CanPreview)); } } }
@@ -124,7 +145,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         await RunWork("刷新人物卡索引", async (ct, progress) =>
         {
             bool connected = Directory.Exists(Settings.GamePath);
-            await UiDispatcher.InvokeAsync(() => { gameConnected = connected; Changed(nameof(GameConnection)); });
+            await UiDispatcher.InvokeAsync(() => { gameConnected = connected; Changed(nameof(GameConnection)); Changed(nameof(GameConnectionBrush)); });
             var report = await Library.ScanAsync(Settings.ScanRoots, progress, ct, Settings.RecursiveCardSearch);
             if (report.Warnings.Count > 0) WriteLog("扫描", string.Join(Environment.NewLine, report.Warnings));
             return $"扫描完成：{report.Valid} 张人物卡，{report.Invalid} 个其他或异常文件，{report.Unchanged} 项无需更新" + (report.Warnings.Count > 0 ? $"；{report.Warnings.Count} 项目录/文件警告，详见日志" : "");
@@ -154,6 +175,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private async void DebounceFilter() { int version = ++filterGeneration; await Task.Delay(180); if (version == filterGeneration) RefreshView(); }
     private void RefreshView()
     {
+        Changed(nameof(CurrentNavigation));
         IEnumerable<CardItemViewModel> query = allCards;
         query = mode switch
         {
@@ -331,11 +353,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool isPreview, previewBusy, showRail = true;
     private string previewStatus = "", previewError = "", previewName = "", previewWarnings = "";
     public bool IsPreview { get => isPreview; private set => Set(ref isPreview, value); }
-    public bool PreviewBusy { get => previewBusy; private set => Set(ref previewBusy, value); }
+    public bool PreviewBusy { get => previewBusy; private set { Set(ref previewBusy, value); Changed(nameof(CanControlPreview)); } }
     public string PreviewStatus { get => previewStatus; private set => Set(ref previewStatus, value); }
-    public string PreviewError { get => previewError; private set { Set(ref previewError, value); Changed(nameof(HasPreviewError)); } }
+    public string PreviewError { get => previewError; private set { Set(ref previewError, value); Changed(nameof(HasPreviewError)); Changed(nameof(CanControlPreview)); } }
     public bool HasPreviewError => PreviewError.Length > 0;
+    public bool CanControlPreview => UnitySession != null && !PreviewBusy && !HasPreviewError;
     public string PreviewName { get => previewName; private set => Set(ref previewName, value); }
+    public string? PreviewCardId => previewCard?.Id;
     public string PreviewFileName => previewCard?.FileName ?? "";
     public string PreviewFilePath => previewCard?.Path ?? "";
     public string PreviewLimitations => "原始 Unity 材质预览 · 尚未通过全部游戏画面及动态对照；环境和未支持效果见兼容性说明。";
@@ -344,7 +368,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     // resource preparation, cancelled loads and recoverable card errors.
     private UnityPreviewSession? ownedUnitySession;
     private Task? unityStartup;
-    public UnityPreviewSession? UnitySession {get=>unitySession;private set=>Set(ref unitySession,value);}
+    public UnityPreviewSession? UnitySession {get=>unitySession;private set { Set(ref unitySession,value); Changed(nameof(CanControlPreview)); }}
     public string UnityPlayerPath {get;set;}=UnityPreviewSession.DefaultPlayer;
     private PreviewBounds previewBounds=PreviewBounds.Empty;
     private bool previewPlaying=true;
@@ -398,6 +422,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         UnitySession=null;previewBounds=PreviewBounds.Empty;faceBounds=PreviewBounds.Empty;
         IsPreview = true; PreviewBusy = true; PreviewError = ""; PreviewWarnings = "";
         PreviewName = card.Name; previewCard = card;
+        Changed(nameof(PreviewCardId));
         Changed(nameof(PreviewFileName)); Changed(nameof(PreviewFilePath));
         ResetEnvironmentControls();
         PreviewStatus = "正在读取独立预览资源…";

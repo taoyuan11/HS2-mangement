@@ -13,9 +13,14 @@
     <SelfContained>true</SelfContained>
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><AssemblyName>HS2Manager</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest><Version>1.2.0-preview.2</Version>
+    <ApplicationIcon>Assets\Brand\hs2-manager.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../HS2Manager.Core/HS2Manager.Core.csproj" /></ItemGroup>
   <ItemGroup><PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" /></ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\Brand\hs2-manager.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\Brand\hs2-manager.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
   <!-- The .NET 10 unpackaged publish pipeline must carry generated XAML and its PRI index. -->
   <Target Name="IncludeWinUiResourcesInPublish" AfterTargets="ComputeFilesToPublish">
     <ItemGroup>
