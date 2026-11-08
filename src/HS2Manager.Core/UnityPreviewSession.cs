@@ -1,4 +1,5 @@
 using System.IO.MemoryMappedFiles;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text.Json;
 using HS2Manager.Preview.Contracts;
@@ -22,11 +23,23 @@ public sealed class UnityPreviewSession : IDisposable
     private readonly Dictionary<long,TaskCompletionSource<KernelMessage>> loads=[];
     private long sequence;
     private int disposed;
+    private string dataDirectory="";
+    private long presentationLoad,presentationStarted;
+    private bool presented;
     public bool IsUsable => Volatile.Read(ref disposed)==0 && !lifetime.IsCancellationRequested;
     public int ProcessId {get;private set;}
     public long CurrentLoad {get;private set;}
     public UnityFrame? LatestFrame {get;private set;}
     public event Action<string>? Failed;
+    public event Action<KernelMessage>? Progress;
+    public void TrackPresentation(long load,long started)
+    {presentationLoad=load;presentationStarted=started;presented=false;}
+    public void ReportFramePresented(long load)
+    {
+        if(presented || load!=presentationLoad || load!=CurrentLoad)return;
+        presented=true;
+        PreviewPerformance.Write(dataDirectory,new{Kind="firstFrame",Session=session,Load=load,Milliseconds=Stopwatch.GetElapsedTime(presentationStarted).TotalMilliseconds});
+    }
     public static string DefaultPlayer
     {
         get
@@ -47,6 +60,8 @@ public sealed class UnityPreviewSession : IDisposable
 
     public async Task StartAsync(string player,string data,CancellationToken cancellation)
     {
+        dataDirectory=data;
+        var startupWatch=Stopwatch.StartNew();
         using var startup=CancellationTokenSource.CreateLinkedTokenSource(cancellation,lifetime.Token);
         cancellation=startup.Token;
         if(!File.Exists(player))throw new FileNotFoundException("便携包缺少独立 Unity 内核，请重新解压完整安装包。",player);
@@ -71,6 +86,7 @@ public sealed class UnityPreviewSession : IDisposable
             await Task.WhenAll(pipe.WaitForConnectionAsync(cancellation),events.WaitForConnectionAsync(cancellation)).WaitAsync(TimeSpan.FromSeconds(60),cancellation).ConfigureAwait(false);
             reader=Task.Run(Read);
             await ready.Task.WaitAsync(TimeSpan.FromSeconds(60),cancellation).ConfigureAwait(false);
+            PreviewPerformance.Write(data,new{Kind="startup",Session=session,Milliseconds=startupWatch.Elapsed.TotalMilliseconds});
         }
         catch{Dispose();throw;}
     }
@@ -83,6 +99,8 @@ public sealed class UnityPreviewSession : IDisposable
                 var message=JsonSerializer.Deserialize<KernelMessage>(KernelWire.Read(events!),UnityCharacterService.JsonOptions)??throw new IOException("Empty kernel response.");
                 if(message.Session!=session || message.Version!=KernelWire.Version)throw new IOException("独立内核协议不匹配。");
                 if(message.Kind=="Ready")ready.TrySetResult();
+                if(message.Kind=="Progress")Progress?.Invoke(message);
+                if(message.Kind=="Metrics")PreviewPerformance.Write(dataDirectory,new{Kind="kernel",Session=session,Load=message.Load,Stages=JsonSerializer.Deserialize<JsonElement>(message.Text)});
                 TaskCompletionSource<KernelMessage>? pending;
                 lock(loads)loads.TryGetValue(message.Load,out pending);
                 if(message.Kind=="Loaded")pending?.TrySetResult(message);

@@ -45,8 +45,8 @@ public sealed class SettingsWindow : Window
         body.Children.Add(Hint("扫描只建立索引；移除目录不会删除人物卡。已索引内容仍会保留。"));
         body.Children.Add(new Separator());
         body.Children.Add(Label("独立 3D 人物预览"));
-        body.Children.Add(Hint("直接读取游戏 abdata 模型资源，在本程序内显示。无需启动 Studio 或安装桥接插件。首次读取后，模型缓存在本地 Data\\NativePreview。"));
-        body.Children.Add(Hint(NativePreviewService.Limitations));
+        body.Children.Add(Hint("使用独立 Unity 内核读取原始模型、材质和纹理，无需启动游戏或 Studio。首次读取后建立本地缓存，连续切换人物会复用公共资源。"));
+        body.Children.Add(Hint("缓存保存在 Data\\UnityPreview，关闭管理器后可删除以释放空间。当前预览尚未达到完整 1:1 还原；缺失资源与未支持的效果会显示具体说明。"));
         var installResult = Hint(""); body.Children.Add(installResult);
         body.Children.Add(new Separator()); body.Children.Add(Label("便携数据"));
         body.Children.Add(Hint(model.DataDirectory));

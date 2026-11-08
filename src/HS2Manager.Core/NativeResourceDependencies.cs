@@ -5,7 +5,7 @@ using AssetsTools.NET.Extra;
 
 namespace HS2Manager.Core;
 
-internal sealed class NativeResourceDependencies(string game, NativeModResolver mods, CancellationToken cancellation)
+internal sealed class NativeResourceDependencies(string game, NativeModResolver mods, CancellationToken cancellation, PreviewMetadataCache? metadata = null)
 {
     private readonly Dictionary<string, string[]> dependencies = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> cabs = new(StringComparer.OrdinalIgnoreCase);
@@ -23,8 +23,9 @@ internal sealed class NativeResourceDependencies(string game, NativeModResolver 
             {
                 cancellation.ThrowIfCancellationRequested(); string name = Path.GetFileName(path);
                 if (name != "abdata" && !(name.StartsWith("add", StringComparison.Ordinal) && name[3..].All(char.IsDigit))) continue;
-                using var bundle = new NativeAssetBundle(path);
-                foreach (var pair in bundle.ReadManifest()) dependencies[pair.Key] = pair.Value;
+                Dictionary<string, string[]> Read() { using var bundle = new NativeAssetBundle(path); return bundle.ReadManifest(); }
+                var manifest = metadata == null ? Read() : metadata.Get("bundle-manifest", PreviewMetadataCache.Stamp(path), Read, cancellation);
+                foreach (var pair in manifest) dependencies[pair.Key] = pair.Value;
             }
             indexed = true;
         }

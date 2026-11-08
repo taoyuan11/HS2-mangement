@@ -4,6 +4,7 @@ param(
     [string]$Definition='artifacts/checks/unity-character.json',
     [string]$OutputPath='',
     [string]$Fixture='',
+    [string]$PrimeDefinition='',
     [ValidateRange(1,900)][int]$TimeoutSeconds=180,
     [switch]$ProbeAA
 )
@@ -17,6 +18,7 @@ if(Test-Path -LiteralPath $output){throw 'Use a fresh output directory for each 
 if(!('HS2Manager.BuildTools.OwnedToolProcess' -as [type])){Add-Type -Path (Join-Path $workspace 'scripts\OwnedToolProcess.cs')}
 $arguments=@('-force-d3d11','-screen-fullscreen','0','--character',$definitionPath,'--output',$output,'-logFile',($output+'.log'))
 if($Fixture){$arguments+=@('--fixture',(Resolve-Path -LiteralPath $Fixture).Path)}
+if($PrimeDefinition){$arguments+=@('--prime-character',(Resolve-Path -LiteralPath $PrimeDefinition).Path)}
 if($ProbeAA){$arguments+='--probe-aa'}
 $exitCode=[HS2Manager.BuildTools.OwnedToolProcess]::Run((Join-Path $player 'HS2Manager.UnityPreview.exe'),$arguments,$player,$TimeoutSeconds,$null)
 if($exitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $output 'state.json'))){throw "Independent character validation failed ($exitCode): $output"}

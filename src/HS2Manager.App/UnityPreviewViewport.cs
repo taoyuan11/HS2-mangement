@@ -12,6 +12,7 @@ public sealed class UnityPreviewViewport : FrameworkElement
     public static readonly DependencyProperty SessionProperty=DependencyProperty.Register(nameof(Session),typeof(UnityPreviewSession),typeof(UnityPreviewViewport),new PropertyMetadata(null,Changed));
     public UnityPreviewSession? Session {get=>(UnityPreviewSession?)GetValue(SessionProperty);set=>SetValue(SessionProperty,value);}
     private WriteableBitmap? frame;
+    private long frameLoad;
     private readonly DispatcherTimer timer;
     public string? RenderError {get;private set;}
     public bool HasFrame=>frame!=null;
@@ -25,7 +26,7 @@ public sealed class UnityPreviewViewport : FrameworkElement
     private static void Changed(DependencyObject obj,DependencyPropertyChangedEventArgs args)
     {var self=(UnityPreviewViewport)obj;self.Stop();self.Start();}
     private void Start(){if(!IsVisible || Session==null)return;RenderError=null;timer.Start();Resize();}
-    private void Stop(){timer.Stop();frame=null;RenderError=null;InvalidateVisual();}
+    private void Stop(){timer.Stop();frame=null;frameLoad=0;RenderError=null;InvalidateVisual();}
     private void Resize()
     {
         if(Session==null || ActualWidth<1 || ActualHeight<1)return;
@@ -40,7 +41,7 @@ public sealed class UnityPreviewViewport : FrameworkElement
         {
             var next=Session?.ReadFrame();if(next==null)return;
             if(frame==null || frame.PixelWidth!=next.Width || frame.PixelHeight!=next.Height)frame=new WriteableBitmap(next.Width,next.Height,96,96,PixelFormats.Bgra32,null);
-            frame.WritePixels(new Int32Rect(0,0,next.Width,next.Height),next.Pixels,next.Width*4,0);RenderError=null;InvalidateVisual();
+            frame.WritePixels(new Int32Rect(0,0,next.Width,next.Height),next.Pixels,next.Width*4,0);frameLoad=next.Load;RenderError=null;InvalidateVisual();
         }
         catch(Exception ex){RenderError=ex.Message;timer.Stop();InvalidateVisual();}
     }
@@ -53,5 +54,5 @@ public sealed class UnityPreviewViewport : FrameworkElement
     public Task StopAsync(){Stop();return Task.CompletedTask;}
     protected override void OnDpiChanged(DpiScale oldDpi,DpiScale newDpi){base.OnDpiChanged(oldDpi,newDpi);Resize();}
     protected override void OnRender(DrawingContext context)
-    {if(frame!=null)context.DrawImage(frame,new Rect(RenderSize));}
+    {if(frame!=null){context.DrawImage(frame,new Rect(RenderSize));Session?.ReportFramePresented(frameLoad);}}
 }

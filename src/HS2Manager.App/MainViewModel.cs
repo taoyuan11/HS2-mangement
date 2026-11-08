@@ -18,6 +18,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public CardFileService Files { get; }
     public ModDependencyService Mods { get; }
     private readonly NativePreviewService nativePreview = new();
+    private readonly UnityCharacterService unityCharacters = new();
     private List<CardItemViewModel> allCards = [];
     private ObservableCollection<CardItemViewModel> visibleCards = [];
     public ObservableCollection<CardItemViewModel> VisibleCards { get => visibleCards; private set { Set(ref visibleCards, value); Changed(nameof(Empty)); Changed(nameof(ResultSummary)); } }
@@ -335,6 +336,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
     private async Task LoadPreviewAsync(CardRecord card, int generation, CancellationTokenSource cancellation)
     {
+        long started = Stopwatch.GetTimestamp();
         UnitySession=null;previewBounds=Rect3D.Empty;faceBounds=Rect3D.Empty;
         IsPreview = true; PreviewBusy = true; PreviewError = ""; PreviewWarnings = ""; PreviewModel = null;
         PreviewName = card.Name; previewCard = card; PreviewStatus = "正在读取独立预览资源…";
@@ -342,16 +344,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             ownedUnitySession?.Unload();
             var progress = new Progress<string>(text => { if (generation == previewGeneration && IsPreview && PreviewBusy) PreviewStatus = text; });
-            var definition = await new UnityCharacterService().PrepareAsync(Settings.GamePath, DataDirectory, card, progress, cancellation.Token);
+            var preparing = unityCharacters.PrepareAsync(Settings.GamePath, DataDirectory, card, progress, cancellation.Token, generation);
+            var starting = GetUnitySessionAsync(cancellation.Token);
+            // Observe both tasks, including when either fails before the other completes.
+            var first = await Task.WhenAny(preparing, starting);
+            if (first.IsFaulted) cancellation.Cancel();
+            await Task.WhenAll(preparing, starting);
+            var definition = await preparing;
+            var session = await starting;
             if (generation != previewGeneration || !IsPreview) return;
             string directory=Path.Combine(DataDirectory,"UnityPreview","sessions");Directory.CreateDirectory(directory);
             string path=Path.Combine(directory,Guid.NewGuid().ToString("N")+".json");
             try
             {
-                File.WriteAllText(path,System.Text.Json.JsonSerializer.Serialize(definition,UnityCharacterService.JsonOptions));
-                var session=await GetUnitySessionAsync(cancellation.Token);
+                await Task.Run(() => File.WriteAllText(path,System.Text.Json.JsonSerializer.Serialize(definition,UnityCharacterService.JsonOptions)), cancellation.Token);
                 cancellation.Token.ThrowIfCancellationRequested();
                 PreviewStatus="正在加载角色模型…";
+                session.TrackPresentation(generation, started);
                 var loaded=await session.LoadAsync(path,generation,cancellation.Token);
                 if(generation!=previewGeneration || !IsPreview)return;
                 session.Send(new HS2Manager.Preview.Contracts.KernelMessage{Kind="Play",Playing=true});
@@ -386,6 +395,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             DisposeUnitySession();
             var created=new UnityPreviewSession();
             ownedUnitySession=created;
+            created.Progress+=message=>Application.Current.Dispatcher.BeginInvoke(()=>
+            {
+                if(ReferenceEquals(ownedUnitySession,created) && message.Load==previewGeneration && IsPreview && PreviewBusy)
+                    PreviewStatus=message.Text;
+            });
             created.Failed+=text=>
             {
                 long failedLoad=created.CurrentLoad;

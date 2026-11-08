@@ -18,21 +18,28 @@ internal sealed class NativeShapeRig : IDisposable
     private readonly PEReader pe;
     private readonly MetadataReader metadata;
     private readonly bool unlockedSliders;
+    private readonly PreviewMetadataCache? cache;
+    private readonly string sourceStamp;
     private static readonly Dictionary<short, OpCode> Opcodes = typeof(OpCodes).GetFields().Where(f => f.FieldType == typeof(OpCode)).Select(f => (OpCode)f.GetValue(null)!).ToDictionary(o => o.Value);
-    public NativeShapeRig(string game, bool unlockedSliders = false)
+    public NativeShapeRig(string game, bool unlockedSliders = false, PreviewMetadataCache? cache = null)
     {
         this.unlockedSliders = unlockedSliders;
+        this.cache = cache;
+        sourceStamp = PreviewMetadataCache.Stamp(Path.Combine(game, "HoneySelect2_Data", "Managed", "Assembly-CSharp.dll"));
         stream = File.OpenRead(Path.Combine(game, "HoneySelect2_Data", "Managed", "Assembly-CSharp.dll"));
         try { pe = new PEReader(stream); metadata = pe.GetMetadataReader(); }
         catch { stream.Dispose(); throw; }
     }
     public void Apply(NativePrefab prefab, string recipe, byte[] animation, byte[] categories, float[] values, CancellationToken cancellation)
     {
+        using var timing = PreviewPerformance.Measure("shape");
         var typeHandle = metadata.TypeDefinitions.FirstOrDefault(h => metadata.GetString(metadata.GetTypeDefinition(h).Name) == recipe);
         if (typeHandle.IsNil) throw new NotSupportedException("此版本缺少形变规则：" + recipe);
         var type = metadata.GetTypeDefinition(typeHandle);
-        var sources = Enum("SrcName"); var destinations = Enum("DstName");
-        var keys = ReadKeys(animation); var parameters = sources.ToDictionary(p => p.Key, p => new ShapeValue());
+        var sources = cache == null ? Enum("SrcName") : cache.Get("shape-sources", sourceStamp + "|" + recipe, () => Enum("SrcName"), cancellation);
+        var destinations = cache == null ? Enum("DstName") : cache.Get("shape-destinations", sourceStamp + "|" + recipe, () => Enum("DstName"), cancellation);
+        var keys = cache == null ? ReadKeys(animation) : cache.Get("shape-keys", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(animation)), () => ReadKeys(animation), cancellation);
+        var parameters = sources.ToDictionary(p => p.Key, p => new ShapeValue());
         var sourceIds = sources.ToDictionary(p => p.Value, p => p.Key);
         foreach (string row in Encoding.UTF8.GetString(categories).Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {

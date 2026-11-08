@@ -25,9 +25,13 @@ internal static class UnityEnvironmentReader
                 camera.Children=camera.Children.Where(p=>p.Name!=key).Append(new Parameter{Name=key,Number=size}).ToArray();
             }
     }
-    internal static EnvironmentDefinition Read(string game, string cache, List<AssetSelection> selections, HashSet<string> paths, List<string> warnings, CancellationToken cancellation)
+    private sealed record StaticEnvironment(EnvironmentDefinition Environment, Parameter[] Qualities, int Quality, string[] GeneratedFiles);
+    private static StaticEnvironment ReadStatic(string game, string cache, CancellationToken cancellation)
     {
         var result = new EnvironmentDefinition();
+        Parameter[] qualities = [];
+        int selected = 0;
+        var generated = new List<string>();
         var manager = new AssetsManager();
         var generator=new MonoCecilTempGenerator(Path.Combine(game,"HoneySelect2_Data","Managed"));
         try
@@ -38,14 +42,8 @@ internal static class UnityEnvironmentReader
             var build = manager.LoadAssetsFile(Path.Combine(game,"HoneySelect2_Data","globalgamemanagers"),false);
             manager.LoadClassDatabaseFromPackage(build.file.Metadata.UnityVersion);
             var quality=manager.GetBaseField(build,build.file.GetAssetsOfType(AssetClassID.QualitySettings).Single());
-            int selected=quality["m_CurrentQuality"].AsInt;
-            string setup=Path.Combine(game,"UserData","setup.xml"),configPath=Path.Combine(game,"UserData","config","system.xml");
-            if(File.Exists(setup)&&int.TryParse(XDocument.Load(setup).Root?.Element("Quality")?.Value,out int setupQuality))
-            {
-                bool shadow=!File.Exists(configPath)||XDocument.Load(configPath).Descendants("SelfShadow").FirstOrDefault()?.Value!="False";
-                selected=Math.Clamp(setupQuality,0,2)*2+(shadow?0:1);
-            }
-            result.Quality=Convert(quality["m_QualitySettings"]["Array"][selected]);
+            selected=quality["m_CurrentQuality"].AsInt;
+            qualities=quality["m_QualitySettings"]["Array"].Children.Select(Convert).ToArray();
             var settings = manager.GetBaseField(build,build.file.GetAssetsOfType(AssetClassID.BuildSettings).Single());
             var scenes = settings["scenes"]["Array"].Children.Select(c=>c.AsString).ToArray();
             int level = Array.FindIndex(scenes,s=>Path.GetFileNameWithoutExtension(s)=="CharaCustom");
@@ -110,6 +108,7 @@ internal static class UnityEnvironmentReader
                             var bitmap=BitmapSource.Create(decoded.m_Width,decoded.m_Height,96,96,PixelFormats.Bgra32,null,flipped,stride);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var output=File.Create(target);png.Save(output);
                         }
                         parameters.Get(parameter.FieldName).Get("value").Text=target;
+                        generated.Add(target);
                     }
                     effects.Add(parameters);
                 }
@@ -118,6 +117,33 @@ internal static class UnityEnvironmentReader
             result.Profiles=profiles.ToArray();
         }
         finally { manager.UnloadAll();generator.Dispose(); }
+        return new(result, qualities, selected, generated.ToArray());
+    }
+    internal static EnvironmentDefinition Read(string game, string cache, List<AssetSelection> selections, HashSet<string> paths, List<string> warnings, CancellationToken cancellation, PreviewMetadataCache? metadata = null)
+    {
+        // Include scene assets, their streamed data and schema assemblies. Enumerating FileInfo
+        // retrieves file metadata in one directory traversal, without reading resource contents.
+        string root = Path.Combine(game, "HoneySelect2_Data");
+        var files = new DirectoryInfo(root).EnumerateFiles().Where(f => f.Name == "globalgamemanagers" || f.Name.StartsWith("level", StringComparison.Ordinal)
+            || f.Extension is ".assets" or ".resS" or ".resource")
+            .Concat(new DirectoryInfo(Path.Combine(root, "Managed")).EnumerateFiles("*.dll"));
+        string stamp = Path.GetFullPath(cache) + "|" + string.Join("\n", files.OrderBy(f => f.FullName, StringComparer.OrdinalIgnoreCase)
+            .Select(f => f.FullName + "|" + f.Length + "|" + f.LastWriteTimeUtc.Ticks));
+        cancellation.ThrowIfCancellationRequested();
+        var snapshot = metadata == null ? ReadStatic(game, cache, cancellation)
+            : metadata.Get("scene-environment", stamp, () => ReadStatic(game, cache, cancellation), cancellation, s => s.GeneratedFiles.All(File.Exists));
+        return ApplySettings(game, cache, snapshot.Environment, snapshot.Qualities, snapshot.Quality, selections, paths, warnings, cancellation);
+    }
+    internal static EnvironmentDefinition ApplySettings(string game, string cache, EnvironmentDefinition result, Parameter[] qualities, int selected,
+        List<AssetSelection> selections, HashSet<string> paths, List<string> warnings, CancellationToken cancellation)
+    {
+        string setup=Path.Combine(game,"UserData","setup.xml"),configPath=Path.Combine(game,"UserData","config","system.xml");
+        if(File.Exists(setup)&&int.TryParse(XDocument.Load(setup).Root?.Element("Quality")?.Value,out int setupQuality))
+        {
+            bool shadow=!File.Exists(configPath)||XDocument.Load(configPath).Descendants("SelfShadow").FirstOrDefault()?.Value!="False";
+            selected=Math.Clamp(setupQuality,0,2)*2+(shadow?0:1);
+        }
+        result.Quality=qualities[selected];
         ApplyDisplaySettings(game, result.Camera);
         string custom=Path.Combine(game,"UserData","custom","customscene.dat");
         if(File.Exists(custom))using(var input=new BinaryReader(File.OpenRead(custom))){input.ReadString();for(int i=0;i<3;i++)result.Background[i]=input.ReadSingle();}

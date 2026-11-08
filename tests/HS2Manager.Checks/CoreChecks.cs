@@ -10,6 +10,7 @@ internal static class CoreChecks
         NativeRenderingDataChecks.Run();
         await NativeCompatibilityChecks.Run(output);
         await ScanSettingsChecks.Run(output);
+        await PreviewCacheChecks.Run(output);
         var sandbox = Path.Combine(output, "core-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(sandbox);
         int passed = 0;

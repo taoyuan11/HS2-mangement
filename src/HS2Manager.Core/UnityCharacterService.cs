@@ -9,21 +9,39 @@ public sealed class UnityCharacterService
 {
     public static readonly JsonSerializerOptions JsonOptions = new() { IncludeFields = true };
 
+    private readonly SemaphoreSlim preparation = new(1);
     public Task<CharacterDefinition> PrepareAsync(string game, string data, CardRecord card, IProgress<string>? progress, CancellationToken cancellation)
-        => Task.Run(() => Prepare(game, data, card, progress, cancellation), cancellation);
+        => PrepareAsync(game, data, card, progress, cancellation, 0);
+    public async Task<CharacterDefinition> PrepareAsync(string game, string data, CardRecord card, IProgress<string>? progress, CancellationToken cancellation, long load)
+    {
+        await preparation.WaitAsync(cancellation).ConfigureAwait(false);
+        try { return await Task.Run(() => { using var metrics = new PreviewPerformance(data, load); return Prepare(game, data, card, progress, cancellation); }, cancellation).ConfigureAwait(false); }
+        finally { preparation.Release(); }
+    }
 
     private CharacterDefinition Prepare(string game, string data, CardRecord card, IProgress<string>? progress, CancellationToken cancellation)
     {
-        var appearance = CardAppearanceReader.Read(card, cancellation, originalMaterials: true);
+        var sourceInfo = new FileInfo(card.Path);
+        string cardStamp = PreviewMetadataCache.Stamp(card.Path);
+        if (sourceInfo.Length != card.Size || sourceInfo.LastWriteTimeUtc.Ticks != card.ModifiedUtcTicks)
+        {
+            card = new CardParser().Parse(card.Path, cancellation);
+            if (card.Status != CardStatus.Valid) throw new IOException("人物卡已变化，无法读取：" + card.Error);
+        }
+        CardAppearance appearance;
+        using (PreviewPerformance.Measure("card")) appearance = CardAppearanceReader.Read(card, cancellation, originalMaterials: true);
+        var metadata = new PreviewMetadataCache(game, data);
+        using var resources = new UnityPreparationResources(metadata, cancellation);
         string cache = Path.Combine(data, "UnityPreview", "definitions-v1");
         Directory.CreateDirectory(cache);
         var warnings = new List<string>(appearance.Warnings);
         var unknown = card.PluginDataIds.Where(id => !appearance.HandledExtensions.Contains(id) && id is not ("com.bepis.sideloader.universalautoresolver" or "EC.Core.Sideloader.UniversalAutoResolver")).ToArray();
         if (unknown.Length > 0) warnings.Add("尚未适配的扩展数据：" + string.Join("、", unknown));
         if(appearance.SkinOverlays.Any(o=>o.Type>4))warnings.Add("KSOX：眼部覆盖层尚未完成还原。");
-        var index = NativePreviewService.LoadIndex(Path.Combine(game, "abdata"), cache, progress, warnings, cancellation);
+        List<NativeAssetEntry> index;
+        using (PreviewPerformance.Measure("stockIndex")) index = NativePreviewService.LoadIndex(Path.Combine(game, "abdata"), cache, progress, warnings, cancellation);
         var mods = new NativeModResolver(game, data, cache, progress, cancellation);
-        var dependencies = new NativeResourceDependencies(game, mods, cancellation);
+        var dependencies = new NativeResourceDependencies(game, mods, cancellation, metadata);
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var selections = new List<AssetSelection>();
         var parts = new List<CharacterPart>();
@@ -41,11 +59,11 @@ public sealed class UnityCharacterService
             }
         }
         bool unlockedSliders = Directory.Exists(plugins) && Directory.EnumerateFiles(plugins, "HS2_SliderUnlocker.dll", SearchOption.AllDirectories).Any();
-        using var shapes = new NativeShapeRig(game, unlockedSliders);
+        using var shapes = new NativeShapeRig(game, unlockedSliders, metadata);
         var rig = Read("chara/oo_base.unity3d", "p_cf_anim", "", "rig", -1);
-        using (var categories = new NativeAssetBundle(mods.Bundle("list/customshape.unity3d")))
-            shapes.Apply(rig.Rig, "ShapeBodyInfoFemale", categories.ReadText("cf_anmShapeBody"), categories.ReadText("cf_custombody"),
-                CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(), cancellation);
+        string shapeBundle = mods.Bundle("list/customshape.unity3d");
+        shapes.Apply(rig.Rig, "ShapeBodyInfoFemale", resources.Text(shapeBundle, "cf_anmShapeBody"), resources.Text(shapeBundle, "cf_custombody"),
+            CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(), cancellation);
         NativeCardExtensions.Apply(rig.Rig, appearance.BoneModifiers);
         rig.Part.Bones = Bones(rig.Rig);
         Read("chara/oo_base.unity3d", appearance.Sex == 0 ? "p_cm_body_00" : "p_cf_body_00", "", "body", 0);
@@ -96,10 +114,8 @@ public sealed class UnityCharacterService
                     foreach (var pair in built.Rig.Bones)
                         if (headRig.Rig.Bones.TryGetValue(pair.Key, out var target))
                         { target.Position = (float[])pair.Value.Position.Clone(); target.Rotation = (float[])pair.Value.Rotation.Clone(); target.Scale = (float[])pair.Value.Scale.Clone(); }
-                    using var original = new NativeAssetBundle(mods.Bundle(entry.Bundle, entry.Archive));
-                    using var categories = new NativeAssetBundle(mods.Bundle("list/customshape.unity3d"));
-                    shapes.Apply(headRig.Rig, "ShapeHeadInfoFemale", original.ReadText(entry.Get("ShapeAnime")),
-                        categories.ReadText(appearance.Sex == 0 ? "cm_customhead" : "cf_customhead"),
+                    shapes.Apply(headRig.Rig, "ShapeHeadInfoFemale", resources.Text(mods.Bundle(entry.Bundle, entry.Archive), entry.Get("ShapeAnime")),
+                        resources.Text(shapeBundle, appearance.Sex == 0 ? "cm_customhead" : "cf_customhead"),
                         CardAppearanceReader.Flatten(appearance.Face.GetValueOrDefault("shapeValueFace")).ToArray(), cancellation);
                     NativeCardExtensions.Apply(headRig.Rig, appearance.BoneModifiers);
                     headRig.Part.Bones = Bones(headRig.Rig);
@@ -124,8 +140,7 @@ public sealed class UnityCharacterService
         }
         if(appearance.PushUp!=null)
         {
-            using var shape=new NativeAssetBundle(mods.Bundle("list/customshape.unity3d"));
-            bool hide=appearance.PushUp.Apply(rig.Rig,CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(),worn.ContainsKey(2),worn.ContainsKey(0),shape.ReadText("cf_anmShapeBody"));
+            bool hide=appearance.PushUp.Apply(rig.Rig,CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(),worn.ContainsKey(2),worn.ContainsKey(0),resources.Text(shapeBundle,"cf_anmShapeBody"));
             rig.Part.Bones=Bones(rig.Rig);
             if(hide)parts.RemoveAll(p=>p.Role=="accessory"&&p.Parent is "N_Tikubi_L" or "N_Tikubi_R");
         }
@@ -186,7 +201,8 @@ public sealed class UnityCharacterService
                     selections.Add(new AssetSelection {Key="overlay.eye",Reference=new AssetReference {Bundle=path,Asset="Eye"}});
             }
         }
-        var environment=UnityEnvironmentReader.Read(game,cache,selections,paths,warnings,cancellation);
+        EnvironmentDefinition environment;
+        using (PreviewPerformance.Measure("environment")) environment=UnityEnvironmentReader.Read(game,cache,selections,paths,warnings,cancellation,metadata);
         var shaders=UnityShaderCatalog.Resolve(game,cache,mods,appearance.MaterialShaders.Select(m=>m.Shader),Reference,paths,warnings,cancellation);
         foreach(var paint in CardAppearanceReader.List(appearance.Body,"paintInfo"))
         {
@@ -194,10 +210,13 @@ public sealed class UnityCharacterService
             var layout=index.LastOrDefault(e=>e.Category==8&&e.Id==CardAppearanceReader.Integer(values,"layoutId"));
             if(layout!=null)values["resolvedLayout"]=layout.Values.Where(p=>double.TryParse(p.Value,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out _)).ToDictionary(p=>p.Key,p=>(object?)double.Parse(p.Value,System.Globalization.CultureInfo.InvariantCulture));
         }
-        using var source = File.OpenRead(card.Path);
+        string cardHash;
+        using (PreviewPerformance.Measure("cardHash"))
+            cardHash = metadata.Get("card-hash", PreviewMetadataCache.Stamp(card.Path), () =>
+            { using var source = File.OpenRead(card.Path); return Convert.ToHexString(SHA256.HashDataAsync(source, cancellation).GetAwaiter().GetResult()); }, cancellation);
         var definition = new CharacterDefinition
         {
-            Name = card.Name, Sex = appearance.Sex, CardHash = Convert.ToHexString(SHA256.HashData(source)),
+            Name = card.Name, Sex = appearance.Sex, CardHash = cardHash,
             BundlePaths = paths.Order(StringComparer.OrdinalIgnoreCase).ToArray(), Parts = parts.ToArray(), Selections = selections.ToArray(),
             Face = ParameterOf(appearance.Face), Body = ParameterOf(appearance.Body), Hair = ParameterOf(appearance.Hair), Clothes = ParameterOf(appearance.Clothes),
             Diagnostics = warnings.Distinct().ToArray(), BodyVisible = appearance.BodyVisible, EyeOpenMax = appearance.EyeOpenMax ?? 1,
@@ -214,22 +233,18 @@ public sealed class UnityCharacterService
         definition.Face.Children=definition.Face.Children.Append(new Parameter{Name="disableBlinking",Number=appearance.DisableBlinking?1:0}).ToArray();
         definition.Hair.Children=definition.Hair.Children.Append(new Parameter{Name="unlockedSliders",Number=unlockedSliders?1:0}).ToArray();
         definition.ParameterNodes=definition.CountParameterNodes();
-        UnityBundleIdentity.Normalize(definition, cache, cancellation);
+        using (PreviewPerformance.Measure("bundleIdentity")) UnityBundleIdentity.Normalize(definition, cache, cancellation);
+        if (PreviewMetadataCache.Stamp(card.Path) != cardStamp) throw new IOException("人物卡在读取期间发生变化，请重试。");
         return definition;
 
         (CharacterPart Part, NativePrefab Rig) Read(string bundle, string asset, string archive, string role, int slot)
         {
             progress?.Report("读取原始模型结构：" + asset);
             var reference = Reference(bundle, asset, archive);
-            using var reader = new NativeAssetBundle(reference.Bundle);
-            var prefab = reader.ReadPrefab(asset, cancellation, includeGeometry: false);
-            var part = new CharacterPart { Role = role, Slot = slot, Prefab = reference, Bones = Bones(prefab), Components = reader.ReadComponents(asset, warnings, cancellation) };
-            if(reader.HasExport("additional_bones"))
-            {
-                var line=System.Text.Encoding.UTF8.GetString(reader.ReadText("additional_bones")).Split(['\r','\n'],StringSplitOptions.RemoveEmptyEntries)
-                    .Select(l=>l.Split('\t')).FirstOrDefault(columns=>columns[0]==asset);
-                if(line!=null)part.Components=[..part.Components,new ComponentDefinition{Node=asset,Type="BonesFramework",Data=ParameterOf(line.Skip(1).Where(name=>name.Length>0).Cast<object?>().ToList())}];
-            }
+            var raw = resources.Prefab(reference.Bundle, asset);
+            var prefab = raw.Rig;
+            warnings.AddRange(raw.Diagnostics);
+            var part = new CharacterPart { Role = role, Slot = slot, Prefab = reference, Bones = Bones(prefab), Components = raw.Components };
             parts.Add(part);
             return (part, prefab);
         }

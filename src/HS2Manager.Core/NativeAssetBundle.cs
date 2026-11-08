@@ -34,6 +34,7 @@ internal sealed partial class NativeAssetBundle : IDisposable
         this.externalMesh = externalMesh;
         try
         {
+            PreviewPerformance.Count("bundleOpens");
             bundle = manager.LoadBundleFile(path, true);
             file = manager.LoadAssetsFileFromBundle(bundle, 0, false);
             if (!file.file.Metadata.UnityVersion.StartsWith("2018.", StringComparison.Ordinal))

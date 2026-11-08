@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using HS2Manager.Preview.Contracts;
@@ -12,6 +13,7 @@ namespace HS2Manager.UnityPreview
         private OriginalCharacter character;
         private OriginalEnvironment environment;
         private Camera environmentCamera;
+        private OriginalAssetStore sharedAssets;
         private IEnumerator Start()
         {
             int exitCode = 1;
@@ -20,10 +22,34 @@ namespace HS2Manager.UnityPreview
             try
             {
                 Directory.CreateDirectory(output);
-                var definition = CharacterData.Read(Argument("--character"));
-                character = new OriginalCharacter(definition);
+                if(Argument("--prime-character")==null)
+                {
+                    var definition = CharacterData.Read(Argument("--character"));
+                    character = new OriginalCharacter(definition);
+                }
             }
             catch (Exception error) { Debug.LogException(error); File.WriteAllText(Path.Combine(output,"error.txt"),error.ToString()); }
+            if(Argument("--prime-character")!=null)
+            {
+                var steps=new Stack<IEnumerator>();steps.Push(ExerciseReuse(output));
+                try
+                {
+                    while(steps.Count>0)
+                    {
+                        object next=null;Exception failure=null;
+                        try
+                        {
+                            if(!steps.Peek().MoveNext()){(steps.Pop() as IDisposable)?.Dispose();continue;}
+                            next=steps.Peek().Current;
+                        }
+                        catch(Exception error){failure=error;}
+                        if(failure!=null){Debug.LogException(failure);File.WriteAllText(Path.Combine(output,"error.txt"),failure.ToString());character?.Dispose();character=null;break;}
+                        var nested=next as IEnumerator;if(nested!=null){steps.Push(nested);continue;}
+                        yield return next;
+                    }
+                }
+                finally{while(steps.Count>0)(steps.Pop() as IDisposable)?.Dispose();}
+            }
             if (character != null)
             {
                 yield return null;
@@ -87,7 +113,32 @@ namespace HS2Manager.UnityPreview
             environment?.Dispose();environment=null;
             if (character != null) character.Dispose();
             character = null;
+            sharedAssets?.Dispose();sharedAssets=null;
             Application.Quit(exitCode);
+        }
+        private IEnumerator ExerciseReuse(string output)
+        {
+            sharedAssets=new OriginalAssetStore();
+            string target=Argument("--character"),prime=Argument("--prime-character");
+            var sequence=new[]{target,prime,target};
+            for(int i=0;i<sequence.Length;i++)
+            {
+                var definition=CharacterData.Read(sequence[i]);
+                yield return sharedAssets.Prepare(definition,()=>false,_=>{});
+                character=new OriginalCharacter(definition,sharedAssets);
+                yield return character.Build(()=>false,null);
+                if(i==sequence.Length-1)
+                {
+                    if(sharedAssets.RetainedBundles==0)throw new IOException("Reuse fixture did not retain any common bundles.");
+                    File.WriteAllText(Path.Combine(output,"reuse.txt"),"A-B-A; retained="+sharedAssets.RetainedBundles+"; loaded="+sharedAssets.LoadedBundles+"; total="+sharedAssets.BundleCount);
+                    break;
+                }
+                var temporary=new GameObject("Reuse environment camera");
+                character.UpdateMotion(0,0);
+                using(var environment=character.CreateEnvironment(temporary.AddComponent<Camera>())){}
+                Destroy(temporary);character.Dispose();character=null;
+                yield return null;
+            }
         }
         private IEnumerator CaptureEnvironment(string output)
         {
@@ -153,7 +204,7 @@ namespace HS2Manager.UnityPreview
             }
             finally { RenderTexture.active = previous; camera.targetTexture = null; target.Release(); Destroy(target); if(pixels != null) Destroy(pixels); }
         }
-        private void OnDestroy() { environment?.Dispose();if(character != null) character.Dispose(); }
+        private void OnDestroy() { environment?.Dispose();if(character != null) character.Dispose();sharedAssets?.Dispose(); }
         private static string Argument(string name)
         {
             var args = Environment.GetCommandLineArgs(); int index = Array.IndexOf(args,name);

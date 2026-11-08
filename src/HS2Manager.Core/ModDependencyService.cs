@@ -8,8 +8,10 @@ using System.Xml.Linq;
 namespace HS2Manager.Core;
 
 public sealed record ModMigration(string Kind, string OldGuid, string NewGuid, string Category, int OldSlot, int NewSlot);
+public sealed record ModArchiveEntry(string Name, long Length);
 public sealed class ModFileInfo
 {
+    public ModArchiveEntry[]? ArchiveEntries { get; set; }
     public string Path { get; set; } = "";
     public long Size { get; set; }
     public long ModifiedUtcTicks { get; set; }
@@ -73,7 +75,7 @@ public sealed class ModDependencyService(CardRepository repository)
                 ct.ThrowIfCancellationRequested(); var file = new FileInfo(path); ModFileInfo entry;
                 try
                 {
-                    if (cached.TryGetValue(path, out var old) && old.Size == file.Length && old.ModifiedUtcTicks == file.LastWriteTimeUtc.Ticks && old.Error.Length == 0) entry = old;
+                    if (cached.TryGetValue(path, out var old) && old.Size == file.Length && old.ModifiedUtcTicks == file.LastWriteTimeUtc.Ticks && old.Error.Length == 0 && old.ArchiveEntries != null) entry = old;
                     else entry = ReadManifest(path);
                 }
                 catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or XmlException)
@@ -93,6 +95,8 @@ public sealed class ModDependencyService(CardRepository repository)
         var file = new FileInfo(path);
         var result = new ModFileInfo { Path = path, Size = file.Length, ModifiedUtcTicks = file.LastWriteTimeUtc.Ticks };
         using var archive = ZipFile.OpenRead(path);
+        PreviewPerformance.Count("archiveOpens");
+        result.ArchiveEntries = PreviewArchiveIndex.Read(archive);
         var manifest = archive.Entries.FirstOrDefault(x => x.FullName.Equals("manifest.xml", StringComparison.OrdinalIgnoreCase));
         if (manifest == null) { result.Compatible = false; return result; }
         if (manifest.Length > 2 * 1024 * 1024) throw new InvalidDataException("MOD 清单过大");

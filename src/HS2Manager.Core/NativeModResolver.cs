@@ -9,6 +9,15 @@ internal sealed class NativeModResolutionException(string message) : FileNotFoun
 
 internal sealed class NativeModResolver(string game, string data, string cache, IProgress<string>? progress, CancellationToken cancellation)
 {
+    private readonly PreviewMetadataCache metadata = new(game, data);
+    private readonly Dictionary<string, (string Stamp, ModArchiveEntry[] Entries)> directories = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object refreshLock = new();
+    private sealed class RefreshState
+    {
+        internal DateTime Version;
+        internal HashSet<string> Misses = new(StringComparer.OrdinalIgnoreCase);
+    }
+    private static readonly Dictionary<string, RefreshState> refreshed = new(StringComparer.OrdinalIgnoreCase);
     private ModIndex? index;
     private bool scanned;
     private readonly Dictionary<string, List<NativeAssetEntry>> lists = new(StringComparer.OrdinalIgnoreCase);
@@ -20,7 +29,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         var result = Find(reference, new(StringComparer.OrdinalIgnoreCase), 0);
         if (result == null && !scanned)
         {
-            Scan(); result = Find(reference, new(StringComparer.OrdinalIgnoreCase), 0);
+            RefreshOnce("slot|" + reference.Guid + "|" + reference.Category + "|" + reference.Slot); result = Find(reference, new(StringComparer.OrdinalIgnoreCase), 0);
         }
         if (result != null) return result;
         if (UsableMods().Any(m => m.Guid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase)))
@@ -76,16 +85,49 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
     private void EnsureIndex()
     {
         index ??= Repository.LoadMetadata<ModIndex>("mods-v1");
-        if (index == null || !index.GamePath.Equals(Path.GetFullPath(game), StringComparison.OrdinalIgnoreCase)) Scan();
+        if (index == null || !index.GamePath.Equals(Path.GetFullPath(game), StringComparison.OrdinalIgnoreCase)
+            || index.Files.Any(m => m.Error.Length == 0 && m.ArchiveEntries == null)) Scan();
     }
     private void Scan()
     {
+        using var timing = PreviewPerformance.Measure("modIndexScan");
+        PreviewPerformance.Count("modScans");
         progress?.Report("正在更新 MOD 模型资源索引…");
         index = new ModDependencyService(Repository).ScanAsync(game, null, cancellation).GetAwaiter().GetResult();
-        scanned = true; lists.Clear(); bundles = null;
+        scanned = true; lists.Clear(); bundles = null; directories.Clear();
+    }
+    private void RefreshOnce(string missing)
+    {
+        // Suppress repeated misses, while a different missing GUID can discover a newly
+        // installed archive. Auto-refreshes with identical inventories preserve negatives;
+        // an explicit ScanAsync publishes a new version and clears them all.
+        while (!Monitor.TryEnter(refreshLock, 25)) cancellation.ThrowIfCancellationRequested();
+        try
+        {
+            string key = Path.GetFullPath(data) + "|" + Path.GetFullPath(game);
+            var latest = Repository.LoadMetadata<ModIndex>("mods-v1");
+            if (latest != null && latest.GamePath.Equals(Path.GetFullPath(game), StringComparison.OrdinalIgnoreCase)) index = latest;
+            if (!refreshed.TryGetValue(key, out var state)) refreshed[key] = state = new RefreshState();
+            if (state.Version != index!.UpdatedUtc) state.Misses.Clear();
+            if (!state.Misses.Contains(missing))
+            {
+                string before = Inventory(index);
+                Scan();
+                if (before != Inventory(index!)) state.Misses.Clear();
+                state.Version = index!.UpdatedUtc; state.Misses.Add(missing);
+            }
+            else { scanned = true; lists.Clear(); bundles = null; directories.Clear(); }
+        }
+        finally { Monitor.Exit(refreshLock); }
+        static string Inventory(ModIndex value) => string.Join("\n", value.Files.Select(f => f.Path + "|" + f.Size + "|" + f.ModifiedUtcTicks + "|" + f.Error));
     }
     private List<NativeAssetEntry> ReadLists(string path)
     {
+        return metadata.Get("archive-lists", PreviewMetadataCache.Stamp(path), () => ReadListsUncached(path), cancellation);
+    }
+    private List<NativeAssetEntry> ReadListsUncached(string path)
+    {
+        PreviewPerformance.Count("archiveOpens");
         using var zip = ZipFile.OpenRead(path); var result = new List<NativeAssetEntry>();
         foreach (var entry in zip.Entries.Where(e => e.FullName.Replace('\\','/').StartsWith("abdata/list/characustom/", StringComparison.OrdinalIgnoreCase) && e.FullName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)))
         {
@@ -118,7 +160,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         if (File.Exists(physical)) return physical;
         // Lists can reference bundles supplied by a different installed zipmod.
         EnsureBundles();
-        if (!bundles!.ContainsKey(relative.Replace('\\', '/')) && !scanned) { Scan(); EnsureBundles(); }
+        if (!bundles!.ContainsKey(relative.Replace('\\', '/')) && !scanned) { RefreshOnce("bundle|" + relative.Replace('\\', '/')); EnsureBundles(); }
         if (bundles!.TryGetValue(relative.Replace('\\', '/'), out var other) && Extract(other, relative) is { } found) return found;
         throw new FileNotFoundException("游戏及已安装 MOD 中缺少资源包：" + relative);
     }
@@ -134,44 +176,87 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
     private void EnsureBundles()
     {
         if (bundles != null) return;
-        EnsureIndex(); bundles = new(StringComparer.OrdinalIgnoreCase);
+        using var timing = PreviewPerformance.Measure("modCatalog");
+        EnsureIndex();
+        // Validate archive metadata without opening their ZIP directories. An updated or
+        // deleted archive changes this key even if the user has not refreshed manifests.
+        var sources = new List<(string Path, string Stamp)>();
         foreach (var mod in UsableMods())
         {
             cancellation.ThrowIfCancellationRequested();
-            if (!File.Exists(mod.Path)) continue;
-            try
-            {
-                using var zip = ZipFile.OpenRead(mod.Path);
-                foreach (var entry in zip.Entries)
-                {
-                    string name = entry.FullName.Replace('\\', '/');
-                    if (name.StartsWith("abdata/", StringComparison.OrdinalIgnoreCase) && (name.EndsWith(".unity3d", StringComparison.OrdinalIgnoreCase)||name.EndsWith(".png",StringComparison.OrdinalIgnoreCase))) bundles[name[7..]] = mod.Path;
-                }
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) { /* An unrelated broken archive must not stop bundle discovery. */ }
+            var file = new FileInfo(mod.Path);
+            if (!file.Exists) continue;
+            sources.Add((mod.Path, file.FullName.ToUpperInvariant() + "|" + file.Length + "|" + file.LastWriteTimeUtc.Ticks));
         }
+        bool complete = true;
+        try
+        {
+            var saved = metadata.Get("bundle-catalog", index!.UpdatedUtc.Ticks + "|" + string.Join("\n", sources.Select(s => s.Stamp)), () =>
+            {
+                var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var source in sources)
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    try
+                    {
+                        foreach (var entry in DirectoryOf(source.Path).Entries)
+                        {
+                            string name = entry.Name.Replace('\\', '/');
+                            if (name.EndsWith(".unity3d", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) result[name[7..]] = source.Path;
+                        }
+                    }
+                    catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) { complete = false; }
+                }
+                // Do not persist an incomplete inventory as a successful negative lookup.
+                if (!complete) throw new IncompleteCatalogException(result);
+                return result;
+            }, cancellation);
+            bundles = new(saved, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (IncompleteCatalogException error) { bundles = error.Entries; }
+    }
+    private sealed class IncompleteCatalogException(Dictionary<string, string> entries) : IOException
+    { internal Dictionary<string, string> Entries { get; } = entries; }
+    private (string Stamp, ModArchiveEntry[] Entries) DirectoryOf(string archive)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        if (directories.TryGetValue(archive, out var saved)) return saved;
+        var file = new FileInfo(archive);
+        string stamp = file.FullName.ToUpperInvariant() + "|" + file.Length + "|" + file.LastWriteTimeUtc.Ticks;
+        EnsureIndex();
+        var indexed = index!.Files.FirstOrDefault(m => m.Path.Equals(file.FullName, StringComparison.OrdinalIgnoreCase));
+        var entries = indexed?.ArchiveEntries != null && indexed.Size == file.Length && indexed.ModifiedUtcTicks == file.LastWriteTimeUtc.Ticks
+            ? indexed.ArchiveEntries : PreviewArchiveIndex.Get(archive, metadata, cancellation);
+        return directories[archive] = (stamp, entries);
     }
     private string? Extract(string archive, string relative)
     {
-        using var zip = ZipFile.OpenRead(archive);
+        using var timing = PreviewPerformance.Measure("modExtract");
+        var directory = DirectoryOf(archive);
         string wanted = "abdata/" + relative.Replace('\\','/');
-        var entry = zip.Entries.FirstOrDefault(e => e.FullName.Replace('\\','/').Equals(wanted, StringComparison.OrdinalIgnoreCase));
+        var entry = directory.Entries.FirstOrDefault(e => e.Name.Replace('\\','/').Equals(wanted, StringComparison.OrdinalIgnoreCase));
         if (entry == null) return null;
         if (entry.Length is < 1 or > 512 * 1024 * 1024) throw new InvalidDataException("MOD 资源大小超限。");
         var info = new FileInfo(archive);
-        string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(info.FullName + "|" + info.Length + "|" + info.LastWriteTimeUtc.Ticks + "|" + entry.FullName)));
+        string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(info.FullName + "|" + info.Length + "|" + info.LastWriteTimeUtc.Ticks + "|" + entry.Name)));
         string target = Path.Combine(cache, key + (relative.EndsWith(".png",StringComparison.OrdinalIgnoreCase)?".png":".unity3d"));
         if (File.Exists(target) && new FileInfo(target).Length == entry.Length) return target;
         string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            using (var source = entry.Open()) using (var output = File.Create(temporary))
+            cancellation.ThrowIfCancellationRequested();
+            PreviewPerformance.Count("archiveOpens");
+            using var zip = ZipFile.OpenRead(archive);
+            var original = zip.GetEntry(entry.Name) ?? throw new IOException("MOD 归档在读取期间发生变化。");
+            using (var source = original.Open()) using (var output = File.Create(temporary))
             {
                 byte[] buffer = new byte[128 * 1024]; int length; long copied = 0;
                 while ((length = source.Read(buffer)) > 0) { cancellation.ThrowIfCancellationRequested(); copied += length; if (copied > entry.Length) throw new InvalidDataException("MOD 资源长度不匹配。"); output.Write(buffer, 0, length); }
                 if (copied != entry.Length) throw new InvalidDataException("MOD 资源截断。");
             }
-            File.Move(temporary, target, true); return target;
+            if (PreviewMetadataCache.Stamp(archive) != directory.Stamp) throw new IOException("MOD 归档在读取期间发生变化。");
+            cancellation.ThrowIfCancellationRequested();
+            File.Move(temporary, target, true); PreviewPerformance.Count("extractedBytes", entry.Length); return target;
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }

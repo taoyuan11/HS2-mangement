@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -15,6 +16,8 @@ namespace HS2Manager.UnityPreview
         public readonly Dictionary<string, Transform> Bones = new Dictionary<string, Transform>();
         private readonly List<Object> owned = new List<Object>();
         private readonly OriginalAssetStore assets;
+        private readonly bool ownsAssets;
+        private bool disposed;
         private readonly CharacterDefinition definition;
         private readonly Dictionary<string, AssetReference> selections;
         private readonly List<KeyValuePair<CharacterPart, GameObject>> parts = new List<KeyValuePair<CharacterPart, GameObject>>();
@@ -23,28 +26,50 @@ namespace HS2Manager.UnityPreview
         private IEnumerable<Renderer> PartRenderers(CharacterPart part) { return partTransforms[part].Select(t=>t.GetComponent<Renderer>()).Where(r=>r!=null); }
         public OriginalEnvironment CreateEnvironment(Camera camera) { return new OriginalEnvironment(camera,definition.Environment,assets,selections); }
 
-        public OriginalCharacter(CharacterDefinition data)
+        public OriginalCharacter(CharacterDefinition data) : this(data,new OriginalAssetStore(data.BundlePaths),true)
         {
+            try { var steps=Build(()=>false,null);while(steps.MoveNext()){} }
+            catch { Dispose();throw; }
+        }
+        public OriginalCharacter(CharacterDefinition data,OriginalAssetStore store,bool owns=false)
+        {
+            assets=store;ownsAssets=owns;
             definition = data;
             Diagnostics.AddRange(data.Diagnostics);
             selections = data.Selections.ToDictionary(s => s.Key, s => s.Reference);
-            try
+        }
+        public IEnumerator Build(Func<bool> canceled,Action<string> progress)
+        {
+            var slice=System.Diagnostics.Stopwatch.StartNew();
+            int completed=0;
+            foreach (var part in definition.Parts)
             {
-                assets = new OriginalAssetStore(data.BundlePaths);
-                foreach (var part in data.Parts)
-                {
-                    try { AddPart(part); }
-                    catch (Exception error) { Diagnostics.Add(part.Role + " " + part.Prefab.Asset + ": " + error.Message); }
-                }
-                foreach (var entry in parts) ApplyMaterials(entry.Key, entry.Value);
-                ApplyClothingMasks();
-                foreach (var entry in parts) ApplyExtensions(entry.Key, entry.Value);
-                ApplyDryMakerState();
-                InitializeHeels();
-                PoseFace(1);
-                Diagnostics.Add("环境、后处理及实时动态尚未完成游戏对照验证。");
+                if(canceled())throw new OperationCanceledException();
+                progress?.Invoke("构建角色部件 "+(++completed)+"/"+definition.Parts.Length);
+                try { AddPart(part); }
+                catch (Exception error) { Diagnostics.Add(part.Role + " " + part.Prefab.Asset + ": " + error.Message); }
+                if(slice.ElapsedMilliseconds>=8){yield return null;slice.Restart();}
             }
-            catch { Dispose(); throw; }
+            completed=0;
+            foreach (var entry in parts)
+            {
+                if(canceled())throw new OperationCanceledException();
+                progress?.Invoke("准备角色材质 "+(++completed)+"/"+parts.Count);
+                ApplyMaterials(entry.Key, entry.Value);
+                if(slice.ElapsedMilliseconds>=8){yield return null;slice.Restart();}
+            }
+            ApplyClothingMasks();
+            foreach (var entry in parts)
+            {
+                if(canceled())throw new OperationCanceledException();
+                ApplyExtensions(entry.Key, entry.Value);
+                if(slice.ElapsedMilliseconds>=8){yield return null;slice.Restart();}
+            }
+            if(canceled())throw new OperationCanceledException();
+            ApplyDryMakerState();
+            InitializeHeels();
+            PoseFace(1);
+            Diagnostics.Add("环境、后处理及实时动态尚未完成游戏对照验证。");
         }
 
         private void AddPart(CharacterPart part)
@@ -435,10 +460,11 @@ namespace HS2Manager.UnityPreview
         }
         public void Dispose()
         {
+            if(disposed)return;disposed=true;
             Object.Destroy(Root);
             foreach (var obj in owned) { var rt = obj as RenderTexture; if (rt != null) rt.Release(); Object.Destroy(obj); }
             owned.Clear();
-            if (assets != null) assets.Dispose();
+            if (ownsAssets && assets != null) assets.Dispose();
         }
     }
 }
