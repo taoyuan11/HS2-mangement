@@ -43,6 +43,7 @@ internal static class UnityPreviewUiChecks
             var shared=model.UnitySession!;owned.Add(shared.ProcessId);
             if(model.PreviewName!=male.Name)throw new Exception("Startup switch loaded the obsolete card.");
             await model.OpenPreviewAsync(female);CheckShared();
+            await CheckLiveInteraction(window, model, viewport);
             canvas.Measure(new Size(1440,900));canvas.Arrange(new Rect(0,0,1440,900));canvas.UpdateLayout();await Frame();
             model.TogglePlayback();await Frame();await Capture("front");
             var full=model.CameraDistance;model.FocusFace();await Frame();await Capture("face");if(model.CameraDistance>=full)throw new Exception("Face framing did not zoom.");
@@ -117,6 +118,49 @@ internal static class UnityPreviewUiChecks
             canvas.UpdateLayout();
             await UiTest.CaptureAsync(canvas, Path.Combine(output, name));
         }
+    }
+    private static async Task CheckLiveInteraction(MainWindow window, MainViewModel model, UnityPreviewViewport viewport)
+    {
+        var session = model.UnitySession!;
+        foreach (var size in new[] { (1440, 1170), (1100, 700), (1280, 760), (1440, 900) })
+        {
+            window.AppWindow.Resize(new Windows.Graphics.SizeInt32(size.Item1, size.Item2));
+            model.ShowPreviewRail = !model.ShowPreviewRail;
+            await Task.Delay(150);
+            long previous = session.LatestFrame?.Sequence ?? 0;
+            for (int i = 0; i < 60; i++)
+            {
+                model.Rotate(4, i % 2 == 0 ? 2 : -2);
+                model.Pan(i % 2 == 0 ? 2 : -2, 1);
+                model.Zoom(i % 2 == 0 ? 120 : -120);
+                await Task.Delay(16);
+            }
+            await UiTest.WaitUntil(() => (session.LatestFrame?.Sequence ?? 0) > previous + 5,
+                "Preview stopped presenting during rotate/pan/zoom and resize: " + viewport.RenderError);
+            if (!viewport.HasFrame || viewport.RenderError != null) throw new Exception("Live viewport: " + viewport.RenderError);
+        }
+
+        // Hide after the viewport's Rendering handler has queued work, before the
+        // dispatcher runs that work. A pending frame must not resurrect the image.
+        var hidden = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void HideDuringRender(object? sender, object args)
+        {
+            CompositionTarget.Rendering -= HideDuringRender;
+            viewport.Visibility = Visibility.Collapsed;
+            hidden.TrySetResult();
+        }
+        CompositionTarget.Rendering += HideDuringRender;
+        try { await hidden.Task.WaitAsync(TimeSpan.FromSeconds(5)); }
+        finally { CompositionTarget.Rendering -= HideDuringRender; }
+        long stopped = session.LatestFrame!.Sequence;
+        await Task.Delay(150);
+        if (viewport.HasFrame || session.LatestFrame.Sequence != stopped)
+            throw new Exception("Queued update refreshed a stopped viewport.");
+        viewport.Visibility = Visibility.Visible;
+        await viewport.WaitForRenderAsync();
+        if (!viewport.HasFrame || viewport.RenderError != null) throw new Exception("Preview did not resume after pending update cancellation.");
+        model.ResetCamera();
+        Console.WriteLine("PASS continuous queued presentation during rotate/pan/zoom, four window sizes, rail toggles and pending-frame cancellation/resume");
     }
     private static bool Running(int pid){try{using var process=Process.GetProcessById(pid);return !process.HasExited;}catch(ArgumentException){return false;}}
 }

@@ -126,6 +126,10 @@ internal static class LayoutChecks
                     window.AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(size.Item1 * dpi), (int)(size.Item2 * dpi)));
                     await Task.Delay(180); canvas.UpdateLayout();
                     if (list.ActualWidth < 190 || list.ActualHeight < 160 || search.ActualWidth < 110) throw new Exception("Clipped library layout");
+                    var gender = (ComboBox)canvas.FindName("GenderFilterBox");
+                    var genderText = UiTest.Descendants<TextBlock>(gender).FirstOrDefault(t => t.Text == model.GenderFilter);
+                    if (gender.ActualWidth < 136 || genderText?.IsTextTrimmed == true)
+                        throw new Exception("Gender filter text is clipped");
                     int realized = Enumerable.Range(0, 80).Count(i => list.ContainerFromIndex(i) != null);
                     if (realized is 0 or >= 80) throw new Exception("WinUI card virtualization failed: " + realized);
                     await UiTest.CaptureAsync(canvas, Path.Combine(output, $"{theme}-{size.Item1}-library.png"));
@@ -182,6 +186,7 @@ internal static class LayoutChecks
         UiTest.Descendants<TextBox>(prompt).Single().Text = "新的分类";
         UiTest.Invoke(UiTest.Descendants<Button>(prompt).First(b => b.Content?.ToString() == "确定"));
         if (await promptTask != "新的分类") throw new Exception("Prompt did not return input");
+        await CheckSettingsLayout(window, model, output);
         var settingsTask = SettingsWindow.ShowAsync(window, model);
         await UiTest.WaitUntil(() => UiTest.OpenDialog(root)?.Title?.ToString() == "设置与连接", "Settings did not open");
         var settings = UiTest.OpenDialog(root)!; await Task.Delay(180);
@@ -190,10 +195,62 @@ internal static class LayoutChecks
         var save = UiTest.Descendants<Button>(settings).First(b => b.Content?.ToString() == "保存并刷新");
         UiTest.Invoke(save); await Task.Delay(100);
         if (settingsTask.IsCompleted) throw new Exception("Invalid settings closed the dialog");
+        var view = (SettingsView)settings.Content;
+        if (!((InfoBar)view.FindName("ResultBar")).IsOpen) throw new Exception("Settings validation is not visible");
         string path = Path.Combine(output, "AnotherGame"); gamePath.Text = path;
+        ((RadioButton)view.FindName("DarkTheme")).IsChecked = true;
         UiTest.Descendants<CheckBox>(settings).Single().IsChecked = true; UiTest.Invoke(save);
-        if (!await settingsTask || model.Settings.GamePath != path || !AppSettings.Load(model.DataDirectory).RecursiveCardSearch)
+        var loaded = AppSettings.Load(model.DataDirectory);
+        if (!await settingsTask || model.Settings.GamePath != path || !loaded.RecursiveCardSearch || loaded.Theme != "Dark" || ThemeService.Current != "Dark")
             throw new Exception("Settings did not persist");
-        Console.WriteLine("PASS WinUI prompt, settings validation and settings persistence");
+        Console.WriteLine("PASS WinUI prompt, visible settings validation, scan and theme persistence");
+    }
+
+    private static async Task CheckSettingsLayout(MainWindow window, MainViewModel model, string output)
+    {
+        var canvas = (FrameworkElement)window.Content;
+        var root = canvas.XamlRoot;
+        string originalPath = model.Settings.GamePath, originalTheme = model.Settings.Theme;
+        bool originalRecursive = model.Settings.RecursiveCardSearch;
+        foreach (string theme in new[] { "Light", "Dark" })
+        {
+            ThemeService.Apply(theme);
+            var task = SettingsWindow.ShowAsync(window, model);
+            await UiTest.WaitUntil(() => UiTest.OpenDialog(root)?.Title?.ToString() == "设置与连接", "Settings did not open");
+            var dialog = UiTest.OpenDialog(root)!;
+            try
+            {
+                var view = (SettingsView)dialog.Content;
+                var navigation = (ListView)view.FindName("SettingsNavigation");
+                foreach (var size in new[] { (1440, 900), (1100, 700) })
+                {
+                    double dpi = root.RasterizationScale;
+                    window.AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(size.Item1 * dpi), (int)(size.Item2 * dpi)));
+                    await Task.Delay(180);
+                    canvas.UpdateLayout();
+                    var background = UiTest.Descendants<Border>(dialog).First(b => b.Name == "BackgroundElement");
+                    if (background.ActualWidth < 900 || background.ActualWidth > root.Size.Width - 20 || background.ActualHeight > root.Size.Height - 20)
+                        throw new Exception($"Settings dialog does not fit: {background.ActualWidth}x{background.ActualHeight}, root={root.Size}");
+                    for (int i = 0; i < 3; i++)
+                    {
+                        navigation.SelectedIndex = i;
+                        await Task.Delay(80);
+                        var page = (ScrollViewer)view.FindName(new[] { "LibraryPage", "AppearancePage", "DataPage" }[i]);
+                        if (page.Visibility != Visibility.Visible || page.ViewportWidth < 500 || page.ViewportHeight < 200 || page.ExtentWidth > page.ViewportWidth + 1)
+                            throw new Exception($"Settings page {i} clips at {size}: viewport={page.ViewportWidth}x{page.ViewportHeight}, extent={page.ExtentWidth}");
+                        await UiTest.CaptureAsync(dialog, Path.Combine(output, $"settings-{theme}-{size.Item1}-{i}.png"));
+                    }
+                }
+                ((TextBox)view.FindName("GamePathBox")).Text = Path.Combine(output, "UnsavedGame");
+                ((CheckBox)view.FindName("RecursiveBox")).IsChecked = !originalRecursive;
+                ((RadioButton)view.FindName("LightTheme")).IsChecked = true;
+                UiTest.Invoke(UiTest.Descendants<Button>(dialog).First(b => b.Content?.ToString() == "取消"));
+                if (await task || model.Settings.GamePath != originalPath || model.Settings.Theme != originalTheme || model.Settings.RecursiveCardSearch != originalRecursive)
+                    throw new Exception("Cancelling settings changed saved preferences");
+            }
+            finally { if (!task.IsCompleted) { dialog.Hide(); await task; } }
+        }
+        ThemeService.Apply(originalTheme);
+        Console.WriteLine("PASS settings navigation, light/dark layouts at 1440/1100, resize and cancel");
     }
 }

@@ -14,7 +14,9 @@ public sealed class UnityPreviewViewport : Grid
     public UnityPreviewSession? Session { get => (UnityPreviewSession?)GetValue(SessionProperty); set => SetValue(SessionProperty, value); }
     private readonly Image image = new() { Stretch = Stretch.Fill };
     private WriteableBitmap? frame;
-    private bool subscribed, resizePending;
+    private bool subscribed, resizePending, renderQueued;
+    private int renderGeneration;
+    private (int Width, int Height) requestedSize;
     private XamlRoot? observedRoot;
     public string? RenderError { get; private set; }
     public bool HasFrame => frame != null;
@@ -35,12 +37,32 @@ public sealed class UnityPreviewViewport : Grid
         if (!IsLoaded || Visibility != Visibility.Visible || Session == null || subscribed) return;
         RenderError = null; resizePending = true; CompositionTarget.Rendering += Rendering; subscribed = true;
     }
-    private void Unsubscribe() { if (subscribed) CompositionTarget.Rendering -= Rendering; subscribed = false; }
-    private void Stop() { Unsubscribe(); frame = null; image.Source = null; RenderError = null; }
+    private void Unsubscribe()
+    {
+        if (subscribed) CompositionTarget.Rendering -= Rendering;
+        subscribed = false;
+        ++renderGeneration; renderQueued = false;
+    }
+    private void Stop() { Unsubscribe(); frame = null; image.Source = null; requestedSize = default; RenderError = null; }
     private void Rendering(object? sender, object args)
     {
-        if (resizePending) { resizePending = false; Resize(); }
-        Refresh();
+        if (!subscribed || renderQueued) return;
+        // Pipe writes and bitmap updates can pump COM messages. Running them inside
+        // XAML's render pass can trigger its native reentrancy fail-fast (0xc000027b).
+        // Keep at most one queued update and discard it after a switch or stop.
+        renderQueued = true;
+        int generation = renderGeneration;
+        if (!DispatcherQueue.TryEnqueue(() =>
+        {
+            if (generation != renderGeneration) return;
+            try
+            {
+                if (!subscribed || !IsLoaded || Visibility != Visibility.Visible || Session == null) return;
+                if (resizePending) { resizePending = false; Resize(); }
+                Refresh();
+            }
+            finally { if (generation == renderGeneration) renderQueued = false; }
+        })) renderQueued = false;
     }
     private void Resize()
     {
@@ -48,7 +70,9 @@ public sealed class UnityPreviewViewport : Grid
         double dpi = XamlRoot?.RasterizationScale ?? 1;
         double width = ActualWidth * dpi, height = ActualHeight * dpi;
         double scale = Math.Min(1, Math.Min(KernelWire.MaxWidth / width, KernelWire.MaxHeight / height));
-        try { Session.Send(new KernelMessage { Kind = "Resize", Width = Math.Max(1, (int)(width * scale)), Height = Math.Max(1, (int)(height * scale)) }); }
+        var size = (Width: Math.Max(1, (int)(width * scale)), Height: Math.Max(1, (int)(height * scale)));
+        if (size == requestedSize) return;
+        try { Session.Send(new KernelMessage { Kind = "Resize", Width = size.Width, Height = size.Height }); requestedSize = size; }
         catch (Exception ex) { RenderError = ex.Message; }
     }
     private void Refresh()
@@ -66,8 +90,9 @@ public sealed class UnityPreviewViewport : Grid
     public async Task WaitForRenderAsync()
     {
         var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (!HasFrame && RenderError == null && Session != null && DateTime.UtcNow < deadline) { Refresh(); await Task.Delay(33); }
-        UpdateLayout();
+        // Observe the production render path; do not make tests pass by refreshing
+        // directly while the composition subscription or queued update is broken.
+        while (!HasFrame && RenderError == null && subscribed && DateTime.UtcNow < deadline) await Task.Delay(33);
     }
     public Task StopAsync() { Stop(); return Task.CompletedTask; }
 }

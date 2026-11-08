@@ -31,7 +31,6 @@
     </StackPanel>
     <StackPanel local:DockPanel.Dock="Bottom" Margin="4,12,4,16">
      <Border BorderBrush="{ThemeResource BorderBrush}" BorderThickness="0,1,0,0" Padding="4,14,0,12"><StackPanel><StackPanel Orientation="Horizontal"><TextBlock Text="●" Foreground="{ThemeResource SuccessBrush}" FontSize="9" VerticalAlignment="Center" Margin="0,0,7,0"/><TextBlock Text="{Binding GameConnection}" FontSize="11"/></StackPanel><TextBlock Text="{Binding GameFolderName}" FontSize="10" Foreground="{ThemeResource MutedBrush}" Margin="16,5,0,0" TextTrimming="CharacterEllipsis"/></StackPanel></Border>
-     <ComboBox ItemsSource="{Binding ThemeChoices}" SelectedItem="{Binding ThemeChoice, Mode=TwoWay}" FontSize="12" Margin="0,0,0,8" AutomationProperties.Name="应用主题"/>
      <Button Content="⚙  设置与连接" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Click="Settings_Click"/>
     </StackPanel>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -54,9 +53,9 @@
    <Grid Visibility="{Binding IsPreview, Converter={StaticResource BoolVisible}, ConverterParameter=Invert}">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Grid Margin="28,25,26,19"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="{Binding PageTitle}" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="{Binding LibrarySummary}" Foreground="{ThemeResource MutedBrush}" FontSize="12" Margin="1,8,0,0"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button Content="↻  刷新" Margin="0,0,10,0" Click="Refresh_Click" IsEnabled="{Binding IsIdle}"/><Button Content="＋  导入人物卡" Style="{StaticResource PrimaryButton}" Click="Import_Click" IsEnabled="{Binding IsIdle}"/></StackPanel></Grid>
-    <Grid Grid.Row="1" Margin="28,0,26,18"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="110"/><ColumnDefinition Width="124"/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions>
+    <Grid Grid.Row="1" Margin="28,0,26,18"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="124"/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions>
      <Grid Margin="0,0,12,0"><TextBox x:Name="SearchBox" PlaceholderText="搜索名称、文件名、标签…" Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="搜索人物卡" Padding="12,9"/></Grid>
-     <ComboBox Grid.Column="1" ItemsSource="{Binding GenderChoices}" SelectedItem="{Binding GenderFilter, Mode=TwoWay}" Margin="0,0,8,0" AutomationProperties.Name="性别筛选"/>
+     <ComboBox x:Name="GenderFilterBox" Grid.Column="1" ItemsSource="{Binding GenderChoices}" SelectedItem="{Binding GenderFilter, Mode=TwoWay}" MinWidth="136" HorizontalAlignment="Stretch" Margin="0,0,8,0" AutomationProperties.Name="性别筛选"/>
      <ComboBox Grid.Column="2" ItemsSource="{Binding Tags}" SelectedItem="{Binding TagFilter, Mode=TwoWay}" Margin="0,0,8,0" AutomationProperties.Name="标签筛选"/>
      <ComboBox Grid.Column="3" ItemsSource="{Binding SortChoices}" SelectedItem="{Binding SortOrder, Mode=TwoWay}" AutomationProperties.Name="排序方式"/>
     </Grid>

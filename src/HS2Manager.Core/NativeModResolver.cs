@@ -41,7 +41,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         if(string.IsNullOrWhiteSpace(name))return null;
         EnsureIndex();
         var matches=new Dictionary<string,NativeAssetEntry>(StringComparer.OrdinalIgnoreCase);
-        foreach(var mod in UsableMods().OrderByDescending(m=>Version.TryParse(m.Version.TrimStart('v','V'),out var version)?version:new Version()))
+        foreach(var mod in UsableMods())
         {
             cancellation.ThrowIfCancellationRequested();
             try
@@ -70,8 +70,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
                 if (migrated != null) return migrated;
             }
         }
-        foreach (var mod in UsableMods().Where(m => m.Guid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(m => Version.TryParse(m.Version.TrimStart('v', 'V'), out var version) ? version : new Version()).ThenByDescending(m => m.Path, StringComparer.OrdinalIgnoreCase))
+        foreach (var mod in UsableMods().Where(m => m.Guid.Equals(reference.Guid, StringComparison.OrdinalIgnoreCase)))
         {
             if (!File.Exists(mod.Path)) continue;
             if (!lists.TryGetValue(mod.Path, out var entries)) lists[mod.Path] = entries = ReadLists(mod.Path);
@@ -80,7 +79,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         }
         return null;
     }
-    private IEnumerable<ModFileInfo> UsableMods() => index!.Files.Where(m => m.Compatible && m.Error.Length == 0);
+    private IEnumerable<ModFileInfo> UsableMods() => NativeModSelection.Select(index!.Files);
     internal IEnumerable<ModFileInfo> InstalledMods() { EnsureIndex(); return UsableMods(); }
     private void EnsureIndex()
     {
@@ -191,7 +190,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         bool complete = true;
         try
         {
-            var saved = metadata.Get("bundle-catalog", index!.UpdatedUtc.Ticks + "|" + string.Join("\n", sources.Select(s => s.Stamp)), () =>
+            var saved = metadata.Get("bundle-catalog", "active-mods-v1|" + index!.UpdatedUtc.Ticks + "|" + string.Join("\n", sources.Select(s => s.Stamp)), () =>
             {
                 var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var source in sources)

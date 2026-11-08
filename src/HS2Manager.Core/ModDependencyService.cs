@@ -158,9 +158,8 @@ public sealed class ModDependencyService(CardRepository repository)
     private void RebuildLookup()
     {
         byGuid = new(StringComparer.OrdinalIgnoreCase); migrations = new(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in Index?.Files ?? [])
+        foreach (var file in NativeModSelection.Select(Index?.Files ?? []))
         {
-            if (!file.Compatible || file.Error.Length > 0 || file.Guid.Length == 0) continue;
             byGuid.TryAdd(file.Guid, file);
             foreach (var migration in file.Migrations)
             { if (!migrations.TryGetValue(migration.OldGuid, out var list)) migrations[migration.OldGuid] = list = []; list.Add(migration); }
