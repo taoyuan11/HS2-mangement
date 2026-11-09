@@ -43,6 +43,7 @@ namespace HS2Manager.UnityPreview
             camera=target;data=definition;
             try
             {
+                if(data.Physics!=null&&data.Physics.Has("m_Gravity"))Physics.gravity=IndependentBoneChain.Vector(data.Physics.Get("m_Gravity"));
                 var rs=data.RenderSettings;
                 RenderSettings.ambientMode=(AmbientMode)rs.Float("m_AmbientMode",1);
                 RenderSettings.ambientSkyColor=ColorOf(rs.Get("m_AmbientSkyColor"));

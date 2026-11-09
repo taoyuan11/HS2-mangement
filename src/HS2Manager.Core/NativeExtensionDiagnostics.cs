@@ -6,12 +6,21 @@ internal sealed partial class NativeCardExtensions
         or "KSOX" or "KCOX" or "KK_InvisibleBody" or "TestCharaCustomFunctionController" or "com.fairbair.hs2_boobsettings"
         or "com.deathweasel.bepinex.eyecontrol" or "KK_PregnancyPlus" or "mikke.pushUpAI"
         or "orange.spork.additionalaccessorycontrolsplugin" or "orange.spork.advikplugin" or "orange.spork.outfitpainter"
-        or "marco.authordata" or "orange.spork.earwiggle";
+        or "marco.authordata" or "orange.spork.earwiggle" or "com.deathweasel.bepinex.uncensorselector";
+
+    public Dictionary<string, object?> Uncensor { get; } = [];
 
     private void ReadOther(string id, NativePluginData plugin, Stream stream, CardRecord card, CancellationToken cancellation)
     {
         if (id == "KSOX") { ReadSkinOverlays(plugin, card, cancellation); return; }
         if (id == "KCOX") { ReadClothesOverlays(plugin, stream, card, cancellation); return; }
+        if (id == "com.deathweasel.bepinex.uncensorselector")
+        {
+            if (plugin.Version is < 1 or > 2) throw new NotSupportedException("UncensorSelector 数据版本不支持。");
+            foreach (string key in new[] { "UncensorGUID", "BodyGUID", "PenisGUID", "BallsGUID", "DisplayBalls" })
+                Uncensor[key] = plugin.Read(key);
+            return;
+        }
         long expected = id == "mikke.pushUpAI" ? 3 : id is "KK_PregnancyPlus" or "marco.authordata" ? 1 : 0;
         if (plugin.Version != expected) throw new NotSupportedException("扩展数据版本尚未支持。");
         switch (id)

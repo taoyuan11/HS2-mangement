@@ -9,7 +9,20 @@ from skimage.metrics import structural_similarity
 
 def measures(a, b, ba, bb, region=None):
     mask = (np.abs(a.astype(float)-ba).max(axis=2)>4) | (np.abs(b.astype(float)-bb).max(axis=2)>4)
-    _, score = structural_similarity(a,b,data_range=255,channel_axis=2,full=True)
+    # SSIM uses a 7x7 window. Crop to the foreground plus its three-pixel
+    # neighbourhood; all scored pixels retain exactly the same input window.
+    ys,xs=np.nonzero(mask)
+    if ys.size:
+        top=max(0,int(ys.min())-3);bottom=min(a.shape[0],int(ys.max())+4)
+        left=max(0,int(xs.min())-3);right=min(a.shape[1],int(xs.max())+4)
+        # skimage requires both dimensions to be at least the window size.
+        top=max(0,min(top,bottom-7));bottom=min(a.shape[0],max(bottom,top+7))
+        left=max(0,min(left,right-7));right=min(a.shape[1],max(right,left+7))
+        crop=(slice(top,bottom),slice(left,right))
+        _, score = structural_similarity(a[crop],b[crop],data_range=255,channel_axis=2,full=True)
+        score=score.mean(axis=2)
+    else:
+        crop=(slice(None),slice(None));score=np.zeros(mask.shape)
     error = np.abs(a.astype(float)-b)
     masks = {'character':mask}
     if region is not None:
@@ -22,7 +35,7 @@ def measures(a, b, ba, bb, region=None):
     result = {}
     for name,m in masks.items():
         count=int(m.sum())
-        s=float(score.mean(axis=2)[m].mean()) if count else 0
+        s=float(score[m[crop]].mean()) if count else 0
         e=float(error[m].mean()) if count else 255
         result[name]={'pixels':count,'ssim':s,'meanChannelError255':e,'numericPass':count>100 and s>=.99 and e<=2}
     return result, mask, error
@@ -77,6 +90,21 @@ def dynamic(reference, actual, output, region):
 
 def compare(reference, actual, output):
     output.mkdir(parents=True, exist_ok=True)
+    fixtures=[json.loads((directory/'fixture.json').read_text(encoding='utf-8-sig')) for directory in [reference,actual]]
+    for fixture in fixtures:
+        fixture.setdefault('PhysicsResetVersion',0)
+        fixture.setdefault('GizmoVisibilityVersion',0)
+        fixture.setdefault('ClothResetVersion',0)
+        fixture.setdefault('PartAnimationClockVersion',0)
+        fixture.setdefault('BlinkClockVersion',0)
+    # Cloth reset cannot affect a character with no Cloth component. Preserve
+    # strict equality for every setting that is exercised by either capture.
+    if not any(r.get('Cloth') for directory in [reference,actual]
+               for r in json.loads((directory/'state.json').read_text(encoding='utf-8-sig'))['Renderers']):
+        for fixture in fixtures:
+            fixture['ClothResetVersion']=0
+    if fixtures[0] != fixtures[1]:
+        raise ValueError('Capture fixtures differ; camera, timing and random phases must match.')
     region = json.loads((reference / 'face-region.json').read_text(encoding='utf-8-sig'))
     rows = []
     for view in ['front', 'side', 'back', 'face']:

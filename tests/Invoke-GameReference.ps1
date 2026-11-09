@@ -17,6 +17,8 @@ if($Take -gt 0){$entries=@($entries|Select-Object -First $Take)}
 if($entries.Count){$CardPath=$entries[0].Card;$Maker=$true}
 $card=(Resolve-Path -LiteralPath $CardPath).Path
 $output=[IO.Path]::GetFullPath($OutputPath)
+$stopRequest=Join-Path (Split-Path (Split-Path $output -Parent) -Parent) 'stop-requested.txt'
+if(Test-Path -LiteralPath $stopRequest){throw [OperationCanceledException]::new('Reference batch stopped at a completed-card boundary.')}
 if(Test-Path -LiteralPath $output){throw 'Use a new output directory for each reference capture.'}
 $collector=Join-Path $PSScriptRoot 'HS2Manager.GameReference\bin\Debug\net46\HS2Manager.GameReference.dll'
 if(!(Test-Path -LiteralPath $collector)){throw 'Build the test reference collector first.'}
@@ -44,7 +46,9 @@ try {
     $env:HS2_REFERENCE_OUTPUT=$output
     $env:HS2_REFERENCE_MAKER=if($Maker){'1'}else{'0'}
     if($entries.Count){$manifest=Join-Path $output 'manifest.json';@($entries|ForEach-Object {@{Card=$_.Card;Output=(Join-Path $output $_.Id)}})|ConvertTo-Json|Set-Content -LiteralPath $manifest -Encoding utf8;$env:HS2_REFERENCE_MANIFEST=$manifest}
-    $exitCode=[HS2Manager.BuildTools.OwnedToolProcess]::Run($executable,@('-screen-fullscreen','0','-screen-width','1280','-screen-height','720','-logFile',(Join-Path $output 'game.log')),$game,$TimeoutSeconds,$null,(Join-Path $output 'finished.txt'))
+    $arguments=@('-screen-fullscreen','0','-screen-width','1280','-screen-height','720','-logFile',(Join-Path $output 'game.log'))
+    if($env:HS2_RENDERDOC_DLL){$arguments+=@('--doorstop-target',$collector)}
+    $exitCode=[HS2Manager.BuildTools.OwnedToolProcess]::Run($executable,$arguments,$game,$TimeoutSeconds,$null,(Join-Path $output 'finished.txt'))
     if($exitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $output 'complete.txt'))){throw "Reference collection failed ($exitCode). See $output"}
     Write-Output "Reference fixture captured: $output"
 }

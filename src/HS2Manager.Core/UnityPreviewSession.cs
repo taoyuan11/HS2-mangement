@@ -30,6 +30,8 @@ public sealed class UnityPreviewSession : IDisposable
     public bool IsUsable => Volatile.Read(ref disposed)==0 && !lifetime.IsCancellationRequested;
     public int ProcessId {get;private set;}
     public long CurrentLoad {get;private set;}
+    public long RequestedRevision {get;private set;}
+    public long AppliedRevision {get;private set;}
     public UnityFrame? LatestFrame {get;private set;}
     public event Action<string>? Failed;
     public event Action<KernelMessage>? Progress;
@@ -104,7 +106,8 @@ public sealed class UnityPreviewSession : IDisposable
                 if(message.Kind=="Metrics")PreviewPerformance.Write(dataDirectory,new{Kind="kernel",Session=session,Load=message.Load,Stages=JsonSerializer.Deserialize<JsonElement>(message.Text)});
                 TaskCompletionSource<KernelMessage>? pending;
                 lock(loads)loads.TryGetValue(message.Load,out pending);
-                if(message.Kind=="Loaded")pending?.TrySetResult(message);
+                if(message.Kind=="Loaded" || message.Kind=="Updated")
+                {if(message.Load==CurrentLoad)AppliedRevision=message.Revision;pending?.TrySetResult(message);}
                 if(message.Kind=="Error")
                 {
                     pending?.TrySetException(new IOException(message.Text));
@@ -128,14 +131,19 @@ public sealed class UnityPreviewSession : IDisposable
         lock(writes)KernelWire.Write(pipe!,JsonSerializer.Serialize(message,UnityCharacterService.JsonOptions));
     }
     public async Task<KernelMessage> LoadAsync(string definition,long generation,CancellationToken cancellation)
+        => await ApplyAsync(definition,generation,0,false,cancellation);
+    public Task<KernelMessage> UpdateAsync(string definition,long generation,long revision,bool update,CancellationToken cancellation)
+        => ApplyAsync(definition,generation,revision,update,cancellation);
+    private async Task<KernelMessage> ApplyAsync(string definition,long generation,long revision,bool update,CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
-        CurrentLoad=generation;sequence=0;LatestFrame=null;
+        CurrentLoad=generation;RequestedRevision=revision;sequence=0;
+        if(!update)LatestFrame=null;
         var completion=new TaskCompletionSource<KernelMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock(loads)loads[generation]=completion;
         try
         {
-            Send(new KernelMessage {Kind="Load",Load=generation,Path=Path.GetFullPath(definition)});
+            Send(new KernelMessage {Kind=update?"Update":"Load",Load=generation,Revision=revision,Path=Path.GetFullPath(definition)});
             using var registration=cancellation.Register(()=>{try{Send(new KernelMessage{Kind="Cancel",Load=generation});}catch{}completion.TrySetCanceled(cancellation);});
             return await completion.Task.WaitAsync(TimeSpan.FromMinutes(3),cancellation);
         }
@@ -160,7 +168,8 @@ public sealed class UnityPreviewSession : IDisposable
             try{locked=frameLock.WaitOne(0);}catch(AbandonedMutexException){locked=true;}
             if(!locked || view.ReadInt32(0)!=KernelWire.Version)return null;
             long next=view.ReadInt64(8),load=view.ReadInt64(16);
-            if(next==sequence || load!=CurrentLoad)return null;
+            long revision=view.ReadInt64(32);
+            if(next==sequence || load!=CurrentLoad || revision!=RequestedRevision)return null;
             int width=view.ReadInt32(24),height=view.ReadInt32(28);
             if(width<1 || width>KernelWire.MaxWidth || height<1 || height>KernelWire.MaxHeight)throw new IOException("Invalid frame size.");
             int size=width*height*4;
@@ -168,7 +177,7 @@ public sealed class UnityPreviewSession : IDisposable
             if(reuseBuffer){if(frameBuffer?.Length!=size)frameBuffer=new byte[size];pixels=frameBuffer;}
             else pixels=new byte[size];
             view.ReadArray(KernelWire.Header,pixels,0,pixels.Length);sequence=next;
-            return LatestFrame=new UnityFrame(width,height,pixels,next,load);
+            return LatestFrame=new UnityFrame(width,height,pixels,next,load,revision);
         }
         finally{if(locked)frameLock.ReleaseMutex();}
     }
@@ -182,4 +191,4 @@ public sealed class UnityPreviewSession : IDisposable
         view?.Dispose();map?.Dispose();frameLock?.Dispose();lifetime.Dispose();frameBuffer=null;LatestFrame=null;
     }
 }
-public sealed record UnityFrame(int Width,int Height,byte[] Pixels,long Sequence,long Load);
+public sealed record UnityFrame(int Width,int Height,byte[] Pixels,long Sequence,long Load,long Revision=0);

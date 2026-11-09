@@ -21,7 +21,9 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
     private ModIndex? index;
     private bool scanned;
     private readonly Dictionary<string, List<NativeAssetEntry>> lists = new(StringComparer.OrdinalIgnoreCase);
-    private Dictionary<string, string>? bundles;
+    private Dictionary<string, string[]>? bundles;
+    internal void BeginRequest(IProgress<string>? nextProgress,CancellationToken nextCancellation)
+    {progress=nextProgress;cancellation=nextCancellation;scanned=false;}
     private CardRepository Repository => new(data);
     public NativeAssetEntry Resolve(ModReference reference)
     {
@@ -120,7 +122,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         finally { Monitor.Exit(refreshLock); }
         static string Inventory(ModIndex value) => string.Join("\n", value.Files.Select(f => f.Path + "|" + f.Size + "|" + f.ModifiedUtcTicks + "|" + f.Error));
     }
-    private List<NativeAssetEntry> ReadLists(string path)
+    internal List<NativeAssetEntry> ReadLists(string path)
     {
         return metadata.Get("archive-lists", PreviewMetadataCache.Stamp(path), () => ReadListsUncached(path), cancellation);
     }
@@ -160,8 +162,28 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         // Lists can reference bundles supplied by a different installed zipmod.
         EnsureBundles();
         if (!bundles!.ContainsKey(relative.Replace('\\', '/')) && !scanned) { RefreshOnce("bundle|" + relative.Replace('\\', '/')); EnsureBundles(); }
-        if (bundles!.TryGetValue(relative.Replace('\\', '/'), out var other) && Extract(other, relative) is { } found) return found;
+        if (bundles!.TryGetValue(relative.Replace('\\', '/'), out var others))
+            foreach (var other in others) if (Extract(other, relative) is { } found) return found;
         throw new FileNotFoundException("游戏及已安装 MOD 中缺少资源包：" + relative);
+    }
+    // Sideloader redirects individual exported assets even when the vanilla
+    // bundle exists. A replacement can contain only some of that bundle's assets.
+    internal (string Path, string Archive) AssetBundle(string relative, string asset, string archive = "")
+    {
+        _ = NativePreviewService.ResolveBundlePath(Path.Combine(game, "abdata"), relative);
+        EnsureBundles();
+        if (bundles!.TryGetValue(relative.Replace('\\', '/'), out var candidates))
+            foreach (string candidate in candidates)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (Extract(candidate, relative) is not { } path) continue;
+                var names = metadata.Get("bundle-exports-v1", PreviewMetadataCache.Stamp(path), () =>
+                { using var reader = new NativeAssetBundle(path); return reader.ExportNames(); }, cancellation);
+                if (names.Any(n => n.Equals(asset, StringComparison.OrdinalIgnoreCase) ||
+                    Path.GetFileName(n).Equals(asset, StringComparison.OrdinalIgnoreCase) ||
+                    Path.GetFileNameWithoutExtension(n).Equals(asset, StringComparison.OrdinalIgnoreCase))) return (path, candidate);
+            }
+        return (Bundle(relative, archive), archive);
     }
     public string? LooseTexture(string bundle,string asset,string archive="")
     {
@@ -170,7 +192,7 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         if(archive.Length>0&&Extract(archive,relative) is {} own)return own;
         if(File.Exists(physical))return physical;
         EnsureBundles();
-        return bundles!.TryGetValue(relative,out var other)?Extract(other,relative):null;
+        return bundles!.TryGetValue(relative,out var others)?others.Select(other=>Extract(other,relative)).FirstOrDefault(p=>p!=null):null;
     }
     private void EnsureBundles()
     {
@@ -190,9 +212,9 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         bool complete = true;
         try
         {
-            var saved = metadata.Get("bundle-catalog", "active-mods-v1|" + index!.UpdatedUtc.Ticks + "|" + string.Join("\n", sources.Select(s => s.Stamp)), () =>
+            var saved = metadata.Get("bundle-catalog-v2", "active-mods-v1|" + index!.UpdatedUtc.Ticks + "|" + string.Join("\n", sources.Select(s => s.Stamp)), () =>
             {
-                var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var result = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
                 foreach (var source in sources)
                 {
                     cancellation.ThrowIfCancellationRequested();
@@ -201,7 +223,9 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
                         foreach (var entry in DirectoryOf(source.Path).Entries)
                         {
                             string name = entry.Name.Replace('\\', '/');
-                            if (name.EndsWith(".unity3d", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) result[name[7..]] = source.Path;
+                            if (name.StartsWith("abdata/",StringComparison.OrdinalIgnoreCase) &&
+                                (name.EndsWith(".unity3d", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)))
+                                result[name[7..]] = [..result.GetValueOrDefault(name[7..],[]),source.Path];
                         }
                     }
                     catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) { complete = false; }
@@ -214,14 +238,15 @@ internal sealed class NativeModResolver(string game, string data, string cache, 
         }
         catch (IncompleteCatalogException error) { bundles = error.Entries; }
     }
-    private sealed class IncompleteCatalogException(Dictionary<string, string> entries) : IOException
-    { internal Dictionary<string, string> Entries { get; } = entries; }
+    private sealed class IncompleteCatalogException(Dictionary<string, string[]> entries) : IOException
+    { internal Dictionary<string, string[]> Entries { get; } = entries; }
     private (string Stamp, ModArchiveEntry[] Entries) DirectoryOf(string archive)
     {
         cancellation.ThrowIfCancellationRequested();
-        if (directories.TryGetValue(archive, out var saved)) return saved;
         var file = new FileInfo(archive);
         string stamp = file.FullName.ToUpperInvariant() + "|" + file.Length + "|" + file.LastWriteTimeUtc.Ticks;
+        if (directories.TryGetValue(archive, out var saved) && saved.Stamp==stamp) return saved;
+        lists.Remove(archive);
         EnsureIndex();
         var indexed = index!.Files.FirstOrDefault(m => m.Path.Equals(file.FullName, StringComparison.OrdinalIgnoreCase));
         var entries = indexed?.ArchiveEntries != null && indexed.Size == file.Length && indexed.ModifiedUtcTicks == file.LastWriteTimeUtc.Ticks

@@ -7,7 +7,7 @@ internal static class NativeModSelection
     internal static IEnumerable<ModFileInfo> Select(IEnumerable<ModFileInfo> files)
     {
         foreach (var group in files.Where(m => m.Compatible && m.Error.Length == 0 && m.Guid.Length > 0)
-            .GroupBy(m => m.Guid, StringComparer.OrdinalIgnoreCase).OrderBy(g => g.Key, StringComparer.Ordinal))
+            .GroupBy(m => m.Guid, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.CurrentCulture))
         {
             // If even one version is absent, the game chooses the newest file in
             // the entire group, including archives that do have a version.

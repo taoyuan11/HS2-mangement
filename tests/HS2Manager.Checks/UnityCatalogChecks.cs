@@ -25,13 +25,15 @@ internal static class UnityCatalogChecks
         File.WriteAllText(Path.Combine(output,"catalog.json"),JsonSerializer.Serialize(updated,new JsonSerializerOptions{WriteIndented=true}));
         Console.WriteLine("Catalog prepared: "+updated.Count);
     }
-    internal static async Task Prepare(string game,string data,string output,bool femaleOnly=false)
+    internal static async Task Prepare(string game,string data,string output,bool femaleOnly=false,string? pinnedCatalog=null)
     {
         if(Directory.Exists(output))throw new IOException("Use a fresh catalog directory.");
         Directory.CreateDirectory(output);
-        var paths=Directory.EnumerateFiles(Path.Combine(game,"UserData","chara","female"),"*.png",SearchOption.TopDirectoryOnly).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        var pinned=pinnedCatalog==null?null:JsonSerializer.Deserialize<Entry[]>(File.ReadAllText(pinnedCatalog));
+        var paths=pinned==null?Directory.EnumerateFiles(Path.Combine(game,"UserData","chara","female"),"*.png",SearchOption.TopDirectoryOnly).Order(StringComparer.OrdinalIgnoreCase).ToList():pinned.Select(e=>e.Card).ToList();
+        if(pinned!=null&&pinned.Any(e=>Hash(e.Card)!=e.Hash))throw new IOException("Pinned card changed.");
         if(paths.Count==0)throw new InvalidDataException("No top-level female cards found.");
-        if(!femaleOnly)
+        if(!femaleOnly&&pinned==null)
         {
             paths.Add(Path.Combine(game,"UserData","chara","navi","navi.png"));
             paths.Add(Path.Combine(game,"UserData","chara","male","HS2_ill_M_000.png"));

@@ -17,11 +17,12 @@ if((Test-Path -LiteralPath $output) -and !$Resume){throw 'Use a fresh catalog va
 New-Item -ItemType Directory -Path $output -Force|Out-Null
 $results=if($Resume -and (Test-Path -LiteralPath (Join-Path $output 'results.json'))){@(Get-Content -LiteralPath (Join-Path $output 'results.json') -Raw|ConvertFrom-Json)}else{@()}
 for($i=0;$i -lt $entries.Count;$i++){
+    if(Test-Path -LiteralPath (Join-Path $output 'stop-requested.txt')){Write-Output 'Stopped at a completed-card boundary.';break}
     $entry=$entries[$i];$reference=Join-Path $output ($entry.Id+'\reference');$actual=Join-Path $output ($entry.Id+'\independent');$comparison=Join-Path $output ($entry.Id+'\comparison');$errorText=$null
     $finished=Join-Path $reference 'finished.txt'
     $referenceComplete=(Test-Path -LiteralPath $finished) -and (Get-Content -LiteralPath $finished -Raw).Trim() -eq 'success'
     $existing=@($results|Where-Object {$_.Id -eq $entry.Id})
-    if($Resume -and $referenceComplete -and $existing.Count -and ($ReferenceOnly -or !$existing[0].Error)){continue}
+    if($Resume -and $referenceComplete -and $existing.Count -and ($ReferenceOnly -or (!$existing[0].Error -and (Test-Path -LiteralPath (Join-Path $comparison 'report.json'))))){continue}
     try{
         # Every reference uses a fresh game process. Plugins retain state across maker reloads.
         if(!$referenceComplete){& (Join-Path $PSScriptRoot 'Invoke-GameReference.ps1') -GamePath $GamePath -CardPath $entry.Card -OutputPath $reference -Maker -TimeoutSeconds 600}

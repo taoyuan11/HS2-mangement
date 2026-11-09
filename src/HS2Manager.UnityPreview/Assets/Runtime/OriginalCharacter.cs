@@ -18,11 +18,14 @@ namespace HS2Manager.UnityPreview
         private readonly OriginalAssetStore assets;
         private readonly bool ownsAssets;
         private bool disposed;
-        private readonly CharacterDefinition definition;
+        private CharacterDefinition definition;
         private readonly Dictionary<string, AssetReference> selections;
         private readonly List<KeyValuePair<CharacterPart, GameObject>> parts = new List<KeyValuePair<CharacterPart, GameObject>>();
         private readonly Dictionary<CharacterPart,Dictionary<string,Transform>> partNodes=new Dictionary<CharacterPart,Dictionary<string,Transform>>();
         private readonly Dictionary<CharacterPart,Transform[]> partTransforms=new Dictionary<CharacterPart,Transform[]>();
+        private readonly List<KeyValuePair<Cloth,bool>> pendingCloths=new List<KeyValuePair<Cloth,bool>>();
+        private readonly Dictionary<Transform,BoneDefinition> scopedBoneBaselines=new Dictionary<Transform,BoneDefinition>();
+        private readonly Dictionary<Transform,BoneAdjustment> scopedBoneAdjustments=new Dictionary<Transform,BoneAdjustment>();
         private IEnumerable<Renderer> PartRenderers(CharacterPart part) { return partTransforms[part].Select(t=>t.GetComponent<Renderer>()).Where(r=>r!=null); }
         public OriginalEnvironment CreateEnvironment(Camera camera) { return new OriginalEnvironment(camera,definition.Environment,assets,selections); }
 
@@ -50,7 +53,10 @@ namespace HS2Manager.UnityPreview
                 catch (Exception error) { Diagnostics.Add(part.Role + " " + part.Prefab.Asset + ": " + error.Message); }
                 if(slice.ElapsedMilliseconds>=8){yield return null;slice.Restart();}
             }
+            ApplyBoneScopes();
+            CharacterDiagnostics.MaterialTrace(Root,"cloned");
             completed=0;
+            collectingGenerated=true;
             foreach (var entry in parts)
             {
                 if(canceled())throw new OperationCanceledException();
@@ -59,6 +65,7 @@ namespace HS2Manager.UnityPreview
                 if(slice.ElapsedMilliseconds>=8){yield return null;slice.Restart();}
             }
             ApplyClothingMasks();
+            CharacterDiagnostics.MaterialTrace(Root,"colored");
             foreach (var entry in parts)
             {
                 if(canceled())throw new OperationCanceledException();
@@ -66,9 +73,13 @@ namespace HS2Manager.UnityPreview
                 if(slice.ElapsedMilliseconds>=8){yield return null;slice.Restart();}
             }
             if(canceled())throw new OperationCanceledException();
+            CharacterDiagnostics.MaterialTrace(Root,"extensions");
             ApplyDryMakerState();
             InitializeHeels();
+            InitializePartAnimations();
             PoseFace(1);
+            CompleteClothSetup();
+            collectingGenerated=false;
             foreach(var entry in parts)
                 foreach(var renderer in PartRenderers(entry.Key).Where(r=>r.enabled&&r.gameObject.activeInHierarchy))
                     if(renderer.sharedMaterials.Any(m=>m==null))
@@ -77,6 +88,7 @@ namespace HS2Manager.UnityPreview
 
         private void AddPart(CharacterPart part)
         {
+            int ownedStart=owned.Count;
             var prefab = assets.Load<GameObject>(part.Prefab);
             // Recreate native transform/renderer components. Game MonoBehaviours are never instantiated.
             var transforms = new Dictionary<Transform, Transform>();
@@ -93,13 +105,11 @@ namespace HS2Manager.UnityPreview
             {
                 Transform target;
                 if (!byName.TryGetValue(bone.Name, out target)) continue;
-                target.localPosition = Vector(bone.Position);
-                target.localRotation = new Quaternion(bone.Rotation[0], bone.Rotation[1], bone.Rotation[2], bone.Rotation[3]);
-                target.localScale = Vector(bone.Scale);
+                SetTransform(target,Vector(bone.Position),new Quaternion(bone.Rotation[0], bone.Rotation[1], bone.Rotation[2], bone.Rotation[3]),Vector(bone.Scale));
             }
             if (part.Role == "rig" || part.Role == "headRig")
                 foreach (var pair in byName) if (!Bones.ContainsKey(pair.Key)) Bones[pair.Key] = pair.Value;
-            bool bindSkeleton=part.Role=="body"||part.Role=="head"||part.Role=="clothes"||part.List.String("Weights")=="1"||part.List.String("Weights")=="2"||part.Role=="accessory"&&part.List.String("Parent")=="null";
+            bool bindSkeleton=part.Role=="body"||part.Role=="supplement"||part.Role=="head"||part.Role=="clothes"||part.List.String("Weights")=="1"||part.List.String("Weights")=="2"||part.Role=="accessory"&&part.List.String("Parent")=="null";
             var skinnedAccessories=new HashSet<string>(part.Components.Where(c=>c.Type=="SkinnedAccessory"&&c.Data.Float("m_Enabled",1)!=0)
                 .SelectMany(c=>c.Data.Get("meshRenderers").Children).Select(c=>c.Text));
             var additionalRoots=new HashSet<string>(part.Components.Where(c=>c.Type=="BonesFramework"&&bindSkeleton)
@@ -115,7 +125,11 @@ namespace HS2Manager.UnityPreview
                             if(additionalRoots.Contains(ancestor.name)){nested=true;break;}
                         if(nested)continue;
                         Transform destination;
-                        if(branch.parent!=null&&Bones.TryGetValue(branch.parent.name,out destination)&&branch!=destination)branch.SetParent(destination,false);
+                        if(branch.parent!=null&&Bones.TryGetValue(branch.parent.name,out destination)&&branch!=destination)
+                        {
+                            branch.SetParent(destination,false);
+                            if(part.Role=="supplement")foreach(var bone in branch.GetComponentsInChildren<Transform>(true))Bones[bone.name]=bone;
+                        }
                         else Diagnostics.Add("新增骨骼缺少连接点："+part.Prefab.Asset+"/"+rootName);
                     }
                 }
@@ -129,6 +143,19 @@ namespace HS2Manager.UnityPreview
             foreach (var source in prefab.GetComponentsInChildren<Renderer>(true))
             {
                 if (part.Role == "rig" || part.Role == "headRig") continue;
+                if (part.Role == "supplement")
+                {
+                    // The selector replaces meshes on existing body renderers while
+                    // retaining their renderer flags and skin materials. Extra bone
+                    // branches above are retained even when their mesh is hidden.
+                    var replacement=source as SkinnedMeshRenderer;
+                    if(part.Slot==0&&replacement!=null&&source.name.StartsWith("o_body_",StringComparison.Ordinal))
+                    {
+                        var destination=parts.Where(p=>p.Key.Role=="body").SelectMany(p=>PartRenderers(p.Key)).OfType<SkinnedMeshRenderer>().FirstOrDefault(r=>r.name==source.name);
+                        if(destination!=null){destination.sharedMesh=replacement.sharedMesh;destination.bones=replacement.bones.Select(b=>MapBone(b,transforms,true)).ToArray();}
+                    }
+                    continue;
+                }
                 if (part.Role == "body" && !source.name.StartsWith("o_body_", StringComparison.Ordinal)) continue;
                 if (source.name.StartsWith("O_hit_", StringComparison.OrdinalIgnoreCase) || source.name.Contains("silhouette")) continue;
                 var target = transforms[source.transform].gameObject;
@@ -139,12 +166,21 @@ namespace HS2Manager.UnityPreview
                     var clone = target.AddComponent<SkinnedMeshRenderer>();
                     clone.sharedMesh = skin.sharedMesh;
                     clone.localBounds = skin.localBounds;
-                    clone.updateWhenOffscreen = true;
+                    // Preserve the serialized renderer flag.  The game enables this only
+                    // for selected parts (notably the face); forcing it on for every
+                    // cloned renderer changes skinning and motion-vector timing.
+                    clone.updateWhenOffscreen = skin.updateWhenOffscreen;
                     clone.quality = skin.quality;
                     clone.skinnedMotionVectors = skin.skinnedMotionVectors;
                     bool sharedBones=part.Role!="accessory"||bindSkeleton||skinnedAccessories.Contains(source.name);
                     clone.bones = skin.bones.Select(b => MapBone(b, transforms, sharedBones)).ToArray();
                     clone.rootBone = MapBone(skin.rootBone, transforms, sharedBones);
+                    if(bindSkeleton)
+                    {
+                        clone.localBounds=new Bounds(new Vector3(0,-2,0),new Vector3(20,20,20));
+                        Transform bodyRoot=null;
+                        if(part.Role!="head"&&Bones.TryGetValue("cf_J_Hips",out bodyRoot)&&source.GetComponent("Cloth")==null)clone.rootBone=bodyRoot;
+                    }
                     if(skinnedAccessories.Contains(source.name))
                     {
                         clone.bones=skin.bones.Select(b=>b!=null&&Bones.ContainsKey(b.name)?Bones[b.name]:null).ToArray();
@@ -162,22 +198,65 @@ namespace HS2Manager.UnityPreview
                     target.AddComponent<MeshFilter>().sharedMesh = filter.sharedMesh;
                     renderer = target.AddComponent<MeshRenderer>();
                 }
-                renderer.sharedMaterials = source.sharedMaterials.Select(m => m == null ? null : Own(new Material(m))).ToArray();
+                renderer.sharedMaterials = source.sharedMaterials.Select(m => m == null ? null : NativeMaterial(m)).ToArray();
                 if (part.Role == "head" && source.name == "o_head")
-                    renderer.sharedMaterial = Own(new Material(Selected<Material>("head.MatData")));
+                    renderer.sharedMaterial = NativeMaterial(Selected<Material>("head.MatData"));
                 if (part.Role == "body")
-                    renderer.sharedMaterial = Own(new Material(Selected<Material>("template." + (definition.Sex == 0 ? "cm" : "cf") + "_m_skin_body_00")));
+                    renderer.sharedMaterial = NativeMaterial(Selected<Material>("template." + (definition.Sex == 0 ? "cm" : "cf") + "_m_skin_body_00"));
                 renderer.enabled = source.enabled;
                 renderer.shadowCastingMode = source.shadowCastingMode;
                 renderer.receiveShadows = source.receiveShadows;
                 renderer.motionVectorGenerationMode = source.motionVectorGenerationMode;
                 renderer.lightProbeUsage = source.lightProbeUsage;
                 renderer.reflectionProbeUsage = source.reflectionProbeUsage;
+                renderer.sortingLayerID = source.sortingLayerID;
+                renderer.sortingOrder = source.sortingOrder;
+                var sourceCloth=source.GetComponent<Cloth>();
+                if(sourceCloth!=null&&skin!=null)CopyCloth(sourceCloth,target,transforms);
             }
             ApplyVisibility(part, copy.gameObject);
             if (part.Role == "accessory") ApplyAccessory(part, byName);
+            if(part.Role=="accessory"&&part.Parameters.Has("show")&&part.Parameters.Float("show")==0)copy.gameObject.SetActive(false);
             if (part.Role == "hair") HairBones(part, byName);
             parts.Add(new KeyValuePair<CharacterPart, GameObject>(part, copy.gameObject));
+            partOwned[part]=owned.Skip(ownedStart).ToArray();
+            foreach(var renderer in PartRenderers(part))
+                materialDefaults[renderer]=renderer.sharedMaterials.Select(m=>m==null?null:Own(new Material(m))).ToArray();
+        }
+
+        private void CopyCloth(Cloth source,GameObject target,Dictionary<Transform,Transform> transforms)
+        {
+            var cloth=target.AddComponent<Cloth>();cloth.enabled=false;
+            cloth.bendingStiffness=source.bendingStiffness;cloth.stretchingStiffness=source.stretchingStiffness;
+            cloth.damping=source.damping;cloth.externalAcceleration=source.externalAcceleration;cloth.randomAcceleration=source.randomAcceleration;
+            cloth.useGravity=source.useGravity;cloth.friction=source.friction;cloth.collisionMassScale=source.collisionMassScale;
+            cloth.enableContinuousCollision=source.enableContinuousCollision;cloth.useVirtualParticles=source.useVirtualParticles;
+            cloth.worldVelocityScale=source.worldVelocityScale;cloth.worldAccelerationScale=source.worldAccelerationScale;
+            cloth.clothSolverFrequency=source.clothSolverFrequency;cloth.stiffnessFrequency=source.stiffnessFrequency;
+            cloth.useTethers=source.useTethers;cloth.sleepThreshold=source.sleepThreshold;
+            cloth.selfCollisionDistance=source.selfCollisionDistance;cloth.selfCollisionStiffness=source.selfCollisionStiffness;
+            cloth.coefficients=source.coefficients;
+            var indices=new List<uint>();source.GetSelfAndInterCollisionIndices(indices);cloth.SetSelfAndInterCollisionIndices(indices);
+            indices.Clear();source.GetVirtualParticleIndices(indices);cloth.SetVirtualParticleIndices(indices);
+            var weights=new List<Vector3>();source.GetVirtualParticleWeights(weights);cloth.SetVirtualParticleWeights(weights);
+            cloth.capsuleColliders=source.capsuleColliders.Select(c=>CopyClothCapsule(c,transforms)).Where(c=>c!=null).ToArray();
+            cloth.sphereColliders=source.sphereColliders.Select(c=>new ClothSphereColliderPair(CopyClothSphere(c.first,transforms),CopyClothSphere(c.second,transforms))).ToArray();
+            pendingCloths.Add(new KeyValuePair<Cloth,bool>(cloth,source.enabled));
+        }
+        private CapsuleCollider CopyClothCapsule(CapsuleCollider source,Dictionary<Transform,Transform> transforms)
+        {
+            if(source==null)return null;var node=MapBone(source.transform,transforms,true);if(node==null)return null;
+            var copy=node.gameObject.AddComponent<CapsuleCollider>();copy.center=source.center;copy.radius=source.radius;copy.height=source.height;copy.direction=source.direction;copy.isTrigger=true;return Own(copy);
+        }
+        private SphereCollider CopyClothSphere(SphereCollider source,Dictionary<Transform,Transform> transforms)
+        {
+            if(source==null)return null;var node=MapBone(source.transform,transforms,true);if(node==null)return null;
+            var copy=node.gameObject.AddComponent<SphereCollider>();copy.center=source.center;copy.radius=source.radius;copy.isTrigger=true;return Own(copy);
+        }
+        private void CompleteClothSetup()
+        {
+            foreach(var pair in pendingCloths)if(pair.Key!=null)pair.Key.enabled=pair.Value;
+            pendingCloths.Clear();
         }
 
         private Transform MapBone(Transform original, Dictionary<Transform, Transform> local, bool sharedBones)
@@ -188,6 +267,57 @@ namespace HS2Manager.UnityPreview
             return local.TryGetValue(original, out target) ? target : null;
         }
 
+        private void ApplyBoneScopes()
+        {
+            scopedBoneBaselines.Clear();
+            scopedBoneAdjustments.Clear();
+            var excluded=new HashSet<Transform>();
+            var aliases=new Dictionary<Transform,string>();
+            foreach(var part in parts)
+            {
+                if(!string.IsNullOrEmpty(part.Key.RuntimeName))aliases[part.Value.transform]=part.Key.RuntimeName;
+                bool bound=part.Key.Role=="body"||part.Key.Role=="head"||part.Key.Role=="supplement"||part.Key.Role=="clothes"
+                    ||part.Key.List.String("Weights")=="1"||part.Key.List.String("Weights")=="2"
+                    ||part.Key.Role=="accessory"&&part.Key.List.String("Parent")=="null"
+                    ||part.Key.Components.Any(c=>c.Type=="SkinnedAccessory"&&c.Data.Float("m_Enabled",1)!=0);
+                if(!bound)continue;
+                foreach(var node in partTransforms[part.Key])
+                {
+                    if(node==null)continue;
+                    for(var ancestor=node;ancestor!=null&&ancestor!=Root.transform;ancestor=ancestor.parent)
+                    {
+                        Transform shared;
+                        if(Bones.TryGetValue(ancestor.name,out shared)&&ancestor!=shared){excluded.Add(node);break;}
+                    }
+                }
+            }
+            var first=new Dictionary<string,Transform>();
+            foreach(var node in Root.GetComponentsInChildren<Transform>(true))
+            {
+                if(excluded.Contains(node))continue;
+                string alias;string name=aliases.TryGetValue(node,out alias)?alias:node.name;
+                if(!first.ContainsKey(name))first[name]=node;
+            }
+            foreach(var part in parts)
+            {
+                if(part.Key.UnmodifiedBones==null)continue;
+                foreach(var bone in part.Key.UnmodifiedBones)
+                {
+                    Transform node,selected;
+                    if(!partNodes[part.Key].TryGetValue(bone.Name,out node))continue;
+                    string alias;string name=aliases.TryGetValue(node,out alias)?alias:bone.Name;
+                    if(first.TryGetValue(name,out selected)&&selected==node){scopedBoneBaselines[node]=bone;continue;}
+                    node.localPosition=Vector(bone.Position);node.localRotation=new Quaternion(bone.Rotation[0],bone.Rotation[1],bone.Rotation[2],bone.Rotation[3]);node.localScale=Vector(bone.Scale);
+                }
+            }
+            ResolveBoneAdjustments(first);
+        }
+
+        private void ResolveBoneAdjustments(Dictionary<string,Transform> first)
+        {
+            foreach(var adjustment in definition.BoneModifiers??new BoneAdjustment[0])
+            {Transform target;if(first.TryGetValue(adjustment.Name,out target)&&scopedBoneBaselines.ContainsKey(target))scopedBoneAdjustments[target]=adjustment;}
+        }
         private static Transform CopyTransforms(Transform original, Transform parent, Dictionary<Transform, Transform> map)
         {
             var clone = new GameObject(original.name).transform;
@@ -201,6 +331,14 @@ namespace HS2Manager.UnityPreview
             foreach (Transform child in original) CopyTransforms(child, clone, map);
             return clone;
         }
+        private static void SetTransform(Transform target,Vector3 position,Quaternion rotation,Vector3 scale)
+        {
+            if(!Exact(target.localPosition,position))target.localPosition=position;
+            var current=target.localRotation;
+            if(current.x!=rotation.x||current.y!=rotation.y||current.z!=rotation.z||current.w!=rotation.w)target.localRotation=rotation;
+            if(!Exact(target.localScale,scale))target.localScale=scale;
+        }
+        private static bool Exact(Vector3 a,Vector3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;}
 
         private void ApplyVisibility(CharacterPart part, GameObject obj)
         {
@@ -213,9 +351,8 @@ namespace HS2Manager.UnityPreview
                     foreach (var node in obj.GetComponentsInChildren<Transform>(true).Where(t => t.name == name)) node.gameObject.SetActive(key.EndsWith("Def", StringComparison.Ordinal));
                 }
                 for (int i = 0; i < part.HideOptions.Length; i++)
-                    if (part.HideOptions[i])
-                        foreach (var reference in component.Data.Get("objOpt0" + (i + 1)).Children)
-                            foreach (var node in obj.GetComponentsInChildren<Transform>(true).Where(t => t.name == reference.Text)) node.gameObject.SetActive(false);
+                    foreach (var reference in component.Data.Get("objOpt0" + (i + 1)).Children)
+                            foreach (var node in obj.GetComponentsInChildren<Transform>(true).Where(t => t.name == reference.Text)) node.gameObject.SetActive(!part.HideOptions[i]);
             }
         }
 
@@ -255,7 +392,7 @@ namespace HS2Manager.UnityPreview
                         {
                             AccessoryMaterial(part,renderer,material);
                         }
-                        if (part.Role == "body" || part.Role == "clothes" && part.Slot == 2)
+                        if (part.Role == "body" || part.Role == "clothes" && part.Slot == 2 && renderer.name=="o_bra_a")
                             foreach(string property in new[]{"_alpha_a","_alpha_b"})if(material.HasProperty(property))material.SetFloat(property,1);
                     }
                     catch (Exception error) { Diagnostics.Add(material.name + ": " + error.Message); }
@@ -267,8 +404,8 @@ namespace HS2Manager.UnityPreview
         {
             string name = face ? "face" : "body";
             int size = face ? 2048 : 4096;
-            var creator = Own(new Material(Selected<Material>("template.create_skin_" + name)));
-            var detail = Own(new Material(Selected<Material>("template.create_skin detail_" + name)));
+            var creator = NativeMaterial(Selected<Material>("template.create_skin_" + name));
+            var detail = NativeMaterial(Selected<Material>("template.create_skin detail_" + name));
             creator.SetColor("_Color", ColorValue(definition.Body.Get("skinColor"), Color.white));
             if (face)
             {
@@ -374,6 +511,7 @@ namespace HS2Manager.UnityPreview
         {
             int queue=material.renderQueue;
             if(selections.ContainsKey("template.hair"))material.shader=Selected<Material>("template.hair").shader;
+            OptimizeShader(material);
             SetTexture(material,"_MainTex",key+(definition.Hair.Float("shaderType")==0?".TexD":".TexC"));
             material.renderQueue=queue;
         }
@@ -437,7 +575,19 @@ namespace HS2Manager.UnityPreview
             finally { GL.sRGBWrite = sRgb; RenderTexture.active = previous; }
             return texture;
         }
-        private T Own<T>(T value) where T : Object { owned.Add(value); return value; }
+        private T Own<T>(T value) where T : Object { owned.Add(value);if(collectingGenerated)generated.Add(value); return value; }
+        private Material NativeMaterial(Material source)
+        {
+            var material=Own(new Material(source));OptimizeShader(material);return material;
+        }
+        private void OptimizeShader(Material material)
+        {
+            var replacement=(definition.Shaders??new ShaderDefinition[0]).FirstOrDefault(s=>s.AutoReplace&&s.Name==material.shader.name);
+            if(replacement==null)return;
+            var shader=assets.LoadShader(replacement);
+            if(shader==null||!shader.isSupported)throw new IOException("自动替换 Shader 无法加载："+replacement.Name);
+            int queue=material.renderQueue;material.shader=shader;material.renderQueue=queue;
+        }
         private T Selected<T>(string key) where T : Object
         {
             AssetReference reference;
@@ -470,6 +620,7 @@ namespace HS2Manager.UnityPreview
         public void Dispose()
         {
             if(disposed)return;disposed=true;
+            partAnimationClock.Dispose();
             Object.Destroy(Root);
             foreach (var obj in owned) { var rt = obj as RenderTexture; if (rt != null) rt.Release(); Object.Destroy(obj); }
             owned.Clear();

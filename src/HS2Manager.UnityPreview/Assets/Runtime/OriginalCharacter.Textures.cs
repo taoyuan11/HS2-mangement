@@ -50,6 +50,12 @@ namespace HS2Manager.UnityPreview
             if (component == null) return;
             var config = component.Data;
             var values = definition.Clothes.Get("parts").At(part.Slot);
+            if(config.Float("useBreak")!=0)
+            {
+                var breakRenderers=new System.Collections.Generic.HashSet<string>(new[]{"rendNormal01","rendNormal02","rendNormal03"}.SelectMany(key=>config.Get(key).Children).Select(p=>p.Text));
+                foreach(var renderer in PartRenderers(part).Where(r=>breakRenderers.Contains(r.name)))
+                    if(renderer.sharedMaterial!=null&&renderer.sharedMaterial.HasProperty("_AlphaEx"))renderer.sharedMaterial.SetFloat("_AlphaEx",1-values.Float("breakRate"));
+            }
             string baseKey="clothes."+part.Slot+".";
             if(!selections.ContainsKey(baseKey+"MainTex")||!selections.ContainsKey(baseKey+"ColorMaskTex"))return;
             try {Selected<Texture>(baseKey+"MainTex");Selected<Texture>(baseKey+"ColorMaskTex");}
@@ -64,8 +70,8 @@ namespace HS2Manager.UnityPreview
                 Texture main;
                 try {main=Selected<Texture>(mainKey);}
                 catch(System.IO.IOException error){Diagnostics.Add(mainKey+"："+error.Message);continue;}
-                var creator = Own(new Material(Selected<Material>("template.create_clothes")));
-                var detail = Own(new Material(Selected<Material>("template.create_clothes detail")));
+                var creator = NativeMaterial(Selected<Material>("template.create_clothes"));
+                var detail = NativeMaterial(Selected<Material>("template.create_clothes detail"));
                 string maskKey = prefix + (group == 0 ? "ColorMaskTex" : "ColorMask0" + (group + 1) + "Tex");
                 SetTexture(creator, "_ColorMask", maskKey);
                 SetTexture(detail, "_ColorMask", maskKey);
@@ -97,7 +103,6 @@ namespace HS2Manager.UnityPreview
                     if (material == null) continue;
                     material.SetTexture("_MainTex",diffuse);
                     material.SetTexture("_DetailMainTex",properties);
-                    if (material.HasProperty("_AlphaEx")) material.SetFloat("_AlphaEx",1-values.Float("breakRate"));
                 }
             }
             ClothesOverlay(part,config);

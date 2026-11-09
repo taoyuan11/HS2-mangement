@@ -22,7 +22,9 @@ if($Fixture){$arguments+=@('--fixture',(Resolve-Path -LiteralPath $Fixture).Path
 if($PrimeDefinition){$arguments+=@('--prime-character',(Resolve-Path -LiteralPath $PrimeDefinition).Path)}
 if($ProbeAA){$arguments+='--probe-aa'}
 if($CheckEnvironmentControls){$arguments+='--check-environment-controls'}
-$exitCode=[HS2Manager.BuildTools.OwnedToolProcess]::Run((Join-Path $player 'HS2Manager.UnityPreview.exe'),$arguments,$player,$TimeoutSeconds,$null)
+$launch=Join-Path $player 'HS2Manager.UnityPreview.exe'
+if($env:HS2_RENDERDOC){$arguments=@('capture','-w','-d',$player,'-c',(Join-Path $output 'graphics'),$launch)+$arguments;$launch=(Resolve-Path -LiteralPath $env:HS2_RENDERDOC).Path}
+$exitCode=[HS2Manager.BuildTools.OwnedToolProcess]::Run($launch,$arguments,$player,$TimeoutSeconds,$null)
 if($exitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $output 'state.json'))){throw "Independent character validation failed ($exitCode): $output"}
 $state=Get-Content -LiteralPath (Join-Path $output 'state.json') -Raw|ConvertFrom-Json
 if($state.Renderers.Count -eq 0){throw 'Empty independent renderer snapshot.'}

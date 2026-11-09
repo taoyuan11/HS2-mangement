@@ -2,6 +2,7 @@
 import argparse
 import csv
 import html
+import hashlib
 import json
 from pathlib import Path
 
@@ -11,6 +12,16 @@ def read(path, default=None):
         return json.loads(path.read_text(encoding='utf-8-sig'))
     except (FileNotFoundError, ValueError):
         return default
+
+
+def review_matches(directory, reviewed):
+    expected = {name.replace('\\', '/'): value for name, value in reviewed.get('evidenceSHA256', {}).items()}
+    required = [f'comparison/{view}-comparison.png' for view in ['front','side','back','face']]
+    required += [f'comparison/dynamic/frame-{frame:03}.png' for frame in range(15,361,15)]
+    required += [f'review-{view}.png' for view in ['static','dynamic-front','dynamic-face']]
+    return (reviewed.get('staticViews') == 4 and reviewed.get('dynamicFrames') == 24
+            and all((directory/name).is_file() and hashlib.sha256((directory/name).read_bytes()).hexdigest() == expected.get(name)
+                    for name in required))
 
 
 def build(root):
@@ -31,16 +42,41 @@ def build(root):
         regions = [r for v in report.get('views', []) for r in v.get('regions', {}).values()]
         motion_regions = [r for frame in dynamic.get('frames', []) for r in frame.get('regions', {}).values()]
         reviewed = read(directory/'review.json', {})
+        review_verified = review_matches(directory, reviewed)
         static_pass = len(report.get('views', [])) == 4 and bool(regions) and report.get('numericPass') is True
         dynamic_pass = dynamic.get('complete') is True and len(dynamic.get('frames', [])) == 24 and dynamic.get('numericPass') is True
         hash_pass = run.get('HashUnchanged') is True
         independent = read(directory/'independent'/'run.json', {})
         independence_pass = independent.get('GameOrPluginAssemblyLoaded') is False and independent.get('CardSHA256') == entry['Hash']
-        accepted = static_pass and dynamic_pass and hash_pass and independence_pass and reviewed.get('staticPassed') is True and reviewed.get('dynamicPassed') is True
+        reference = Path(run['Reference']) if run.get('Reference') else directory/'reference'
+        fixture = read(reference/'fixture.json', {})
+        actual_fixture = read(directory/'independent'/'fixture.json', {})
+        actual_state = read(directory/'independent'/'state.json', {})
+        has_cloth = any(r.get('Cloth') for state in (read(reference/'state.json', {}), actual_state)
+                        for r in state.get('Renderers', []))
+        for settings in (fixture, actual_fixture):
+            settings.setdefault('ClothResetVersion', 0)
+            settings.setdefault('PartAnimationClockVersion', 0)
+            settings.setdefault('BlinkClockVersion', 0)
+            if not has_cloth:
+                settings['ClothResetVersion'] = 0
+        current_fixture = fixture == actual_fixture and all(fixture.get(k, 0) >= v for k, v in {
+            'TemporalPhaseVersion':2, 'PoseSamplingVersion':2, 'FaceTickVersion':1,
+            'PhysicsResetVersion':3, 'GizmoVisibilityVersion':1, 'BlinkClockVersion':1}.items())
+        if has_cloth:
+            current_fixture = current_fixture and fixture.get('ClothResetVersion', 0) >= 1
+        part_animations = directory/'independent'/'part-animations.txt'
+        if part_animations.exists() and part_animations.read_text(encoding='utf-8-sig').strip():
+            current_fixture = current_fixture and fixture.get('PartAnimationClockVersion', 0) >= 1
+        runtime_errors = reference/'capture-runtime-errors.txt'
+        reference_clean = runtime_errors.exists() and not runtime_errors.read_text(encoding='utf-8-sig').strip() and (reference/'finished.txt').exists() and (reference/'finished.txt').read_text(encoding='utf-8-sig').strip() == 'success'
+        accepted = static_pass and dynamic_pass and hash_pass and independence_pass and current_fixture and reference_clean and review_verified and reviewed.get('staticPassed') is True and reviewed.get('dynamicPassed') is True
         row = dict(id=key, name=entry['Name'], card=entry['Card'], staticNumericPass=static_pass,
-                   dynamicNumericPass=dynamic_pass, visualReviewPassed=reviewed.get('staticPassed') is True,
-                   dynamicReviewPassed=reviewed.get('dynamicPassed') is True, accepted=accepted,
+                   dynamicNumericPass=dynamic_pass, visualReviewPassed=review_verified and reviewed.get('staticPassed') is True,
+                   dynamicReviewPassed=review_verified and reviewed.get('dynamicPassed') is True, accepted=accepted,
+                   reviewEvidenceVerified=review_verified,
                    hashUnchanged=hash_pass, independenceVerified=independence_pass,
+                   currentFixtureVerified=current_fixture, referenceRuntimeVerified=reference_clean,
                    minimumStaticSSIM=min((r['ssim'] for r in regions), default=None),
                    maximumStaticError255=max((r['meanChannelError255'] for r in regions), default=None),
                    minimumDynamicSSIM=min((r['ssim'] for r in motion_regions), default=None),
@@ -93,7 +129,7 @@ def build(root):
             writer=csv.DictWriter(f,fieldnames=rows[0].keys());writer.writeheader();writer.writerows(rows)
     page = f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HS2 独立预览对照报告</title><style>
 body{{margin:36px auto;max-width:1240px;padding:0 24px;background:#101419;color:#e6ebf0;font:15px/1.65 system-ui}}h1{{font-size:30px}}a{{color:#84c4ff}}.stats{{padding:18px;background:#1a2634;border-radius:12px}}input{{box-sizing:border-box;width:100%;padding:14px;background:#202932;color:white;border:1px solid #52606e;border-radius:8px;margin:18px 0}}details.card{{border:1px solid #36434f;border-radius:8px;margin:12px 0;padding:14px}}summary{{cursor:pointer}}summary span{{float:right;color:#ffbd85}}figure{{margin:20px 0}}img{{width:100%;height:auto;border-radius:6px}}figcaption,.path{{color:#a5b4c2}}.path,pre{{white-space:pre-wrap;word-break:break-word}}table{{border-collapse:collapse;width:100%}}th,td{{text-align:left;padding:8px;border-bottom:1px solid #36434f}}details details{{margin:18px 0}}.hidden{{display:none}}
-</style><h1>独立 Unity 预览 · 游戏画面对照</h1><p>79 张当前层女性卡与原版男女样本。仅测试时启动游戏本体，未使用 Studio。通过必须同时满足静态、动态、视觉复核、独立性和原卡完整性要求。</p><div class="stats">已生成对照 {totals['compared']}/{totals['total']} · 静态数值通过 {totals['staticNumericPass']} · 动态数值通过 {totals['dynamicNumericPass']} · 完整验收通过 {totals['accepted']}<br>原卡哈希确认不变 {totals['hashUnchanged']} · 独立程序集验证 {totals['independenceVerified']}</div><p>人物区域由两边画面与各自空背景差异的并集确定；面部区域取游戏参考头部包围范围的投影。SSIM ≥ 0.99，平均通道误差 ≤ 2/255；明显局部错误仍判失败。静态截图不替代动态验证，缺失证据不计为通过。</p><p><a href="summary.json">汇总 JSON</a> · <a href="summary.csv">汇总 CSV</a></p><input type="search" placeholder="按卡片名、文件名或编号筛选" aria-label="筛选人物卡" oninput="document.querySelectorAll('.card').forEach(c=>c.classList.toggle('hidden',!c.dataset.search.toLowerCase().includes(this.value.toLowerCase())))">{''.join(cards)}</html>'''
+</style><h1>独立 Unity 预览 · 游戏画面对照</h1><p>本报告覆盖 {len(catalog)} 张固定卡片（女性 {sum(entry.get('Sex') == 1 for entry in catalog)} 张、男性 {sum(entry.get('Sex') == 0 for entry in catalog)} 张），包含原版样本、本机目录卡片和编辑保存的测试副本。仅测试时启动游戏本体，未使用 Studio。通过必须同时满足静态、动态、视觉复核、独立性和原卡完整性要求。</p><div class="stats">已生成对照 {totals['compared']}/{totals['total']} · 静态数值通过 {totals['staticNumericPass']} · 动态数值通过 {totals['dynamicNumericPass']} · 完整验收通过 {totals['accepted']}<br>原卡哈希确认不变 {totals['hashUnchanged']} · 独立程序集验证 {totals['independenceVerified']}</div><p>人物区域由两边画面与各自空背景差异的并集确定；面部区域取游戏参考头部包围范围的投影。SSIM ≥ 0.99，平均通道误差 ≤ 2/255；明显局部错误仍判失败。静态截图不替代动态验证，缺失证据不计为通过。</p><p><a href="summary.json">汇总 JSON</a> · <a href="summary.csv">汇总 CSV</a></p><input type="search" placeholder="按卡片名、文件名或编号筛选" aria-label="筛选人物卡" oninput="document.querySelectorAll('.card').forEach(c=>c.classList.toggle('hidden',!c.dataset.search.toLowerCase().includes(this.value.toLowerCase())))">{''.join(cards)}</html>'''
     script='''<script>
 function showMotion(box){const frames=JSON.parse(box.dataset.frames),frame=frames[Number(box.querySelector('input').value)];const path=box.dataset.path+'frame-'+String(frame).padStart(3,'0')+'.png';box.querySelector('img').src=path;box.querySelector('.motion-link').href=path;box.querySelector('.motion-label').textContent=frame+'/360 · '+(frame/30)+' 秒';}
 function stopMotion(box){clearInterval(box.timer);box.timer=null;box.querySelector('button').textContent='播放采样序列';}
@@ -102,7 +138,7 @@ document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>
 </script>'''
     if (root/'resource-index.json').exists():
         page=page.replace('<a href="summary.csv">汇总 CSV</a>', '<a href="summary.csv">汇总 CSV</a> · <a href="resource-index.json">资源索引快照</a>')
-    evidence=[('validation-metadata.json','构建与验证记录'),('card-integrity.json','原卡哈希'),('renderer-build-equivalence.json','诊断修正版代码核对'),('diagnostic-control.json','控制样本图片核对')]
+    evidence=[('validation-metadata.json','构建与验证记录'),('card-integrity.json','原卡哈希'),('release-verification.json','发布包核对'),('renderer-build-equivalence.json','诊断修正版代码核对'),('diagnostic-control.json','控制样本图片核对')]
     links=''.join(f' · <a href="{name}">{label}</a>' for name,label in evidence if (root/name).exists())
     page=page.replace('<a href="summary.csv">汇总 CSV</a>', '<a href="summary.csv">汇总 CSV</a>'+links)
     (root/'index.html').write_text(page.replace('</html>',script+'</html>'),encoding='utf-8')
@@ -121,6 +157,8 @@ document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>
         if not r['visualReviewPassed'] or not r['dynamicReviewPassed']: reasons.append('视觉复核未通过或未完成')
         if not r['hashUnchanged']: reasons.append('原卡哈希未确认')
         if not r['independenceVerified']: reasons.append('独立运行证据未确认')
+        if not r['currentFixtureVerified']: reasons.append('当前采样流程未确认')
+        if not r['referenceRuntimeVerified']: reasons.append('游戏运行时异常或成功记录未确认')
         clean=lambda s:str(s).replace('|','\\|').replace('\n',' ')
         score=lambda s:'—' if s is None else f'{s:.6f}'
         lines.append(f"| {r['id']} | {clean(Path(r['card']).name)} | {score(r['minimumStaticSSIM'])} | {score(r['minimumDynamicSSIM'])} | {clean('；'.join(reasons))} |")

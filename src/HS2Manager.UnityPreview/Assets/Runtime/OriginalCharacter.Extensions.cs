@@ -83,6 +83,9 @@ namespace HS2Manager.UnityPreview
         {
             var component=part.Components.FirstOrDefault(c=>c.Type=="CmpAccessory");
             if(component==null)return;
+            // ChaControl.ChangeAccessoryColor writes renderer.material, which is
+            // the first submesh material. Other materials retain their own values.
+            if(renderer.sharedMaterial!=material)return;
             var data=component.Data;
             bool alpha=data.Get("rendAlpha").Children.Any(p=>p.Text==renderer.name);
             bool normal=data.Get("rendNormal").Children.Any(p=>p.Text==renderer.name);
@@ -105,8 +108,8 @@ namespace HS2Manager.UnityPreview
                 var color=value.Has("color")?ColorValue(value.Get("color"),Color.white)
                     : part.Colors.Length>channel*4+3 ? new Color(part.Colors[channel*4],part.Colors[channel*4+1],part.Colors[channel*4+2],part.Colors[channel*4+3]) : Color.white;
                 material.SetColor(channel==0||alpha?"_Color":"_Color"+(channel+1),color);
-                material.SetFloat(channel==0?"_Glossiness":"_Glossiness"+(channel+1),value.Float("glossPower"));
-                material.SetFloat(channel==0?"_Metallic":"_Metallic"+(channel+1),value.Float("metallicPower"));
+                material.SetFloat(alpha?"_Glossiness4":channel==0?"_Glossiness":"_Glossiness"+(channel+1),value.Float("glossPower"));
+                material.SetFloat(alpha?"_Metallic4":channel==0?"_Metallic":"_Metallic"+(channel+1),value.Float("metallicPower"));
                 if(alpha)renderer.gameObject.SetActive(color.a!=0);
             }
         }
@@ -157,7 +160,12 @@ namespace HS2Manager.UnityPreview
             var edits=definition.MaterialEdits.Where(e=>e.ObjectType==type && (type==4 || e.Slot==part.Slot)).ToArray();
             foreach(var renderer in PartRenderers(part))
             {
-                foreach(var edit in edits.Where(e=>e.Kind=="renderer" && e.Name==renderer.name))renderer.enabled=edit.Number!=0;
+                foreach(var edit in edits.Where(e=>e.Kind=="renderer" && e.Name==renderer.name))
+                {
+                    if(edit.Property=="shadowCasting")renderer.shadowCastingMode=(UnityEngine.Rendering.ShadowCastingMode)(int)edit.Number;
+                    else if(edit.Property=="receiveShadows")renderer.receiveShadows=edit.Number!=0;
+                    else renderer.enabled=edit.Number!=0;
+                }
                 foreach(var material in renderer.sharedMaterials.Where(m=>m!=null))
                 {
                     string name=material.name.Replace("(Instance)","").Trim();

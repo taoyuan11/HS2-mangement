@@ -10,7 +10,7 @@ using HS2Manager.Core;
 
 namespace HS2Manager.App;
 
-public sealed class MainViewModel : ObservableObject, IDisposable
+public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     public string DataDirectory { get; }
     public AppSettings Settings { get; }
@@ -593,6 +593,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ++previewGeneration; IsPreview = false; previewCancellation?.Cancel(); PreviewBusy = false; faceBounds = PreviewBounds.Empty;
         DisposeUnitySession();previewBounds=PreviewBounds.Empty;
         var pending = previewLoads.ToArray(); if (pending.Length > 0) await Task.WhenAll(pending);
+        unityCharacters.ReleaseEditSources();
+        EditDefinition=null;
     }
     public void Dispose() { BeginShutdown();previewCancellation?.Cancel();DisposeUnitySession(); }
 }

@@ -55,6 +55,10 @@ internal static class NativeAppearanceChecks
         NativeCardExtensions.Apply(rig,[new("root",[2,2,2],1,[1,0,0],[0,0,0])]);
         var world = NativeShapeRig.World(rig,Matrix4x4.Identity);
         if (Vector3.Distance(Vector3.Transform(Vector3.Zero,world["child"]),new(1,2,0))>.0001f) throw new Exception("ABMX transform inheritance incorrect");
+        var hairRig=new NativePrefab{Bones=new(){["p_c_hair_b_37_00"]=new(),["strand"]=new(){Parent="p_c_hair_b_37_00",Position=[0,2,0]}}};
+        NativeCardExtensions.Apply(hairRig,[new("ct_hairB",[1,.8f,1],1,[0,.31f,0],[0,0,0])],runtimeRoot:"ct_hairB");
+        var hairWorld=NativeShapeRig.World(hairRig,Matrix4x4.Identity);
+        if(Vector3.Distance(Vector3.Transform(Vector3.Zero,hairWorld["strand"]),new(0,1.91f,0))>.0001f)throw new Exception("ABMX runtime part name did not resolve the exported prefab root");
         rig.Bones["root"].Parent="child";
         try { NativeShapeRig.World(rig,Matrix4x4.Identity); throw new Exception("Cyclic bone graph accepted"); } catch(InvalidDataException) {}
         Console.WriteLine("PASS bone adjustments and cycle rejection");

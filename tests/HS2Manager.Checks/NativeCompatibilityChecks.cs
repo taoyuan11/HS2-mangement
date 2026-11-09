@@ -12,8 +12,29 @@ internal static class NativeCompatibilityChecks
         CheckEyes();
         CheckDiagnostics(root);
         CheckStaticEffects(root);
+        CheckAdditionalAccessories(root);
+        CheckRendererProperties(root);
         await NativeModSelectionChecks.Run(root);
         await CheckMods(root);
+    }
+    private static void CheckRendererProperties(string root)
+    {
+        var properties=new List<object?>();
+        foreach(int property in new[]{0,1,2})
+            properties.Add(new Dictionary<string,object?>{["ObjectType"]=1L,["Slot"]=0L,["CoordinateIndex"]=0L,["RendererName"]="fabric",["Property"]=(long)property,["Value"]=property==1?"2":"0"});
+        var read=Read(root,new(){["com.deathweasel.bepinex.materialeditor"]=Plugin(0,new(){["RendererPropertyList"]=NativeAppearanceChecks.Pack(properties)})});
+        if(read.Warnings.Count!=0||read.Renderers.Count!=3||read.Renderers[1].Property!=1||read.Renderers[1].Value!=2||read.Renderers[2].Property!=2||read.Renderers[2].Value!=0||read.Renderers[0].Enabled)
+            throw new Exception("MaterialEditor renderer visibility, shadow casting or shadow receiving was lost");
+        Console.WriteLine("PASS MaterialEditor renderer enabled, shadow casting and shadow receiving properties");
+    }
+    private static void CheckAdditionalAccessories(string root)
+    {
+        var read=Read(root,new(){["moreAccessories"]=Plugin(0,new(){["additionalAccessories"]="<accessories><accessory type=\"351\" id=\"7\" parentKey=\"N_Head\" color0r=\"0.2\" color0g=\"0.3\" color0b=\"0.4\" color0a=\"0.6\" smoothnessPower0=\"0.7\" glossPower0=\"0.8\" metallicPower0=\"0.9\" noShake=\"true\" show=\"false\" /></accessories>"})});
+        var part=read.Accessories.Single();var parameters=UnityCharacterService.ParameterOf(part.Parameters);
+        var first=parameters.Get("colorInfo").At(0);
+        if(part.Slot!=20||part.Colors[0].A!=.6f||first.Float("smoothnessPower")!=.7f||first.Float("glossPower")!=.8f||first.Float("metallicPower")!=.9f||parameters.Float("noShake")!=1||parameters.Float("show")!=0)
+            throw new Exception("Extended accessories lost alpha, hair/material parameters, visibility or native plugin simulation semantics");
+        Console.WriteLine("PASS extended accessory color alpha, hair/material parameters, visibility and simulation flags");
     }
     private static void CheckEyes()
     {
@@ -104,7 +125,7 @@ internal static class NativeCompatibilityChecks
         };
         var read=Read(root,inactive);
         if(read.Warnings.Count!=0 || read.Handled.Count!=inactive.Count) throw new Exception("Inactive plugins reported as missing effects");
-        inactive["mikke.pushUpAI"]=Plugin(3,new(){["ENABLE_PUSHUP"]=true});
+        inactive["mikke.pushUpAI"]=Plugin(3,new(){["ENABLE_PUSHUP"]=true,["LIFT"]="invalid"});
         inactive["com.fairbair.hs2_boobsettings"]=Plugin(0,new(){["overridePhysics"]=true});
         inactive["KK_InvisibleBody"]=Plugin(0,new(){["Visible"]=false});
         inactive["KSOX"]=Plugin(2,new(){["Lookup"]=new byte[]{0xff}});
@@ -117,6 +138,14 @@ internal static class NativeCompatibilityChecks
     }
     private static void CheckStaticEffects(string root)
     {
+        var defaults=NativePushUp.WithDefaults(root,null);
+        if(!defaults.Bra.Enabled||defaults.Top.Enabled||defaults.Bra.Firmness!=.9f||defaults.Bra.Lift!=.6f)throw new Exception("Installed PushUp defaults not applied to cards without saved plugin data");
+        string config=Path.Combine(root,"BepInEx","config");Directory.CreateDirectory(config);
+        File.WriteAllText(Path.Combine(config,"mikke.pushUpAI.cfg"),"[Push-Up bra default settings]\nEnable pushUp by default = false\nFirmness = 45\nLift = 72\n");
+        var partial=Read(root,new(){["mikke.pushUpAI"]=Plugin(3,new(){["ENABLE_PUSHUP"]=true,["SQUEEZE"]=.81f})});
+        var merged=NativePushUp.WithDefaults(root,partial.PushUp);
+        if(!merged.Bra.Enabled||merged.Bra.Firmness!=.45f||merged.Bra.Lift!=.72f||merged.Bra.Squeeze!=.81f||merged.Top.Enabled)throw new Exception("Saved PushUp values did not override local defaults field by field");
+        if(NativePushUp.WithDefaults(root,null).Bra.Enabled)throw new Exception("Disabled local PushUp default ignored");
         var data=new Dictionary<string,object?>{["ENABLE_PUSHUP"]=true,["LIFT"]=.6f,["PUSH_TOGETHER"]=.65f,["SQUEEZE"]=.6f,
             ["CENTER_NIPPLES"]=1f,["FLATTEN_NIPPLES"]=true,["HIDE_NIPPLES"]=true,["HIDE_ACCESSORIES"]=true,["CORSET"]=0f};
         var read=Read(root,new(){["mikke.pushUpAI"]=Plugin(3,data)});

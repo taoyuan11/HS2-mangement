@@ -6,6 +6,8 @@ namespace HS2Manager.Preview.Contracts
     public sealed class CharacterDefinition
     {
         public int SchemaVersion = 1;
+        [System.Runtime.Serialization.OptionalField]
+        public long EditRevision;
         public string Name = "";
         public string CardHash = "";
         public string MotionState = "";
@@ -22,9 +24,13 @@ namespace HS2Manager.Preview.Contracts
         public float EyeOpenMax = 1;
         public MaterialEdit[] MaterialEdits = new MaterialEdit[0];
         [System.Runtime.Serialization.OptionalField]
+        public BoneAdjustment[] BoneModifiers = new BoneAdjustment[0];
+        [System.Runtime.Serialization.OptionalField]
         public ShaderDefinition[] Shaders = new ShaderDefinition[0];
         public OverlayDefinition[] Overlays = new OverlayDefinition[0];
         public HeelDefinition Heels = new HeelDefinition();
+        [System.Runtime.Serialization.OptionalField]
+        public ColliderSupportDefinition ColliderSupport;
         public EnvironmentDefinition Environment = new EnvironmentDefinition();
         public int ParameterNodes;
         public int CountParameterNodes()
@@ -38,9 +44,25 @@ namespace HS2Manager.Preview.Contracts
     }
 
     [Serializable]
+    public sealed class BoneAdjustment
+    {
+        public string Name="";
+        public float[] Scale=new float[]{1,1,1},Position=new float[3],Rotation=new float[3];
+        public float Length=1;
+    }
+
+    [Serializable]
+    public sealed class ColliderSupportDefinition
+    {
+        public bool Breast,Floor;
+    }
+
+    [Serializable]
     public sealed class ShaderDefinition
     {
         public string Name = "";
+        [System.Runtime.Serialization.OptionalField]
+        public bool AutoReplace;
         public AssetReference Source;
         public int RenderQueue = -1;
         public ShaderDefault[] Defaults = new ShaderDefault[0];
@@ -89,6 +111,12 @@ namespace HS2Manager.Preview.Contracts
         public AssetReference Prefab = new AssetReference();
         public string Parent = "";
         public BoneDefinition[] Bones = new BoneDefinition[0];
+        // ABMX resolves a single transform by depth-first name lookup after all
+        // parts are attached. Keep the unmodified values for other same-name nodes.
+        [System.Runtime.Serialization.OptionalField]
+        public BoneDefinition[] UnmodifiedBones = new BoneDefinition[0];
+        [System.Runtime.Serialization.OptionalField]
+        public string RuntimeName = "";
         public ComponentDefinition[] Components = new ComponentDefinition[0];
         public float[] Adjustments = new float[0];
         public float[] Colors = new float[0];
@@ -167,7 +195,18 @@ namespace HS2Manager.Preview.Contracts
             foreach (var child in Children) if (child.Name == name) return true;
             return false;
         }
-        public float Float(string name, float fallback = 0) { return Has(name) ? (float)Get(name).Number : fallback; }
+        public float Float(string name, float fallback = 0)
+        {
+            if(!Has(name))return fallback;
+            var value=Get(name);
+            if(value.Encoding=="float-special")
+            {
+                if(value.Text=="Infinity")return float.PositiveInfinity;
+                if(value.Text=="-Infinity")return float.NegativeInfinity;
+                if(value.Text=="NaN")return float.NaN;
+            }
+            return (float)value.Number;
+        }
         public string String(string name) { return Get(name).Text; }
         public Parameter At(int index) { return index >= 0 && index < Children.Length ? Children[index] : new Parameter(); }
         public int CountNodes() { int count=1;foreach(var child in Children)count+=child.CountNodes();return count; }

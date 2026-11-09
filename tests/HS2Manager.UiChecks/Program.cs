@@ -15,6 +15,8 @@ internal static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        int logIndex=Array.IndexOf(args,"--log");
+        if(logIndex>=0){var output=new StreamWriter(args[logIndex+1],false){AutoFlush=true};Console.SetOut(output);Console.SetError(output);}
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Application.Start(parameters =>
         {
@@ -37,7 +39,8 @@ internal sealed class CheckApplication(string[] args) : App
         try
         {
             string Arg(string key, string fallback) => Array.IndexOf(args, key) is int i && i >= 0 ? args[i + 1] : fallback;
-            if (args.Contains("--preview-rail")) await PreviewRailUiChecks.RunAsync(root);
+            if (args.Contains("--character-editor")) await CharacterEditorUiChecks.RunAsync(root,Arg("--game",@"Z:\games\hs2\HS two DX - TSYMQ"),Arg("--player",UnityPreviewSession.DefaultPlayer));
+            else if (args.Contains("--preview-rail")) await PreviewRailUiChecks.RunAsync(root);
             else if (args.Contains("--card-delete")) await CardDeletionUiChecks.RunAsync(root);
             else if (args.Contains("--unity-interaction")) await UnityInteractionChecks.RunAsync(args);
             else if (args.Contains("--card-export")) await LayoutChecks.RunAsync(root);

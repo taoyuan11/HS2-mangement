@@ -6,7 +6,11 @@ using System.Xml.Linq;
 namespace HS2Manager.Core;
 
 public sealed record NativeBoneAdjustment(string Name, float[] Scale, float Length, float[] Position, float[] Rotation);
-public sealed record NativeRendererOverride(int ObjectType, int Slot, string Name, bool Enabled);
+public sealed record NativeRendererOverride(int ObjectType, int Slot, string Name, bool Enabled)
+{
+    public int Property { get; init; }
+    public int Value { get; init; }
+}
 public sealed record NativeMaterialColorOverride(int ObjectType, int Slot, string Name, string Property, PreviewColor Color);
 public sealed record NativeMaterialFloatOverride(int ObjectType, int Slot, string Name, string Property, float Value);
 public sealed record NativeMaterialDiagnostic(int ObjectType, int Slot, string Name, string Message);
@@ -174,8 +178,12 @@ internal sealed partial class NativeCardExtensions
             foreach (var item in list)
             {
                 var value = CardAppearanceReader.Map(item);
-                if (CardAppearanceReader.Integer(value,"CoordinateIndex") != 0 || CardAppearanceReader.Integer(value,"Property") != 0) continue;
-                Renderers.Add(new(checked((int)CardAppearanceReader.Integer(value,"ObjectType")),checked((int)CardAppearanceReader.Integer(value,"Slot")),CardAppearanceReader.Text(value,"RendererName"),CardAppearanceReader.Text(value,"Value") != "0"));
+                if (CardAppearanceReader.Integer(value,"CoordinateIndex") != 0) continue;
+                int property=checked((int)CardAppearanceReader.Integer(value,"Property"));
+                if(property is <0 or >2)throw new NotSupportedException("材质编辑器渲染器参数不支持："+property);
+                if(!int.TryParse(CardAppearanceReader.Text(value,"Value"),NumberStyles.Integer,CultureInfo.InvariantCulture,out int number)||number<0||number>(property==1?3:1))
+                    throw new InvalidDataException("材质编辑器渲染器参数无效。");
+                Renderers.Add(new(checked((int)CardAppearanceReader.Integer(value,"ObjectType")),checked((int)CardAppearanceReader.Integer(value,"Slot")),CardAppearanceReader.Text(value,"RendererName"),number==1){Property=property,Value=number});
             }
         }
     }
@@ -192,10 +200,21 @@ internal sealed partial class NativeCardExtensions
             int current = slot++; int type = (int?)part.Attribute("type") ?? 350; if (type is < 351 or > 399) continue;
             int id = (int?)part.Attribute("id") ?? 0;
             var reference = CardAppearanceReader.FindReference(card, type, $"accessory.parts[{current}].id");
-            var colors = Enumerable.Range(0,4).Select(c => new PreviewColor(Value($"color{c}r",1),Value($"color{c}g",1),Value($"color{c}b",1))).ToArray();
+            var colors = Enumerable.Range(0,4).Select(c => new PreviewColor(Value($"color{c}r",1),Value($"color{c}g",1),Value($"color{c}b",1),Value($"color{c}a",1))).ToArray();
             float[] move = Enumerable.Range(0,18).Select(n => Value($"addMove{n/9}{n%9/3}{"xyz"[n%3]}", n%9 >= 6 ? 1 : 0)).ToArray();
-            Accessories.Add(new($"配饰 {current+1}",type,id,colors[0],reference != null) { Reference = reference, Parent = (string?)part.Attribute("parentKey") ?? "", Colors = colors, Adjustment = move, Slot = current });
+            string parent=(string?)part.Attribute("parentKey")??"";
+            var parameters=new Dictionary<string,object?>
+            {
+                ["type"]=(long)type,["id"]=(long)id,["parentKey"]=parent,
+                ["colorInfo"]=Enumerable.Range(0,4).Select(c=>(object?)new Dictionary<string,object?>
+                    {["color"]=new List<object?>{colors[c].R,colors[c].G,colors[c].B,colors[c].A},
+                     ["glossPower"]=Value($"glossPower{c}",.5f),["metallicPower"]=Value($"metallicPower{c}",0),["smoothnessPower"]=Value($"smoothnessPower{c}",.5f)}).ToList(),
+                ["hideCategory"]=(long)Value("hideCategory",0),["hideTiming"]=(long)Value("hideTiming",0),
+                ["noShake"]=Flag("noShake",false),["show"]=Flag("show",true)
+            };
+            Accessories.Add(new($"配饰 {current+1}",type,id,colors[0],reference != null) { Reference = reference, Parent = parent, Colors = colors, Adjustment = move, Slot = current, Parameters=parameters });
             float Value(string name, float fallback) => part.Attribute(name) is { } a && float.TryParse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out float n) && float.IsFinite(n) ? n : fallback;
+            bool Flag(string name,bool fallback)=>part.Attribute(name) is { } a ? a.Value=="1"||bool.TryParse(a.Value,out bool value)&&value : fallback;
         }
     }
     private void ReadBones(Dictionary<string, object?> data)
@@ -224,11 +243,13 @@ internal sealed partial class NativeCardExtensions
             return vector.Length == 3 ? vector : throw new InvalidDataException("ABMX 向量无效。");
         }
     }
-    public static void Apply(NativePrefab prefab, IReadOnlyList<NativeBoneAdjustment> modifiers, IReadOnlyDictionary<string, Matrix4x4>? shared = null)
+    public static void Apply(NativePrefab prefab, IReadOnlyList<NativeBoneAdjustment> modifiers, IReadOnlyDictionary<string, Matrix4x4>? shared = null, string runtimeRoot = "")
     {
+        string root=runtimeRoot.Length==0?"":prefab.Bones.FirstOrDefault(p=>string.IsNullOrEmpty(p.Value.Parent)).Key??"";
         foreach (var modifier in modifiers)
         {
-            if (shared?.ContainsKey(modifier.Name) == true || !prefab.Bones.TryGetValue(modifier.Name, out var bone)) continue;
+            string name=modifier.Name==runtimeRoot&&root.Length>0?root:modifier.Name;
+            if (shared?.ContainsKey(name) == true || !prefab.Bones.TryGetValue(name, out var bone)) continue;
             for (int i = 0; i < 3; i++) { bone.Scale[i] *= modifier.Scale[i]; bone.Position[i] = bone.Position[i] * modifier.Length + modifier.Position[i]; }
             var q = new Quaternion(bone.Rotation[0],bone.Rotation[1],bone.Rotation[2],bone.Rotation[3]) * NativeMath.Euler(NativeMath.Vector(modifier.Rotation));
             bone.Rotation = [q.X,q.Y,q.Z,q.W];

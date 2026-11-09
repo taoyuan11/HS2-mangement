@@ -39,6 +39,8 @@ internal static class UnityEnvironmentReader
             manager.MonoTempGenerator=generator;
             var build = manager.LoadAssetsFile(Path.Combine(game,"HoneySelect2_Data","globalgamemanagers"),false);
             manager.LoadClassDatabaseFromPackage(build.file.Metadata.UnityVersion);
+            var physics=build.file.GetAssetsOfType(AssetClassID.PhysicsManager).Single();
+            result.Physics=Convert(manager.GetBaseField(build,physics));
             var quality=manager.GetBaseField(build,build.file.GetAssetsOfType(AssetClassID.QualitySettings).Single());
             selected=quality["m_CurrentQuality"].AsInt;
             qualities=quality["m_QualitySettings"]["Array"].Children.Select(Convert).ToArray();
@@ -129,7 +131,7 @@ internal static class UnityEnvironmentReader
             .Select(f => f.FullName + "|" + f.Length + "|" + f.LastWriteTimeUtc.Ticks));
         cancellation.ThrowIfCancellationRequested();
         var snapshot = metadata == null ? ReadStatic(game, cache, cancellation)
-            : metadata.Get("scene-environment", stamp, () => ReadStatic(game, cache, cancellation), cancellation, s => s.GeneratedFiles.All(File.Exists));
+            : metadata.Get("scene-environment-v2", stamp, () => ReadStatic(game, cache, cancellation), cancellation, s => s.GeneratedFiles.All(File.Exists));
         return ApplySettings(game, cache, snapshot.Environment, snapshot.Qualities, snapshot.Quality, selections, paths, warnings, cancellation);
     }
     internal static EnvironmentDefinition ApplySettings(string game, string cache, EnvironmentDefinition result, Parameter[] qualities, int selected,
@@ -142,6 +144,8 @@ internal static class UnityEnvironmentReader
             selected=Math.Clamp(setupQuality,0,2)*2+(shadow?0:1);
         }
         result.Quality=qualities[selected];
+        if(File.Exists(Path.Combine(game,"BepInEx","plugins","IllusionFixes","HS2_Fix_GravityAdjust.dll")))
+            result.Physics.Get("m_Gravity").Get("y").Number=-98.1;
         ApplyDisplaySettings(game, result.Camera);
         string custom=Path.Combine(game,"UserData","custom","customscene.dat");
         if(File.Exists(custom))using(var input=new BinaryReader(File.OpenRead(custom))){input.ReadString();for(int i=0;i<3;i++)result.Background[i]=input.ReadSingle();}

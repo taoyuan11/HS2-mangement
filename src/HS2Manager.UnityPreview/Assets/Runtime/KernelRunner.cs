@@ -27,7 +27,7 @@ namespace HS2Manager.UnityPreview
         private readonly ConcurrentQueue<KernelMessage> commands=new ConcurrentQueue<KernelMessage>();
         private readonly object writes=new object();
         private volatile bool disconnected;
-        private long latestLoad,currentLoad,sequence;
+        private long latestLoad,currentLoad,sequence,currentRevision;
         private OriginalCharacter character;
         private OriginalEnvironment environment;
         private readonly OriginalAssetStore assets=new OriginalAssetStore();
@@ -35,6 +35,7 @@ namespace HS2Manager.UnityPreview
         private KernelMessage pendingLoad;
         private bool loading;
         private Camera cameraComponent;
+        private CharacterShaderClock shaderClock;
         private Light key;
         private RenderTexture target;
         private Texture2D pixels;
@@ -42,7 +43,7 @@ namespace HS2Manager.UnityPreview
         private sealed class PendingFrame
         {
             public AsyncGPUReadbackRequest Request;
-            public long Load;
+            public long Load,Revision;
         }
         private readonly Queue<PendingFrame> readbacks=new Queue<PendingFrame>();
         private bool asyncReadback;
@@ -71,6 +72,7 @@ namespace HS2Manager.UnityPreview
                 cameraComponent.clearFlags=CameraClearFlags.SolidColor;cameraComponent.backgroundColor=new Color(.16f,.17f,.19f);
                 cameraComponent.fieldOfView=35;cameraComponent.nearClipPlane=.01f;cameraComponent.farClipPlane=2000;
                 cameraComponent.renderingPath=RenderingPath.Forward;
+                shaderClock=new CharacterShaderClock(cameraComponent);
                 RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Flat;RenderSettings.ambientLight=new Color(.35f,.35f,.35f);
                 RenderSettings.reflectionIntensity=0;RenderSettings.ambientIntensity=1;QualitySettings.antiAliasing=0;
                 key=new GameObject("Preview light").AddComponent<Light>();key.type=LightType.Directional;key.intensity=1;key.transform.rotation=Quaternion.Euler(25,145,0);
@@ -90,7 +92,7 @@ namespace HS2Manager.UnityPreview
                 {
                     var message=JsonUtility.FromJson<KernelMessage>(KernelWire.Read(pipe));
                     if(message.Session!=session || message.Version!=KernelWire.Version)throw new IOException("Protocol mismatch.");
-                    if(message.Kind=="Load")Interlocked.Exchange(ref latestLoad,message.Load);
+                    if(message.Kind=="Load" || message.Kind=="Update")Interlocked.Exchange(ref latestLoad,message.Load);
                     if(message.Kind=="Cancel")Interlocked.CompareExchange(ref latestLoad,-message.Load,message.Load);
                     commands.Enqueue(message);
                 }
@@ -106,7 +108,7 @@ namespace HS2Manager.UnityPreview
                 try
                 {
                     if(message.Kind=="Quit"){Application.Quit(0);return;}
-                    if(message.Kind=="Load")
+                    if(message.Kind=="Load" || message.Kind=="Update")
                     {
                         if(message.Load!=Interlocked.Read(ref latestLoad))continue;
                         pendingLoad=message;
@@ -139,6 +141,7 @@ namespace HS2Manager.UnityPreview
                 if(next.Load==Interlocked.Read(ref latestLoad)){loading=true;StartCoroutine(DriveLoad(next));}
             }
             if(character!=null && playing && !loading){elapsed+=Time.deltaTime;character.UpdateMotion(Time.deltaTime,elapsed);}
+            shaderClock?.Set(elapsed,playing&&!loading?Time.deltaTime:0);
         }
         // Drive nested iterators ourselves so every exception and cancellation is observed,
         // including exceptions raised after yielding an asynchronous native bundle request.
@@ -177,7 +180,7 @@ namespace HS2Manager.UnityPreview
             finally
             {
                 while(loadSteps.Count>0)(loadSteps.Pop() as IDisposable)?.Dispose();
-                if(!success)Clear();
+                if(!success)Clear(message.Kind=="Update");
                 Application.backgroundLoadingPriority=previousPriority;
                 loading=false;
             }
@@ -186,10 +189,15 @@ namespace HS2Manager.UnityPreview
         {
             public double BundleMilliseconds,CharacterMilliseconds,EnvironmentMilliseconds;
             public int RetainedBundles,LoadedBundles,BundleCount;
+            public int UpdatedParts,RebuiltParts;
+            public bool MaterialsRefreshed;
+            public int[] PartObjectIds;
+            public string[] PartKeys;
         }
         private IEnumerator LoadCharacter(KernelMessage message)
         {
-            Clear();currentLoad=message.Load;
+            bool update=message.Kind=="Update"&&character!=null;
+            if(!update)Clear(message.Kind=="Update");currentLoad=message.Load;currentRevision=message.Revision;
             // Destroy is deferred by Unity. Give old material/environment instances a frame
             // to release their references before trimming shared source bundles.
             yield return null;
@@ -199,27 +207,34 @@ namespace HS2Manager.UnityPreview
             var data=CharacterData.Read(message.Path);
             if(data==null || data.SchemaVersion!=1)throw new IOException("Invalid character definition.");
             var watch=System.Diagnostics.Stopwatch.StartNew();var metrics=new LoadMetrics();
-            yield return assets.Prepare(data,canceled,progress);
+            yield return assets.Prepare(data,canceled,progress,update);
             metrics.BundleMilliseconds=watch.Elapsed.TotalMilliseconds;watch.Restart();
             if(canceled())throw new OperationCanceledException();
-            character=new OriginalCharacter(data,assets);
-            yield return character.Build(canceled,progress);
+            if(update&&character.CanUpdate(data))yield return character.UpdateDefinition(data,canceled,progress);
+            else
+            {
+                if(character!=null)character.Dispose();
+                character=new OriginalCharacter(data,assets);
+                yield return character.Build(canceled,progress);
+            }
             metrics.CharacterMilliseconds=watch.Elapsed.TotalMilliseconds;watch.Restart();
             if(canceled())throw new OperationCanceledException();
-            character.UpdateMotion(0,0);
-            key.enabled=false;environment=character.CreateEnvironment(cameraComponent);
+            character.UpdateMotion(0,elapsed);
+            key.enabled=false;if(!update)environment=character.CreateEnvironment(cameraComponent);
             if(canceled())throw new OperationCanceledException();
             var bounds=character.Bounds();
             if(bounds.size==Vector3.zero)throw new IOException("人物没有可渲染模型。");
-            cameraComponent.transform.position=bounds.center+new Vector3(0,0,33);cameraComponent.transform.LookAt(bounds.center);
+            if(!update){cameraComponent.transform.position=bounds.center+new Vector3(0,0,33);cameraComponent.transform.LookAt(bounds.center);}
             var head=character.Root.GetComponentsInChildren<Renderer>().FirstOrDefault(r=>r.name=="o_head");
             var face=head==null?bounds:head.bounds;
             metrics.EnvironmentMilliseconds=watch.Elapsed.TotalMilliseconds;
             metrics.LoadedBundles=assets.LoadedBundles;metrics.RetainedBundles=assets.RetainedBundles;metrics.BundleCount=assets.BundleCount;
+            metrics.UpdatedParts=character.UpdatedParts;metrics.RebuiltParts=character.RebuiltParts;metrics.MaterialsRefreshed=character.MaterialsRefreshed;
+            metrics.PartObjectIds=character.PartObjectIds;metrics.PartKeys=character.PartKeys;
             Debug.Log("KERNEL: load "+message.Load+" "+JsonUtility.ToJson(metrics));
             Send(new KernelMessage{Kind="Metrics",Load=message.Load,Text=JsonUtility.ToJson(metrics)});
             cameraComponent.enabled=true;
-            Send(new KernelMessage{Kind="Loaded",Load=message.Load,Text=string.Join("\n",character.Diagnostics.ToArray()),Values=new[]{bounds.center.x,bounds.center.y,bounds.center.z,bounds.size.x,bounds.size.y,bounds.size.z,face.center.x,face.center.y,face.center.z,face.size.x,face.size.y,face.size.z}});
+            Send(new KernelMessage{Kind=update?"Updated":"Loaded",Load=message.Load,Revision=message.Revision,Text=string.Join("\n",character.Diagnostics.ToArray()),Values=new[]{bounds.center.x,bounds.center.y,bounds.center.z,bounds.size.x,bounds.size.y,bounds.size.z,face.center.x,face.center.y,face.center.z,face.size.x,face.size.y,face.size.z}});
         }
         private IEnumerator OutputFrames()
         {
@@ -235,9 +250,9 @@ namespace HS2Manager.UnityPreview
                     {
                         // D3D11 readback spans three player frames. Keep that pipeline fed,
                         // but skip captures rather than building an unbounded queue when the GPU falls behind.
-                        if(readbacks.Count<3)readbacks.Enqueue(new PendingFrame{Request=AsyncGPUReadback.Request(target,0,TextureFormat.RGBA32),Load=currentLoad});
+                        if(readbacks.Count<3)readbacks.Enqueue(new PendingFrame{Request=AsyncGPUReadback.Request(target,0,TextureFormat.RGBA32),Load=currentLoad,Revision=currentRevision});
                     }
-                    else {ReadPixels();Publish(pixels.GetRawTextureData<uint>(),currentLoad);}
+                    else {ReadPixels();Publish(pixels.GetRawTextureData<uint>(),currentLoad,currentRevision);}
                 }
                 catch(Exception error){Clear();Send(new KernelMessage{Kind="Error",Load=currentLoad,Text=error.Message});}
             }
@@ -256,7 +271,7 @@ namespace HS2Manager.UnityPreview
                 }
                 if(character!=null && !loading && pending.Load==currentLoad && currentLoad==Interlocked.Read(ref latestLoad))newest=pending;
             }
-            if(newest!=null)Publish(newest.Request.GetData<uint>(),newest.Load);
+            if(newest!=null)Publish(newest.Request.GetData<uint>(),newest.Load,newest.Revision);
         }
         private void DrainReadbacks()
         {
@@ -271,7 +286,7 @@ namespace HS2Manager.UnityPreview
             try{RenderTexture.active=target;pixels.ReadPixels(new Rect(0,0,target.width,target.height),0,0,false);}
             finally{RenderTexture.active=previous;}
         }
-        private unsafe void Publish(NativeArray<uint> rgba,long load)
+        private unsafe void Publish(NativeArray<uint> rgba,long load,long revision)
         {
             int width=target.width,height=target.height;
             if(rgba.Length!=width*height)throw new IOException("Invalid GPU frame size.");
@@ -287,7 +302,7 @@ namespace HS2Manager.UnityPreview
             {
                 try{locked=frameLock.WaitOne(0);}catch(AbandonedMutexException){locked=true;}
                 if(!locked)return;
-                view.WriteArray(KernelWire.Header,bgra,0,bgra.Length);view.Write(0,KernelWire.Version);view.Write(16,load);view.Write(24,width);view.Write(28,height);view.Write(8,++sequence);
+                view.WriteArray(KernelWire.Header,bgra,0,bgra.Length);view.Write(0,KernelWire.Version);view.Write(16,load);view.Write(24,width);view.Write(28,height);view.Write(32,revision);view.Write(8,++sequence);
             }
             finally{if(locked)frameLock.ReleaseMutex();}
         }
@@ -306,12 +321,13 @@ namespace HS2Manager.UnityPreview
         {
             message.Session=session;lock(writes)KernelWire.Write(events,JsonUtility.ToJson(message));
         }
-        private void Clear(){if(cameraComponent!=null)cameraComponent.enabled=false;environment?.Dispose();environment=null;if(character!=null)character.Dispose();character=null;elapsed=0;}
+        private void Clear(bool preserveTime=false){if(cameraComponent!=null)cameraComponent.enabled=false;environment?.Dispose();environment=null;if(character!=null)character.Dispose();character=null;if(!preserveTime)elapsed=0;}
         private void OnDestroy()
         {
             disconnected=true;pipe?.Dispose();events?.Dispose();if(reader!=null && reader.IsAlive)reader.Join(1000);
             StopAllCoroutines();while(loadSteps.Count>0)(loadSteps.Pop() as IDisposable)?.Dispose();
             DrainReadbacks();Clear();assets.Dispose();if(target!=null){target.Release();Destroy(target);}if(pixels!=null)Destroy(pixels);
+            shaderClock?.Dispose();shaderClock=null;
             view?.Dispose();map?.Dispose();frameLock?.Dispose();
         }
     }

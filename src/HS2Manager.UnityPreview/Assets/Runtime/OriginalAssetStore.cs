@@ -48,7 +48,7 @@ namespace HS2Manager.UnityPreview
             catch { Dispose(); throw; }
         }
         private static string Stamp(string path){var file=new FileInfo(path);return file.Length+"|"+file.LastWriteTimeUtc.Ticks;}
-        public IEnumerator Prepare(CharacterDefinition definition,Func<bool> canceled,Action<string> progress)
+        public IEnumerator Prepare(CharacterDefinition definition,Func<bool> canceled,Action<string> progress,bool retainExisting=false)
         {
             if(disposed)throw new ObjectDisposedException("OriginalAssetStore");
             while(pending.Count>0){if(canceled())throw new OperationCanceledException();yield return null;}
@@ -60,16 +60,18 @@ namespace HS2Manager.UnityPreview
             // A changed dependency may already be referenced by a cached prefab/material.
             // Rebuild the set on in-place changes instead of retaining objects with dead PPtrs.
             bool changed=bundles.Any(p=>required.Contains(p.Key)&&(!File.Exists(p.Key)||p.Value.Stamp!=Stamp(p.Key)));
+            if(retainExisting&&changed)throw new IOException("素材文件在编辑期间变化，请重新连接预览。");
             // The old character has already been destroyed. Remove every old exclusive
             // bundle before loading new ones, including bundles with a reused CAB name.
             foreach(var path in bundles.Keys.ToArray())
             {
                 if(canceled())throw new OperationCanceledException();
+                if(retainExisting && !changed){RetainedBundles++;continue;}
                 if(!changed&&required.Contains(path)&&File.Exists(path)&&bundles[path].Stamp==Stamp(path)){RetainedBundles++;continue;}
                 bundles[path].Bundle.Unload(true);bundles.Remove(path);
             }
             foreach(var path in loose.Keys.ToArray())
-                if(!images.Contains(path)||!File.Exists(path)||looseStamps[path]!=Stamp(path))
+                if(!retainExisting && (!images.Contains(path)||!File.Exists(path)||looseStamps[path]!=Stamp(path)))
                 {Object.Destroy(loose[path]);loose.Remove(path);looseStamps.Remove(path);}
             var missing=shaderSearchOrder.Where(p=>!bundles.ContainsKey(p))
                 .Select(p=>new PendingBundle{Path=p,Stamp=Stamp(p)}).ToArray();

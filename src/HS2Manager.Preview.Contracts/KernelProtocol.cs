@@ -11,6 +11,7 @@ namespace HS2Manager.Preview.Contracts
         public string Session = "";
         public string Kind = "";
         public long Load;
+        public long Revision;
         public string Path = "";
         public string Text = "";
         public int Width = 1280, Height = 720;
@@ -19,7 +20,7 @@ namespace HS2Manager.Preview.Contracts
     }
     public static class KernelWire
     {
-        public const int Version = 1, MaxWidth = 1920, MaxHeight = 1080, Header = 64;
+        public const int Version = 2, MaxWidth = 1920, MaxHeight = 1080, Header = 64;
         public const long MapBytes = Header + MaxWidth * MaxHeight * 4;
         public static void Write(Stream stream, string json)
         {

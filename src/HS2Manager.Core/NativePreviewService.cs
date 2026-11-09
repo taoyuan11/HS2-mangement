@@ -104,7 +104,7 @@ public sealed class NativePreviewService
                 }
                 int objectType = clothing ? 1 : part.Category >= 351 ? 2 : hair ? 3 : 4;
                 int objectSlot = hair ? part.Category - 300 : part.Slot;
-                foreach (var hidden in appearance.Renderers.Where(r => !r.Enabled && r.ObjectType == objectType && (objectType == 4 || r.Slot == objectSlot)))
+                foreach (var hidden in appearance.Renderers.Where(r => r.Property==0&&!r.Enabled && r.ObjectType == objectType && (objectType == 4 || r.Slot == objectSlot)))
                     prefab.Meshes.RemoveAll(m => m.Name.StartsWith(hidden.Name + "/", StringComparison.Ordinal));
                 int hiddenOptions = part.HideOptions.Select((hidden, i) => hidden ? 1 << i : 0).Aggregate(0, (a,b) => a | b);
                 prefab.Meshes.RemoveAll(m => (m.OptionMask & hiddenOptions) != 0);
@@ -283,7 +283,7 @@ public sealed class NativePreviewService
             foreach (var mesh in prefab.Meshes)
             {
                 if (!appearance.BodyVisible && (label == "身体" || hideWithBody)) continue;
-                if (appearance.Renderers.Any(r => !r.Enabled && r.ObjectType == 4 && mesh.Name.StartsWith(r.Name + "/", StringComparison.Ordinal)) && (head || label == "身体")) continue;
+                if (appearance.Renderers.Any(r => r.Property==0&&!r.Enabled && r.ObjectType == 4 && mesh.Name.StartsWith(r.Name + "/", StringComparison.Ordinal)) && (head || label == "身体")) continue;
                 if (label == "身体" && !mesh.Name.StartsWith("o_body_", StringComparison.Ordinal)) continue;
                 if (mesh.Name.Contains("namida", StringComparison.OrdinalIgnoreCase) || mesh.Name.Contains("eyeshadow", StringComparison.OrdinalIgnoreCase)) continue;
                 mesh.Color = color;
@@ -368,7 +368,7 @@ public sealed class NativePreviewService
         string directory = Path.Combine(root, "list", "characustom");
         var files = Directory.GetFiles(directory, "*.unity3d", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase).ToArray();
         string fingerprint = Hash(string.Join("\n", files.Select(Fingerprint)));
-        string target = Path.Combine(cache, "index-" + fingerprint + ".br");
+        string target = Path.Combine(cache, "index-v2-" + fingerprint + ".br");
         if (TryRead<List<NativeAssetEntry>>(target, out var cached) && cached!.All(e => e != null && e.Bundle != null && e.Asset != null && e.MaleAsset != null)) return cached!;
         var entries = new List<NativeAssetEntry>(); bool complete = true;
         for (int i = 0; i < files.Length; i++)
@@ -385,7 +385,7 @@ public sealed class NativePreviewService
                     {
                         if (!int.TryParse(row.Key, out int id) || row.Value is not List<object?> values) continue;
                         string Value(string key) { int index = keys.IndexOf(key); return index >= 0 && index < values.Count ? values[index]?.ToString() ?? "" : ""; }
-                        string path = Value("MainAB"); if (path.Length > 0) entries.Add(new(category, id, path, Value("MainData"), Value("MainData02")) { Values = keys.Distinct().ToDictionary(k => k, Value) });
+                        string path = Value("MainAB"); entries.Add(new(category, id, path, Value("MainData"), Value("MainData02")) { Values = keys.Distinct().ToDictionary(k => k, Value) });
                     }
                 }
             }
@@ -411,7 +411,7 @@ public sealed class NativePreviewService
         if (!File.Exists(path)) return false;
         try
         {
-            using var file = File.OpenRead(path); using var compressed = new BrotliStream(file, CompressionMode.Decompress);
+            using var file = new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read|FileShare.Delete); using var compressed = new BrotliStream(file, CompressionMode.Decompress);
             value = JsonSerializer.Deserialize<T>(compressed); return value != null;
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException) { return false; }

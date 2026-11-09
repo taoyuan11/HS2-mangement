@@ -19,10 +19,12 @@ internal sealed class UnityPreparationResources(PreviewMetadataCache cache, Canc
     }
     internal byte[] Text(string path, string name) => cache.Get("text", PreviewMetadataCache.Stamp(path) + "|" + name,
         () => Reader(path).ReadText(name), cancellation);
+    internal string[] ShaderNames(string path) => cache.Get("bundle-shader-names", PreviewMetadataCache.Stamp(path),
+        () => Reader(path).ShaderNames(), cancellation);
     internal PrefabData Prefab(string path, string name)
     {
         using var timing = PreviewPerformance.Measure("structure");
-        return cache.Get("prefab-structure", PreviewMetadataCache.Stamp(path) + "|" + name, () =>
+        return cache.Get("prefab-structure-v4", PreviewMetadataCache.Stamp(path) + "|" + name, () =>
         {
             var reader = Reader(path);
             var warnings = new List<string>();

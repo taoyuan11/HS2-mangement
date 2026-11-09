@@ -162,25 +162,53 @@ namespace HS2Manager.UnityPreview
         }
         private IEnumerator CaptureEnvironment(string output)
         {
+            using(var shaderClock=new CharacterShaderClock(environmentCamera))
+            {
             var target=new RenderTexture(1280,720,24,RenderTextureFormat.ARGB32);target.Create();environmentCamera.targetTexture=target;
             environmentCamera.enabled=true;
-            for(int i=0;i<180;i++){character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();}
+            string requestedPath=Argument("--fixture");var requestedFixture=requestedPath==null?null:VisualFixture.Load(requestedPath);
+            File.WriteAllLines(Path.Combine(output,"part-animations.txt"),character.PartAnimationDescriptions);
+            if(character.PartAnimationCount>0&&requestedFixture!=null&&requestedFixture.PartAnimationClockVersion<1)
+                throw new IOException("Reference fixture must synchronize the additional native animation clips.");
+            if(requestedFixture==null||requestedFixture.PhysicsResetVersion>=3)
+            {
+                for(int i=0;i<4;i++){character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();}
+                character.ResetFixturePhysics();
+            }
+            CharacterDiagnostics.WritePose(character.Root,Path.Combine(output,"initial-pose.json"),0);
+            character.WritePhysicsDiagnostics(Path.Combine(output,"initial-dynamics.json"));
+            for(int i=0;i<180;i++)
+            {
+                character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();
+                if(i<20&&Environment.GetEnvironmentVariable("HS2_PHYSICS_TRACE")=="1")character.WritePhysicsDiagnostics(Path.Combine(output,"physics-step-"+(i+1).ToString("D2")+".json"));
+            }
             CharacterDiagnostics.Write(character.Root,output);
             CharacterDiagnostics.WriteEnvironment(environmentCamera,output);
+            character.WritePhysicsDiagnostics(Path.Combine(output,"dynamics.json"));
             if(Environment.GetCommandLineArgs().Contains("--check-environment-controls"))CheckEnvironmentControls(output);
             string fixturePath=Argument("--fixture");
             var fixture=fixturePath==null?VisualFixture.Create(character.Root):VisualFixture.Load(fixturePath);
+            fixture.PartAnimationClockVersion=character.PartAnimationCount>0?1:0;
+            var temporal=environmentCamera.GetComponent<IndependentTemporalAA>();
+            if(temporal!=null&&fixture.ScreenWidth>0)temporal.ReferenceResolution=new Vector2(fixture.ScreenWidth,fixture.ScreenHeight);
             VisualFixture.Save(Path.Combine(output,"fixture.json"),fixture);
             foreach(var view in fixture.Views)
             {
                 VisualFixture.Set(environmentCamera,view);
-                for(int i=0;i<VisualFixture.WarmFrames;i++){character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();}
+                if(fixture.TemporalPhaseVersion>=1)environment.ResetHistory();
+                if(fixture.TemporalPhaseVersion>=2)VisualFixture.ResetDithering(environmentCamera);
+                for(int i=0;i<VisualFixture.WarmFrames;i++)
+                    using(i==VisualFixture.WarmFrames-3?VisualFixture.GraphicsCapture(view.Name):null)
+                    {character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();}
                 VisualFixture.Pixels(target,Path.Combine(output,view.Name+".png"));
+                CharacterDiagnostics.WritePose(character.Root,Path.Combine(output,view.Name+"-pose.json"),0);
+                character.WritePhysicsDiagnostics(Path.Combine(output,view.Name+"-dynamics.json"));
                 if(view.Name=="face")VisualFixture.FaceBounds(environmentCamera,character.Root,Path.Combine(output,"face-region.json"));
                 var visible=character.Root.GetComponentsInChildren<Renderer>(true).Where(r=>r.enabled).ToArray();
                 foreach(var r in visible)r.enabled=false;
-                for(int i=0;i<VisualFixture.WarmFrames;i++)yield return new WaitForEndOfFrame();
+                for(int i=0;i<VisualFixture.WarmFrames;i++){character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();}
                 VisualFixture.Pixels(target,Path.Combine(output,view.Name+"-background.png"));
+                character.WritePhysicsDiagnostics(Path.Combine(output,view.Name+"-background-dynamics.json"));
                 foreach(var r in visible)r.enabled=true;
             }
             environmentCamera.transform.position=new Vector3(0,15.9255455f,5.721683f);environmentCamera.transform.LookAt(new Vector3(0,15.9255455f,-.2183166f));
@@ -195,12 +223,15 @@ namespace HS2Manager.UnityPreview
                     VisualFixture.Pixels(target,Path.Combine(probe,phase.ToString("D2")+".png"));
                 }
             }
+            if(fixture.TemporalPhaseVersion>=1)environment.ResetHistory();
+            if(fixture.TemporalPhaseVersion>=2)VisualFixture.ResetDithering(environmentCamera);
             for(int i=0;i<VisualFixture.WarmFrames;i++){character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();}
             string dynamicDirectory=Path.Combine(output,"dynamic");Directory.CreateDirectory(dynamicDirectory);
             var blinkStates=new System.Collections.Generic.List<string>();
             for(int frame=1;frame<=360;frame++)
             {
                 VisualFixture.Set(environmentCamera,fixture.Views[frame<=180?0:3]);
+                shaderClock.Set(frame/30f,1f/30);
                 character.UpdateMotion(1f/30,frame/30f);
                 blinkStates.Add(frame+" "+character.BlinkDiagnostic);
                 yield return new WaitForEndOfFrame();
@@ -211,6 +242,7 @@ namespace HS2Manager.UnityPreview
             var previous=RenderTexture.active;var image=new Texture2D(1280,720,TextureFormat.RGBA32,false);
             try{RenderTexture.active=target;image.ReadPixels(new Rect(0,0,1280,720),0,0);image.Apply();File.WriteAllBytes(Path.Combine(output,"environment-face.png"),image.EncodeToPNG());}
             finally{RenderTexture.active=previous;environmentCamera.enabled=false;environmentCamera.targetTexture=null;target.Release();Destroy(target);Destroy(image);}
+            }
         }
         private static void Capture(Camera camera,string path,int frames=1)
         {

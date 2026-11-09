@@ -13,6 +13,9 @@ public sealed class FileOperationRecord
     public string Hash { get; set; } = "";
     public string Phase { get; set; } = "Planned";
     public string Error { get; set; } = "";
+    public string ExpectedSourceHash { get; set; } = "";
+    public string BackupPath { get; set; } = "";
+    public string SwapBackup { get; set; } = "";
     public long? ExpectedSize { get; set; }
     public long? ExpectedModifiedUtcTicks { get; set; }
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
@@ -191,7 +194,7 @@ public sealed partial class CardFileService(CardRepository repository)
     }
     public async Task<List<string>> RecoverAsync(CancellationToken cancellation)
     {
-        var messages = new List<string>();
+        var messages = await new CardEditService(repository).RecoverAsync(cancellation);
         var operations = Operations();
         foreach (var op in operations.Where(x => x.Kind == "Delete" && x.Phase is not ("Indexed" or "RolledBack")))
         {
@@ -199,7 +202,7 @@ public sealed partial class CardFileService(CardRepository repository)
             try { messages.Add(RecoverDeletion(op)); }
             catch (Exception ex) when (IsDeletionError(ex)) { messages.Add("删除清理待恢复：" + op.Source + "：" + ex.Message); }
         }
-        foreach (var op in operations.Where(x => x.Kind != "Delete" && x.Phase is not ("Indexed" or "RolledBack" or "Superseded")))
+        foreach (var op in operations.Where(x => x.Kind != "Delete" && !x.Kind.StartsWith("Edit", StringComparison.Ordinal) && x.Phase is not ("Indexed" or "RolledBack" or "Superseded")))
         {
             cancellation.ThrowIfCancellationRequested();
             try

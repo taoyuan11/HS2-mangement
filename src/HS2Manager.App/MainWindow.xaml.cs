@@ -73,6 +73,7 @@ public partial class MainWindow : Window
     }
     private async Task ShutdownAsync()
     {
+        if (editor != null && !await CloseEditorAsync()) { closing = false; return; }
         preferences.ColorValuesChanged -= SystemPreferenceChanged;
         ViewModel.ShowReport -= ReportRequested;
         ViewModel.SelectionRestoreRequested -= RestoreSelection;
@@ -143,7 +144,7 @@ public partial class MainWindow : Window
     }
     private async void Window_Drop(object sender, DragEventArgs e)
     {
-        if (ViewModel.IsBusy || !e.DataView.Contains(StandardDataFormats.StorageItems)) return;
+        if (ViewModel.IsEditing || ViewModel.IsBusy || !e.DataView.Contains(StandardDataFormats.StorageItems)) return;
         var deferral = e.GetDeferral();
         try
         {
@@ -257,7 +258,7 @@ public partial class MainWindow : Window
         var rows = ViewModel.Files.Operations().Take(100).Select(op => $"{op.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}  {OperationLabel(op.Kind)}  [{PhaseLabel(op.Phase)}]\n{op.Source}" + (op.Kind == "Delete" ? "" : "\n→ " + op.Destination) + (op.Error.Length > 0 ? "\n" + op.Error : ""));
         await Dialogs.Report(this, "文件操作日志", rows.Any() ? string.Join("\n\n", rows) : "还没有文件操作记录。\n扫描、标签与收藏不会修改人物卡文件。", () => _ = ViewModel.RunWork("恢复未完成操作", async (ct, _) => string.Join("；", await ViewModel.Files.RecoverAsync(ct))), "恢复未完成操作");
     }
-    private static string OperationLabel(string kind) => kind switch { "Import" => "导入", "Export" => "导出", "Move" => "移动", "Rename" => "重命名", "Quarantine" => "隔离", "Restore" => "恢复", "Delete" => "永久删除", _ => kind };
+    private static string OperationLabel(string kind) => kind switch { "Import" => "导入", "Export" => "导出", "Move" => "移动", "Rename" => "重命名", "Quarantine" => "隔离", "Restore" => "恢复", "Delete" => "永久删除", "EditSaveAs" => "编辑另存", "EditOverwrite" => "编辑覆盖", "EditRestore" => "恢复编辑备份", _ => kind };
     private static string PhaseLabel(string phase) => phase switch { "Indexed" => "完成", "RolledBack" => "已回滚 / 未执行", "NeedsAttention" => "需要检查", "Interrupted" => "已中断", "FileDeleted" => "文件已删除，待清理", "Superseded" => "已由永久删除取代", _ => "待恢复" };
     private void Logs_Click(object sender, RoutedEventArgs e)
     {
@@ -289,7 +290,7 @@ public partial class MainWindow : Window
         });
     }
     private async void PreviewRail_Selected(object sender, SelectionChangedEventArgs e)
-    { if (ViewModel.IsPreview && PreviewRail.SelectedItem is CardItemViewModel item && item.Record.Id != ViewModel.PreviewCardId) await ViewModel.OpenPreviewAsync(item.Record); }
+    { if (!ViewModel.IsEditing && ViewModel.IsPreview && PreviewRail.SelectedItem is CardItemViewModel item && item.Record.Id != ViewModel.PreviewCardId) await ViewModel.OpenPreviewAsync(item.Record); }
     private async void ClosePreview_Click(object sender, RoutedEventArgs e) => await ViewModel.ClosePreviewAsync();
     private async void RetryPreview_Click(object sender, RoutedEventArgs e) => await ViewModel.RetryPreviewAsync();
     private void ToggleRail_Click(object sender, RoutedEventArgs e) => ViewModel.ShowPreviewRail = !ViewModel.ShowPreviewRail;
@@ -328,6 +329,13 @@ public partial class MainWindow : Window
     private void RestoreEnvironment_Click(object sender,RoutedEventArgs e) => ViewModel.RestoreEnvironment();
     private async void Window_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (ViewModel.IsEditing && editor != null)
+        {
+            bool control = (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0;
+            if (e.Key == VirtualKey.Escape || control && e.Key is VirtualKey.S or VirtualKey.Z or VirtualKey.Y)
+            { e.Handled = true; await editor.HandleKeyAsync(e.Key, control); }
+            return;
+        }
         if (e.Key == VirtualKey.Escape && ViewModel.IsPreview) { await ViewModel.ClosePreviewAsync(); e.Handled = true; }
         else if (e.Key == VirtualKey.Escape && ViewModel.IsMultiSelectMode) { MultiSelect_Click(sender, e); e.Handled = true; }
         else if ((InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0 && e.Key == VirtualKey.F) { SearchBox.Focus(FocusState.Programmatic); SearchBox.SelectAll(); e.Handled = true; }

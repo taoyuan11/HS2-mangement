@@ -13,21 +13,25 @@ namespace HS2Manager.Core;
 /// <summary>Reads the installed MaterialEditor shader manifests and embedded data without loading plugin code.</summary>
 internal static class UnityShaderCatalog
 {
-    internal sealed record Entry(string Archive,string Name,string Bundle,string Asset,int Queue,Property[] Properties);
+    internal sealed record Entry(string Archive,string Name,string Bundle,string Asset,int Queue,bool Optimization,Property[] Properties);
     internal sealed record Property(string Name,string Type,string Value,string Bundle);
     internal static ShaderDefinition[] Resolve(string game,string cache,NativeModResolver mods,IEnumerable<string> wanted,
-        Func<string,string,string,AssetReference> reference,ISet<string> paths,ICollection<string> warnings,CancellationToken cancellation)
+        Func<string,string,string,AssetReference> reference,ISet<string> paths,ICollection<string> warnings,CancellationToken cancellation,IEnumerable<string>? automatic=null)
     {
-        var names=wanted.Distinct(StringComparer.Ordinal).ToArray();
+        var explicitNames=wanted.ToHashSet(StringComparer.Ordinal);
+        var automaticNames=OptimizationEnabled(game)?(automatic??[]).ToHashSet(StringComparer.Ordinal):[];
+        var names=explicitNames.Concat(automaticNames).Distinct(StringComparer.Ordinal).ToArray();
         if(names.Length==0)return [];
         var catalog=Catalog(game,cache,mods,cancellation);
         var result=new List<ShaderDefinition>();
         foreach(string name in names)
         {
             if(!catalog.TryGetValue(name,out var entry))continue; // Shader may already be in the character's own resources.
+            bool replace=automaticNames.Contains(name)&&entry.Optimization;
+            if(!explicitNames.Contains(name)&&!replace)continue;
             try
             {
-                var definition=new ShaderDefinition{Name=name,RenderQueue=entry.Queue};
+                var definition=new ShaderDefinition{Name=name,RenderQueue=entry.Queue,AutoReplace=replace};
                 if(entry.Bundle.Length>0)definition.Source=ResolveReference(entry.Bundle,entry.Asset.Length==0?name:entry.Asset,entry.Archive);
                 var defaults=new List<ShaderDefault>();
                 foreach(var value in entry.Properties.Where(p=>p.Value.Length>0))
@@ -68,13 +72,28 @@ internal static class UnityShaderCatalog
         }
     }
 
+    internal static bool OptimizationEnabled(string game)
+    {
+        string plugins=Path.Combine(game,"BepInEx","plugins");
+        if(!Directory.Exists(plugins)||!Directory.EnumerateFiles(plugins,"*MaterialEditor*.dll",SearchOption.AllDirectories).Any())return false;
+        string path=Path.Combine(game,"BepInEx","config","com.deathweasel.bepinex.materialeditor.cfg");
+        if(File.Exists(path))foreach(string line in File.ReadLines(path))
+        {
+            var pair=line.Split('=',2);
+            if(pair.Length==2&&pair[0].Trim()=="Shader Optimization"&&bool.TryParse(pair[1].Trim(),out bool enabled))return enabled;
+        }
+        return true;
+    }
+
     private static Dictionary<string,Entry> Catalog(string game,string cache,NativeModResolver resolver,CancellationToken cancellation)
     {
-        var mods=resolver.InstalledMods().OrderBy(m=>m.Path,StringComparer.OrdinalIgnoreCase).ToArray();
+        // MaterialEditor reads Sideloader's selected manifests in load order.
+        // Preserve that order when several manifests declare the same shader.
+        var mods=resolver.InstalledMods().ToArray();
         var plugins=Directory.EnumerateFiles(Path.Combine(game,"BepInEx","plugins"),"*MaterialEditor*.dll",SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase).ToArray();
         string stamp=string.Join("\n",mods.Select(m=>m.Path+"|"+m.Size+"|"+m.ModifiedUtcTicks))+
             string.Join("\n",plugins.Select(p=>{var f=new FileInfo(p);return p+"|"+f.Length+"|"+f.LastWriteTimeUtc.Ticks;}));
-        string path=Path.Combine(cache,"shader-catalog-"+Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(stamp)))+".json");
+        string path=Path.Combine(cache,"shader-catalog-v2-"+Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(stamp)))+".json");
         if(File.Exists(path))
         {
             try{return JsonSerializer.Deserialize<Dictionary<string,Entry>>(File.ReadAllText(path))!;}
@@ -111,7 +130,7 @@ internal static class UnityShaderCatalog
             {
                 string name=(string?)shader.Attribute("Name")??"";if(name.Length==0)continue;
                 var properties=shader.Elements("Property").Select(p=>new Property((string?)p.Attribute("Name")??"",(string?)p.Attribute("Type")??"",(string?)p.Attribute("DefaultValue")??"",(string?)p.Attribute("DefaultValueAssetBundle")??"")).ToArray();
-                result[name]=new(source,name,(string?)shader.Attribute("AssetBundle")??"",(string?)shader.Attribute("Asset")??"",int.TryParse((string?)shader.Attribute("RenderQueue"),out int queue)?queue:-1,properties);
+                result[name]=new(source,name,(string?)shader.Attribute("AssetBundle")??"",(string?)shader.Attribute("Asset")??"",int.TryParse((string?)shader.Attribute("RenderQueue"),out int queue)?queue:-1,!bool.TryParse((string?)shader.Attribute("ShaderOptimization"),out bool optimized)||optimized,properties);
             }
         }
         static XElement? Parse(Stream stream)

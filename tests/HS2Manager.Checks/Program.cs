@@ -8,11 +8,59 @@ var gameArg = Array.IndexOf(args, "--game");
 var game = gameArg >= 0 ? args[gameArg + 1] : @"Z:\games\hs2\HS two DX - TSYMQ";
 var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
-if (args.Contains("--card-delete")) await CardDeletionChecks.Run(data);
+if (args.Contains("--prepare-edit-game")) await CharacterEditGameChecks.Prepare(game,args[Array.IndexOf(args,"--output")+1]);
+else if (args.Contains("--edit-preview")) await CharacterEditPreviewChecks.Run(game,data,args[Array.IndexOf(args,"--player")+1]);
+else if (args.Contains("--card-edit")) await CharacterEditChecks.Run(data, args.Contains("--real-edit") ? game : null);
+else if (args.Contains("--card-delete")) await CardDeletionChecks.Run(data);
 else if (args.Contains("--preview-cache")) await PreviewCacheChecks.Run(data);
 else if (args.Contains("--card-export")) await CardExportChecks.Run(data, args.Contains("--real-export") ? game : null);
 else if (args.Contains("--audit-unity-compatibility")) await UnityCompatibilityAudit.Run(args[Array.IndexOf(args,"--catalog")+1],args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1]);
-else if (args.Contains("--prepare-unity-catalog")) await UnityCatalogChecks.Prepare(game,data,args[Array.IndexOf(args,"--output")+1],args.Contains("--female-only"));
+else if (args.Contains("--prepare-unity-catalog")) await UnityCatalogChecks.Prepare(game,data,args[Array.IndexOf(args,"--output")+1],args.Contains("--female-only"),args.Contains("--catalog")?args[Array.IndexOf(args,"--catalog")+1]:null);
+else if (args.Contains("--asset-overrides")) await NativeAssetOverrideChecks.Run(game,data);
+else if (args.Contains("--body-selection"))
+{
+    var appearance=CardAppearanceReader.Read(new CardParser().Parse(args[Array.IndexOf(args,"--card")+1]));
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new {appearance.Parameter,appearance.Uncensor,appearance.PushUp,BoneCount=appearance.BoneModifiers.Count}));
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(appearance.BoneModifiers.Where(b=>b.Name.Contains("Foot")||b.Name.Contains("Toes"))));
+    var mods=new NativeModResolver(game,data,Path.Combine(data,"UnityPreview","definitions-v1"),null,default);
+    var shoe=appearance.Parts.FirstOrDefault(p=>p.Category==247);if(shoe?.Reference!=null)Console.WriteLine("Shoe "+mods.Resolve(shoe.Reference)?.Archive);
+    foreach(var bone in appearance.BoneModifiers)Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(bone));
+    foreach(var entry in UnityBodyCatalog.Resolve(game,Path.Combine(data,"UnityPreview","definitions-v1"),mods,appearance,default))
+    {
+        Console.WriteLine(entry);
+        var source=mods.AssetBundle(entry.Bundle,"additional_bones",entry.Archive);
+        using var bundle=new NativeAssetBundle(source.Path);
+        Console.WriteLine(string.Join(",",bundle.ExportNames().Where(n=>n.Contains("additional"))));
+        if(bundle.HasExport("additional_bones"))Console.WriteLine(System.Text.Encoding.UTF8.GetString(bundle.ReadText("additional_bones")));
+    }
+}
+else if (args.Contains("--native-curves")) NativeAssetOverrideChecks.Curves(args[Array.IndexOf(args,"--definition")+1]);
+else if (args.Contains("--material-properties"))
+{
+    var definition=System.Text.Json.JsonSerializer.Deserialize<HS2Manager.Preview.Contracts.CharacterDefinition>(File.ReadAllText(args[Array.IndexOf(args,"--definition")+1]),UnityCharacterService.JsonOptions)!;
+    var names=new Dictionary<string,HashSet<string>>{["Float"]=[],["Color"]=[],["Texture"]=[]};
+    foreach(var path in definition.BundlePaths)
+    {
+        using var bundle=new NativeAssetBundle(path);
+        foreach(var pair in bundle.MaterialPropertyNames())foreach(var name in pair.Value)names[pair.Key].Add(name);
+    }
+    File.WriteAllText(args[Array.IndexOf(args,"--output")+1],System.Text.Json.JsonSerializer.Serialize(names));
+}
+else if(args.Contains("--animation-dump"))
+{
+    using var bundle=new NativeAssetBundle(args[Array.IndexOf(args,"--bundle")+1]);
+    bundle.DumpAnimationData(args[Array.IndexOf(args,"--output")+1]);
+}
+else if(args.Contains("--shader-dump"))
+{
+    using var bundle=new NativeAssetBundle(args[Array.IndexOf(args,"--bundle")+1]);
+    bundle.DumpShaderData(args[Array.IndexOf(args,"--output")+1]);
+}
+else if(args.Contains("--material-values"))
+{
+    using var bundle=new NativeAssetBundle(args[Array.IndexOf(args,"--bundle")+1]);
+    File.WriteAllText(args[Array.IndexOf(args,"--output")+1],System.Text.Json.JsonSerializer.Serialize(bundle.MaterialFloatValues()));
+}
 else if (args.Contains("--normalize-unity-catalog")) UnityCatalogChecks.Normalize(args[Array.IndexOf(args,"--catalog")+1],game,data,args[Array.IndexOf(args,"--output")+1]);
 else if (args.Contains("--unity-bundle-identities")) UnityBundleIdentityChecks.Run(args[Array.IndexOf(args,"--definition")+1],Path.Combine(data,"cab-check-"+Guid.NewGuid().ToString("N")));
 else if (args.Contains("--unity-session")) await UnitySessionChecks.Run(args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--definition")+1],Path.Combine(data,"unity-session"));
@@ -21,7 +69,7 @@ else if (args.Contains("--prepare-unity-character"))
     int cardIndex = Array.IndexOf(args, "--card");
     string cardPath = cardIndex >= 0 ? args[cardIndex + 1] : Directory.EnumerateFiles(Path.Combine(game,"UserData","chara","navi"),"*.png").First();
     var definition = await new UnityCharacterService().PrepareAsync(game,data,new CardParser().Parse(cardPath),new Progress<string>(Console.WriteLine),default);
-    string target = Path.Combine(data,"unity-character.json");
+    string target = Array.IndexOf(args,"--output") is int outputIndex&&outputIndex>=0?Path.GetFullPath(args[outputIndex+1]):Path.Combine(data,"unity-character.json");
     File.WriteAllText(target,System.Text.Json.JsonSerializer.Serialize(definition,UnityCharacterService.JsonOptions));
     Console.WriteLine($"Prepared {definition.Parts.Length} original parts and {definition.Selections.Length} selections: {target}");
     foreach (string warning in definition.Diagnostics) Console.WriteLine(warning);

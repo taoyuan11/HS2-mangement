@@ -8,6 +8,8 @@ namespace HS2Manager.Preview.Contracts
         public Parameter RenderSettings = new Parameter();
         public Parameter Quality = new Parameter();
         public Parameter Camera = new Parameter();
+        [System.Runtime.Serialization.OptionalField]
+        public Parameter Physics = new Parameter();
         public SceneLight[] Lights = new SceneLight[0];
         public PostProfile[] Profiles = new PostProfile[0];
         public float[] Background = new float[] { .5f, .5f, .5f, 1 };

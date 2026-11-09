@@ -13,7 +13,7 @@ namespace HS2Manager.UnityPreview
             internal Transform Bone,Reference;
             internal Parameter Data;
             internal Vector3 Position,Previous,Local,InitialScale;
-            internal float Damping,Elasticity,Stiffness,Inert,NextLength;
+            internal float Damping,Elasticity,Stiffness,Inert,NextLength,Radius;
         }
         private readonly List<Node> nodes=new List<Node>();
         private readonly Transform root;
@@ -23,7 +23,7 @@ namespace HS2Manager.UnityPreview
         private readonly int maxSteps;
         private float accumulator;
         private Vector3 previousRoot;
-        internal IndependentBodyDynamics(Parameter config,Parameter body,Dictionary<string,Transform> bones,IndependentBoneChain.Collider[] available)
+        internal IndependentBodyDynamics(Parameter config,Parameter body,Dictionary<string,Transform> bones,IndependentBoneChain.Collider[] available,ColliderSupportDefinition support)
         {
             root=bones[config.String("Root")];previousRoot=root.position;
             var pattern=config.Get("Patterns").At((int)config.Float("PtnNo"));
@@ -32,12 +32,14 @@ namespace HS2Manager.UnityPreview
             float softness=Mathf.Clamp01(size*body.Float("effectiveBustSoftness",soft)+.01f);
             gravity=bust?new Vector3(0,Mathf.Lerp(0,-.05f,body.Float("bustWeight"))*size*soft*.5f,0):IndependentBoneChain.Vector(pattern.Get("Gravity"));
             force=IndependentBoneChain.Vector(config.Get("Force"));rate=config.Float("UpdateRate",60);reflect=config.Float("ReflectSpeed",1);maxSteps=Mathf.Max(1,(int)config.Float("HeavyLoopMaxCount",3));
-            var names=new HashSet<string>(config.Get("Colliders").Children.Select(c=>c.Text));colliders=available.Where(c=>names.Contains(c.Transform.name)).ToArray();
+            var names=new HashSet<string>(config.Get("Colliders").Children.Select(c=>c.Text));
+            colliders=available.Where(c=>names.Contains(c.Transform.name)||(bust&&support!=null&&support.Breast&&c.Transform.name.StartsWith("HS2_Colliders_",StringComparison.Ordinal)&&(support.Floor||c.Transform.name!="HS2_Colliders_cf_J_Root"))).ToArray();
             for(int i=0;i<config.Get("Bones").Children.Length;i++)
             {
                 var data=pattern.Get("Params").At(i);var bone=bones[config.Get("Bones").At(i).Text];
                 Transform reference;if(!bones.TryGetValue(data.String("RefTransform"),out reference))reference=bone;
-                nodes.Add(new Node{Bone=bone,Reference=reference,Data=data,InitialScale=reference.localScale});
+                float radius=bust&&support!=null&&(i==2||i==3)?(support.Breast?size*(i==2?1:.8f):0):data.Float("CollisionRadius");
+                nodes.Add(new Node{Bone=bone,Reference=reference,Data=data,InitialScale=reference.localScale,Radius=radius});
             }
             var end=new Parameter{Children=new[]{Field("Damping",pattern.Float("EndOffsetDamping")),Field("Elasticity",pattern.Float("EndOffsetElasticity")),Field("Stiffness",pattern.Float("EndOffsetStiffness")),Field("Inert",pattern.Float("EndOffsetInert")),Field("NextBoneLength",1)}};
             nodes.Add(new Node{Data=end,Local=IndependentBoneChain.Vector(pattern.Get("EndOffset"))});
@@ -88,7 +90,7 @@ namespace HS2Manager.UnityPreview
                     if(steps>0)node.Position+=(target-node.Position)*node.Elasticity;
                     var offset=target-node.Position;float magnitude=offset.magnitude,max=length*(1-node.Stiffness)*2;
                     if(node.Stiffness>0&&magnitude>max)node.Position+=offset*((magnitude-max)/magnitude);
-                    if(steps>0)foreach(var collider in colliders)collider.Constrain(ref node.Position,node.Data.Float("CollisionRadius")*scale);
+                    if(steps>0)foreach(var collider in colliders)collider.Constrain(ref node.Position,node.Radius*scale);
                     var separation=parent.Position-node.Position;float distance=separation.magnitude;
                     if(distance>0){float correction=(distance-length)/distance,low=node.Data.Float("KeepLengthLimitMin"),high=node.Data.Float("KeepLengthLimitMax");if(correction<=low)node.Position+=separation*(correction-low);else if(correction>=high)node.Position+=separation*(correction-high);}
                     if(node.Bone!=null&&node.Data.Float("IsMoveLimit")!=0)

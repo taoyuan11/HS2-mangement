@@ -4,24 +4,54 @@ namespace HS2Manager.Core;
 // Physics firmness is intentionally not simulated in the static rest pose.
 public sealed record NativePushUp(NativePushUpClothes Bra, NativePushUpClothes Top)
 {
-    internal static NativePushUp Read(NativePluginData plugin) => new(ReadClothes(plugin, ""), ReadClothes(plugin, "TOP_"));
+    private IReadOnlyDictionary<string,object?>? savedFields;
+    internal static NativePushUp Read(NativePluginData plugin)
+    {
+        var fields=plugin.Keys.ToDictionary(k=>k,plugin.Read);
+        return new(ReadClothes(fields,"",Disabled),ReadClothes(fields,"TOP_",Disabled)){savedFields=fields};
+    }
+    private static readonly NativePushUpClothes Disabled=new(false,0,0,0,0,false,false,false,0);
+    internal static NativePushUp WithDefaults(string game,NativePushUp? saved)
+    {
+        var settings=new Dictionary<string,string>(StringComparer.Ordinal);
+        string path=Path.Combine(game,"BepInEx","config","mikke.pushUpAI.cfg");
+        if(File.Exists(path))
+        {
+            string section="";
+            foreach(string source in File.ReadLines(path))
+            {
+                string line=source.Trim();if(line.StartsWith('#')||line.Length==0)continue;
+                if(line.StartsWith('[')){section=line.Trim('[',']');continue;}
+                var pair=line.Split('=',2);
+                if(section=="Push-Up bra default settings"&&pair.Length==2)settings[pair[0].Trim()]=pair[1].Trim();
+            }
+        }
+        bool Flag(string key,bool fallback)=>settings.TryGetValue(key,out string? raw)&&bool.TryParse(raw,out bool value)?value:fallback;
+        float Number(string key,int fallback)=>Math.Clamp(settings.TryGetValue(key,out string? raw)&&int.TryParse(raw,out int value)?value:fallback,0,100)/100f;
+        var bra=new NativePushUpClothes(Flag("Enable pushUp by default",true),Number("Lift",60),Number("Push Together",65),Number("Squeeze",60),Number("Nipple Centering",100),Flag("Flatten Nipples",true),Flag("Hide Nipples",false),false,0,Number("Firmness",90));
+        var fields=saved?.savedFields ?? new Dictionary<string,object?>();
+        return new(ReadClothes(fields,"",bra),ReadClothes(fields,"TOP_",Disabled));
+    }
 
     // Keep parsing independent of whether the garment is currently visible.
-    private static NativePushUpClothes ReadClothes(NativePluginData plugin, string prefix)
+    private static NativePushUpClothes ReadClothes(IReadOnlyDictionary<string,object?> fields, string prefix,NativePushUpClothes fallback)
     {
-        if (plugin.Read(prefix + "ENABLE_PUSHUP") is not true) return new(false,0,0,0,0,false,false,false,0);
-        float Number(string key)
+        bool Flag(string key,bool value)=>fields.TryGetValue(prefix+key,out var raw)&&raw is bool flag?flag:value;
+        float Number(string key,float fallbackValue)
         {
-            var raw = plugin.Read(prefix + key) ?? throw new InvalidDataException("PushUp：启用的衣物缺少 " + prefix + key);
-            float value = Convert.ToSingle(raw, System.Globalization.CultureInfo.InvariantCulture);
+            if(!fields.TryGetValue(prefix+key,out var raw)||raw==null)return fallbackValue;
+            float value;
+            try { value=Convert.ToSingle(raw, System.Globalization.CultureInfo.InvariantCulture); }
+            catch(Exception ex)when(ex is FormatException or InvalidCastException or OverflowException)
+            {throw new InvalidDataException("PushUp：塑形参数 "+prefix+key+" 无效。",ex);}
             // Slider-unlock mods save values beyond the UI's 0..1 range; the plugin
             // evaluates those values directly. Keep a generous finite safety bound.
             if (!float.IsFinite(value) || value is < -10 or > 10) throw new InvalidDataException("PushUp：塑形参数 " + prefix + key + " 越界。");
             return value;
         }
-        return new(true, Number("LIFT"), Number("PUSH_TOGETHER"), Number("SQUEEZE"), Number("CENTER_NIPPLES"),
-            plugin.Read(prefix+"FLATTEN_NIPPLES") is true, plugin.Read(prefix+"HIDE_NIPPLES") is true,
-            plugin.Read(prefix+"HIDE_ACCESSORIES") is true, Number("CORSET"), plugin.HasValue(prefix+"FIRMNESS")?Number("FIRMNESS"):0);
+        return new(Flag("ENABLE_PUSHUP",fallback.Enabled), Number("LIFT",fallback.Lift), Number("PUSH_TOGETHER",fallback.Together), Number("SQUEEZE",fallback.Squeeze), Number("CENTER_NIPPLES",fallback.Center),
+            Flag("FLATTEN_NIPPLES",fallback.Flatten), Flag("HIDE_NIPPLES",fallback.HideNipples),
+            Flag("HIDE_ACCESSORIES",fallback.HideAccessories), Number("CORSET",fallback.Corset), Number("FIRMNESS",fallback.Firmness));
     }
 
     internal float EffectiveSoftness(float original,bool braWorn,bool topWorn)

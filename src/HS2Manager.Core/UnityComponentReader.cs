@@ -7,12 +7,73 @@ namespace HS2Manager.Core;
 
 internal sealed partial class NativeAssetBundle
 {
+    internal void DumpAnimationData(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        foreach(var type in new[]{AssetClassID.Animator,AssetClassID.Animation,AssetClassID.AnimatorController,AssetClassID.AnimatorOverrideController})
+            foreach(var info in file.file.GetAssetsOfType(type))
+                File.WriteAllText(Path.Combine(directory,type+"-"+info.PathId+".json"),System.Text.Json.JsonSerializer.Serialize(Describe(Field(info.PathId),0)));
+        object Describe(AssetTypeValueField field,int depth)
+        {
+            if(depth>32)return new{field.FieldName,field.TypeName,Truncated=true};
+            return (object)new{field.FieldName,field.TypeName,Value=field.Children.Count==0?field.Value?.ToString():null,Children=field.Children.Select(c=>Describe(c,depth+1)).ToArray()};
+        }
+    }
+    internal Dictionary<string,string[]> MaterialPropertyNames()
+    {
+        var names=new Dictionary<string,HashSet<string>>{["Float"]=[],["Color"]=[],["Texture"]=[]};
+        foreach(var info in file.file.GetAssetsOfType(AssetClassID.Material))
+        {
+            var properties=Field(info.PathId)["m_SavedProperties"];
+            foreach(var pair in new[]{("m_Floats","Float"),("m_Colors","Color"),("m_TexEnvs","Texture")})
+                foreach(var p in properties[pair.Item1]["Array"].Children)names[pair.Item2].Add(p["first"].AsString);
+        }
+        return names.ToDictionary(p=>p.Key,p=>p.Value.Order(StringComparer.Ordinal).ToArray());
+    }
+    internal Dictionary<string,Dictionary<string,float>> MaterialFloatValues()
+        =>file.file.GetAssetsOfType(AssetClassID.Material).Select(info=>Field(info.PathId)).GroupBy(f=>f["m_Name"].AsString)
+            .ToDictionary(g=>g.Key,g=>g.First()["m_SavedProperties"]["m_Floats"]["Array"].Children.ToDictionary(p=>p["first"].AsString,p=>p["second"].AsFloat));
+    internal string[] ShaderNames()
+    {
+        return file.file.GetAssetsOfType(AssetClassID.Shader).Select(info=>
+        {
+            var shader=Field(info.PathId);
+            var parsed=shader["m_ParsedForm"]["m_Name"];
+            return parsed.IsDummy?shader["m_Name"].AsString:parsed.AsString;
+        }).Where(n=>n.Length>0).Distinct(StringComparer.Ordinal).ToArray();
+    }
+    internal void DumpShaderData(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        foreach(var info in file.file.GetAssetsOfType(AssetClassID.Shader))
+        {
+            var shader=Field(info.PathId);var name=shader["m_ParsedForm"]["m_Name"].AsString;
+            var stem=Path.Combine(directory,info.PathId.ToString(CultureInfo.InvariantCulture));
+            File.WriteAllText(stem+"-name.txt",name);
+            File.WriteAllBytes(stem+".bin",shader.WriteToByteArray());
+            File.WriteAllText(stem+".json",System.Text.Json.JsonSerializer.Serialize(Describe(shader,0)));
+            var blob=shader["compressedBlob"]["Array"];
+            byte[] compressed=blob.Value?.ValueType==AssetValueType.ByteArray?blob.AsByteArray:blob.Children.Select(v=>v.AsByte).ToArray();
+            var offsets=shader["offsets"]["Array"].Children;var lengths=shader["compressedLengths"]["Array"].Children;var sizes=shader["decompressedLengths"]["Array"].Children;
+            for(int i=0;i<offsets.Count;i++)
+                File.WriteAllBytes(stem+"-program-"+i+".bin",LZ4ps.LZ4Codec.Decode64(compressed,offsets[i].AsInt,lengths[i].AsInt,sizes[i].AsInt));
+        }
+        static object Describe(AssetTypeValueField field,int depth)
+        {
+            if(depth>25)return new{field.FieldName,field.TypeName,Truncated=true};
+            return (object)new{field.FieldName,field.TypeName,Value=field.Children.Count==0?field.Value?.ToString():null,
+                Children=field.FieldName=="compressedBlob"?Array.Empty<object>():field.Children.Select(c=>Describe(c,depth+1)).ToArray()};
+        }
+    }
     internal bool HasExport(string name)
     {
+        return ExportNames().Any(n=>Path.GetFileNameWithoutExtension(n).Equals(name,StringComparison.OrdinalIgnoreCase));
+    }
+    internal string[] ExportNames()
+    {
         var root=file.file.GetAssetsOfType(AssetClassID.AssetBundle).FirstOrDefault();
-        if(root==null)return false;
-        return manager.GetBaseField(file,root)["m_Container"]["Array"].Children.Any(p=>
-            Path.GetFileNameWithoutExtension(p["first"].AsString).Equals(name,StringComparison.OrdinalIgnoreCase));
+        if(root==null)return [];
+        return manager.GetBaseField(file,root)["m_Container"]["Array"].Children.Select(p=>p["first"].AsString).ToArray();
     }
     internal ComponentDefinition[] ReadComponents(string asset, List<string> diagnostics, CancellationToken cancellation)
     {
@@ -35,6 +96,14 @@ internal sealed partial class NativeAssetBundle
                 if (info.TypeId == (int)AssetClassID.Transform)
                     foreach (var child in Field(component)["m_Children"]["Array"].Children)
                         Walk(Pointer(Field(Pointer(child))["m_GameObject"]), depth + 1);
+                if(info.TypeId is (int)AssetClassID.SkinnedMeshRenderer or (int)AssetClassID.MeshRenderer)
+                {
+                    var renderer=Field(component);
+                    output.Add(new ComponentDefinition{Node=obj["m_Name"].AsString,Type="NativeRenderer",Data=new Parameter{Children=
+                        new[]{"m_MotionVectors","m_CastShadows","m_ReceiveShadows","m_SkinnedMotionVectors","m_UpdateWhenOffscreen"}.Where(n=>!renderer[n].IsDummy).Select(n=>Convert(renderer[n],0)).ToArray()}});
+                }
+                if(info.TypeId==(int)AssetClassID.Cloth)
+                    output.Add(new ComponentDefinition{Node=obj["m_Name"].AsString,Type="Cloth",Data=Convert(Field(component),0)});
                 if (info.TypeId != (int)AssetClassID.MonoBehaviour) continue;
                 try
                 {
@@ -66,8 +135,14 @@ internal sealed partial class NativeAssetBundle
             if (field.TypeName == "bool") { result.Number = field.AsBool ? 1 : 0; return result; }
             if (field.Children.Count == 0)
             {
-                if (double.TryParse(field.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
-                    result.Number = number;
+                // ToString uses the current culture (including its infinity symbol).
+                // A stepped AnimationCurve tangent must survive metadata and JSON.
+                double number;
+                if(field.TypeName=="float")number=field.AsFloat;
+                else if(field.TypeName=="double")number=field.AsDouble;
+                else if(!double.TryParse(field.Value?.ToString(),NumberStyles.Float,CultureInfo.InvariantCulture,out number))return result;
+                if(double.IsFinite(number))result.Number=number;
+                else{result.Encoding="float-special";result.Text=double.IsNaN(number)?"NaN":number>0?"Infinity":"-Infinity";}
                 return result;
             }
             var children = field.Children;

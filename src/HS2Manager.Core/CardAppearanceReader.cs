@@ -22,6 +22,8 @@ public sealed record CardAppearance(int Sex, PreviewColor Skin, IReadOnlyList<Ap
     public Dictionary<string, object?> Body { get; init; } = [];
     public Dictionary<string, object?> Hair { get; init; } = [];
     public Dictionary<string, object?> Clothes { get; init; } = [];
+    public Dictionary<string, object?> Parameter { get; init; } = [];
+    public Dictionary<string, object?> Uncensor { get; init; } = [];
     public IReadOnlyList<NativeBoneAdjustment> BoneModifiers { get; init; } = [];
     public IReadOnlyList<NativeRendererOverride> Renderers { get; init; } = [];
     public IReadOnlyList<NativeMaterialColorOverride> MaterialColors { get; init; } = [];
@@ -47,6 +49,10 @@ public static class CardAppearanceReader
     public static CardAppearance Read(CardRecord card, CancellationToken cancellation = default, bool originalMaterials = false)
     {
         using var stream = File.OpenRead(card.Path);
+        return Read(card, stream, null, cancellation, originalMaterials);
+    }
+    internal static CardAppearance Read(CardRecord card, Stream stream, CharacterDocument? draft, CancellationToken cancellation, bool originalMaterials)
+    {
         CardParser.FindPngEnd(stream, cancellation);
         using var reader = new BinaryReader(stream, Encoding.UTF8, true);
         _ = reader.ReadInt32();
@@ -59,7 +65,7 @@ public static class CardAppearanceReader
         var table = Map(new BoundedMessagePack(stream, end).Read()); stream.Position = end;
         long length = reader.ReadInt64(), start = stream.Position;
         if (length < 0 || length > stream.Length - start) throw new InvalidDataException("人物数据长度越界。");
-        Dictionary<string, object?> face = [], body = [], hair = [], clothes = [], accessory = [];
+        Dictionary<string, object?> face = [], body = [], hair = [], clothes = [], accessory = [], parameter = [];
         var extensions = new NativeCardExtensions(originalMaterials);
         foreach (var item in List(table, "lstInfo"))
         {
@@ -71,6 +77,7 @@ public static class CardAppearanceReader
             {
                 case "Custom": face = Part(); body = Part(); hair = Part(); break;
                 case "Coordinate": clothes = Part(); accessory = Part(); break;
+                case "Parameter": parameter = Map(new BoundedMessagePack(stream, blockEnd, 1024 * 1024).Read()); break;
                 case "KKEx": extensions.Read(stream, blockEnd, card, cancellation); break;
             }
             Dictionary<string, object?> Part()
@@ -82,6 +89,11 @@ public static class CardAppearanceReader
                 var value = Map(new BoundedMessagePack(stream, partEnd, 4 * 1024 * 1024).Read());
                 stream.Position = partEnd; return value;
             }
+        }
+        if (draft != null)
+        {
+            face = Map(draft.Root("face").ToReaderValue()); body = Map(draft.Root("body").ToReaderValue());
+            hair = Map(draft.Root("hair").ToReaderValue()); clothes = Map(draft.Root("clothes").ToReaderValue()); accessory = Map(draft.Root("accessory").ToReaderValue());
         }
         if (face.Count == 0 || body.Count == 0) throw new InvalidDataException("人物卡缺少可读取的外观参数。");
         if (card.Sex is not (0 or 1)) throw new InvalidDataException("无法判断人物性别。");
@@ -116,7 +128,7 @@ public static class CardAppearanceReader
             parts[^1] = parts[^1] with { Slot = i, Colors = colors, Parent = Text(part, "parentKey"), Adjustment = Flatten(move.Count == 3 && move[2] is List<object?> ? move[2] : move).ToArray() };
         }
         parts.AddRange(extensions.Accessories);
-        return new(card.Sex, skin, parts) { Face = face, Body = body, Hair = hair, Clothes = clothes, BoneModifiers = extensions.Bones, Renderers = extensions.Renderers,
+        return new(card.Sex, skin, parts) { Face = face, Body = body, Hair = hair, Clothes = clothes, Parameter = parameter, Uncensor = extensions.Uncensor, BoneModifiers = extensions.Bones, Renderers = extensions.Renderers,
             MaterialColors = extensions.MaterialColors, MaterialFloats = extensions.MaterialFloats, MaterialTextures = extensions.MaterialTextures, MaterialDiagnostics = extensions.MaterialDiagnostics,
             MaterialQueues = extensions.MaterialQueues, MaterialShaders = extensions.MaterialShaders, SkinOverlays = extensions.SkinOverlays, ClothesOverlays = extensions.ClothesOverlays,
             BodyVisible = extensions.BodyVisible, EyeOpenMax = extensions.EyeOpenMax, DisableBlinking = extensions.DisableBlinking, PushUp = extensions.PushUp, AccessoryControls = extensions.AccessoryControls,
@@ -132,6 +144,9 @@ public static class CardAppearanceReader
     internal static ModReference? FindReference(CardRecord card, int category, string property)
     {
         var candidates = card.Dependencies.Where(d => d.Category == category).ToArray();
+        string? canonical = CharacterAssetReferences.DescribePath(card.Sex, property, category)?.Property;
+        var resolved = canonical == null ? null : candidates.FirstOrDefault(d => d.Property.Equals(canonical, StringComparison.OrdinalIgnoreCase));
+        if (resolved != null) return resolved;
         var exact = candidates.FirstOrDefault(d => d.Property.EndsWith(property, StringComparison.OrdinalIgnoreCase));
         if (exact != null) return exact;
         int start = property.IndexOf('['), end = property.IndexOf(']');
