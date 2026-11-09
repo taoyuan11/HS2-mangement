@@ -14,7 +14,7 @@ try{
         if(!($contents.Entries | Where-Object {$_.FullName.Replace('\','/').EndsWith('/'+$required)})){throw "Package missing $required"}
     }
 }finally{$contents.Dispose()}
-$smoke=Join-Path $artifacts ('portable-smoke-'+[Guid]::NewGuid().ToString('N'))
+$smoke=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('HS2Manager\Tests\portable-smoke-'+[Guid]::NewGuid().ToString('N'))
 $unpacked=Join-Path $smoke 'relocated package'
 [IO.Compression.ZipFile]::ExtractToDirectory($zip,$unpacked)
 $relocated=Join-Path $unpacked ([IO.Path]::GetFileName($resolvedPackage))

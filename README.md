@@ -9,7 +9,7 @@
 3. 默认游戏目录为 `Z:\games\hs2\HS two DX - TSYMQ`。在左下角“设置与连接”可修改，也可添加其他人物卡目录。
 4. 首次启动默认仅扫描女性人物卡目录 `UserData\chara\female` 的当前层，建立本地封面和元数据索引，再读取 MOD 清单。在“设置与连接”可开启“递归检索人物卡（包含子目录）”，该开关默认关闭，同时适用于默认目录和额外人物卡目录。关闭递归后，已索引的子目录内容仍会保留。NAS 首次扫描需要一些时间；底部显示进度并提供取消。
 
-`Data` 在程序旁边，保存 `library.db`、`settings.json`、`Covers`、`Operations` 和 `Logs`。移动整个便携目录可以保留管理信息；游戏与原人物卡仍位于原来的目录。不要把本地数据库放到 NAS。
+本机磁盘运行时，`Data` 在程序旁边，保存 `library.db`、`settings.json`、`Covers`、`CardBackups`、`Operations` 和 `Logs`。便携包位于 NAS 时，自动将原有资料复制到 `%LOCALAPPDATA%\HS2Manager\Portable\<安装路径标识>\Data`，保留原件；之后使用本机资料库。数据库、封面与缓存均留在本机，游戏与人物卡可以位于 NAS。实际数据位置可在“设置与连接 → 数据与维护”查看，也可用 `--data "D:\HS2ManagerData"` 指定本机目录。NAS 上的程序文件和本机资料库需要分别备份；更换电脑不会自动同步收藏与备注。
 
 ## 浏览与整理
 
@@ -57,6 +57,12 @@
 文件操作在 `Data\Operations` 中逐步记账。启动时自动检查未完成操作，“操作日志 → 恢复未完成操作”可再次检查。若跨盘移动中断而两端均有文件，程序保留两份并提示检查，不会擅自删除源文件。不要手动删改尚未恢复的操作记录。
 
 NAS 离线时保留既有索引与封面；完整目录枚举失败时不会把全部人物卡标为已删除。确认目录在线后发现的缺失项会保留记录，方便检查。
+
+## 3D 模型导出
+
+人物列表可单张或批量“导出 3D 模型…”，预览工具栏和编辑页“更多”也提供入口。编辑页包含点击时的未保存修改。可选择服装显示范围和配饰，每个角色独立输出 FBX、PBR 贴图、材质参数、骨骼映射、Unity / Unreal 导入说明及校验清单。
+
+保留原骨架、蒙皮和表情，支持在目标引擎配置人形动画；默认表情烘焙到基础网格以避免导入后重复叠加。材质采用通用近似，不包含原游戏 Shader、动画或物理组件。Blender 用户在 Scripting 中打开导出包的 `Blender导入.py` 并运行，即可自动导入模型和重建皮肤、头发、眼睛等材质；只导入 FBX 不会应用完整材质清单。另附 Unity 2022.3 / Unity 6 URP 和 Unreal Engine 5 的手动导入说明，Unity / Unreal 目标版本实机验收仍待执行。操作、限制与验证命令见 [3D 模型导出说明](docs/MODEL-EXPORT.md)。
 
 ## 角色外观编辑
 
@@ -134,7 +140,7 @@ Ctrl+S 默认在原目录另存“原文件名-编辑.png”，重名自动编�
 
 Windows 10 2004（19041）及以上 / Windows 11 x64，.NET 10 SDK。可先执行 `bootstrap-dotnet.ps1` 下载到项目 `.tools`；脚本从微软官方发布清单选取 SDK 并核验 SHA-512。
 
-日常从源码启动可直接双击根目录的 `start.cmd`：优先使用 `.tools\dotnet` 中的 SDK，否则使用系统 `dotnet`，以 Release 配置增量构建并启动当前源码。预览使用最近一次成功构建的本机 Unity Player（先运行 `build-unity-preview.ps1`）；便携包始终使用自身附带的 Player。WinUI 3 使用 NuGet 提供的 XAML 编译工具，无需安装 Visual Studio。首次运行需要联网还原依赖；失败时窗口会保留错误信息。数据默认位于构建输出目录旁的 `Data`，也可在命令行通过 `start.cmd --data "D:\HS2ManagerData"` 指定。
+日常从源码启动可直接双击根目录的 `start.cmd`：优先使用 `.tools\dotnet` 中的 SDK，否则使用系统 `dotnet`，以 Release 配置增量构建并启动当前源码。预览使用最近一次成功构建的本机 Unity Player（先运行 `build-unity-preview.ps1`）；便携包始终使用自身附带的 Player。WinUI 3 使用 NuGet 提供的 XAML 编译工具，无需安装 Visual Studio。首次运行需要联网还原依赖；失败时窗口会保留错误信息。源码在本机磁盘时，数据默认位于构建输出目录旁的 `Data`；源码在 NAS / 网络映射盘时，自动使用 `%LOCALAPPDATA%\HS2Manager\Source\<项目与配置标识>\Data`。首次使用本机目录会复制原有数据库、设置、封面、操作记录与日志，保留原目录，预览缓存重新生成；已有本机数据不会被覆盖。也可在命令行通过 `start.cmd --data "D:\HS2ManagerData"` 指定本机目录。
 
 ```powershell
 .\bootstrap-dotnet.ps1
@@ -143,9 +149,19 @@ Windows 10 2004（19041）及以上 / Windows 11 x64，.NET 10 SDK。可先执�
 .\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ' -PreviewTest
 ```
 
-WinUI 3 采用未打包（`WindowsPackageType=None`）部署，发布时同时携带 .NET 和 Windows App SDK 运行时，不需要安装 MSIX 或单独安装 Windows App Runtime。迁移细节和验证命令见 [WinUI 3 迁移说明](docs/WINUI3-MIGRATION.md)。源码启动时若新输出位置没有 `Data`，会继续使用同一配置下旧 `bin/<配置>/net10.0-windows/Data` 中的数据库和设置，不搬移或覆盖数据；`--data` 始终优先。
+WinUI 3 采用未打包（`WindowsPackageType=None`）部署，发布时同时携带 .NET 和 Windows App SDK 运行时，不需要安装 MSIX 或单独安装 Windows App Runtime。迁移细节和验证命令见 [WinUI 3 迁移说明](docs/WINUI3-MIGRATION.md)。本机源码启动时若新输出位置没有 `Data`，会继续使用同一配置下旧 `bin/<配置>/net10.0-windows/Data` 中的数据库和设置；网络盘源码会将该库复制到上述本机数据目录。`start.cmd` 也将网络盘源码的编译产物放入同一标识目录下的 `Build`，避免 NAS 上旧 EXE 的文件占用阻止重建；仍从原项目查找 Unity Player。`--data` 始终优先。
 
 构建脚本默认运行核心与布局检查，然后发布自带运行时的便携目录和 ZIP，写入 SHA-256。输出在 `artifacts\release`；若已有同名目录，创建带时间的新目录，不覆盖旧 `Data`。`-SkipTests` 可跳过核心与布局检查。
+
+仅需未压缩的桌面版本时，运行：
+
+```powershell
+.\build-desktop.ps1
+```
+
+输出为当前 Windows 用户桌面的 `HS2Manager` 文件夹，包含程序、运行时和 Unity 预览内核，可直接运行其中的 `HS2Manager.exe`；不生成 ZIP 或压缩包校验文件。脚本支持与 `build.ps1` 相同的 `-GamePath`、`-SkipTests`、`-PreviewTest`、`-PreviewCard` 和 `-UnityPlayerDirectory` 参数。若桌面已有 `HS2Manager`，会停止并提示先移走或重命名，保留已有程序和 `Data`。
+
+NAS 项目通过映射盘或 UNC 路径启动时会复用同一资料库，包括已有的本机资料目录。迁移包含编辑备份 `CardBackups`，并修正操作记录中的备份路径，支持继续恢复原卡。`build.ps1` 将 .NET 中间文件和发布暂存放在本机；`build-unity-preview.ps1` 将 Unity 源文件同步到 `%LOCALAPPDATA%\HS2Manager\UnityBuild` 后构建，`Library`、`Temp` 不在 NAS 上生成。成功的 Player 复制回项目，使用相对路径记录，项目移动后仍可找到。独立运行核心/UI 检查时，NAS 项目的测试资料默认写入 `%LOCALAPPDATA%\HS2Manager\Tests\artifacts`。
 
 默认构建不依赖任何游戏程序集；桌面端为 .NET 10、WinUI 3（Windows App SDK 1.8）、SQLite 与 AssetsTools.NET。真实资源测试需要本机游戏数据。构建脚本禁用构建服务器。旧桥接源码保留在 `src/HS2Manager.Bridge`，已移出默认解决方案和发布流程；旧 Studio 启动器和协议也不再编入生产 Core 程序集，旧 `--preview` 检查入口已禁用。
 

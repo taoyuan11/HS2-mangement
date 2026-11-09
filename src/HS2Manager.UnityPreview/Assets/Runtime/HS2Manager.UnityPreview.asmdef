@@ -1,6 +1,6 @@
 {
   "name": "HS2Manager.UnityPreview",
-  "references": ["HS2Manager.Preview.Contracts", "Unity.Postprocessing.Runtime"],
+  "references": ["HS2Manager.Preview.Contracts", "Unity.Postprocessing.Runtime", "Autodesk.Fbx"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": true

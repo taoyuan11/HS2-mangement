@@ -67,9 +67,11 @@ internal static class UiTest
     {
         get
         {
+            string? testRoot = Environment.GetEnvironmentVariable("HS2MANAGER_TEST_ROOT");
+            if (!string.IsNullOrWhiteSpace(testRoot)) return Path.GetFullPath(testRoot);
             for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
-                if (File.Exists(Path.Combine(directory.FullName, "HS2Manager.slnx"))) return directory.FullName;
-            throw new DirectoryNotFoundException("Cannot find repository root.");
+                if (File.Exists(Path.Combine(directory.FullName, "HS2Manager.slnx")) && !StoragePaths.IsNetwork(directory.FullName)) return directory.FullName;
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HS2Manager", "Tests");
         }
     }
     public static async Task WaitUntil(Func<bool> condition, string failure)
@@ -146,6 +148,7 @@ internal static class LayoutChecks
             // Exercise actual two-way bindings and the details panel.
             await DesignLayoutChecks.CheckNavigationAsync(window, model, output);
             await CardExportUiChecks.RunAsync(window, model, output);
+            await ModelExportUiChecks.RunAsync(window, model, output);
             list.SelectedItem = model.VisibleCards[0]; await Task.Delay(50);
             if (model.SelectionCount != 1) throw new Exception("Grid selection did not update the model");
             search.Text = "示例人物 1"; await Task.Delay(400);
@@ -175,7 +178,7 @@ internal static class LayoutChecks
     }
     private static void CheckDataLocation(string output)
     {
-        string project = Path.Combine(output, "migration", "HS2Manager.App"); Directory.CreateDirectory(project);
+        string project = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HS2Manager", "Tests", "migration-" + Guid.NewGuid().ToString("N"), "HS2Manager.App"); Directory.CreateDirectory(project);
         File.WriteAllText(Path.Combine(project, "HS2Manager.App.csproj"), "fixture");
         string legacy = Path.Combine(project, "bin", "Release", "net10.0-windows", "Data"); Directory.CreateDirectory(legacy);
         File.WriteAllText(Path.Combine(legacy, "settings.json"), "{}");

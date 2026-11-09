@@ -15,7 +15,7 @@ set "HS2_DOTNET=dotnet"
 
 :launch
 echo Building and starting HS2 Manager (WinUI 3)...
-"%HS2_DOTNET%" run --project "src\HS2Manager.App\HS2Manager.App.csproj" --configuration Release --no-launch-profile --disable-build-servers -p:UseSharedCompilation=false -- %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Start-Source.ps1" %*
 set "HS2_EXIT_CODE=%ERRORLEVEL%"
 popd
 if not "%HS2_EXIT_CODE%"=="0" (

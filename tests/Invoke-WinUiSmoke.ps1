@@ -2,7 +2,7 @@
 param([Parameter(Mandatory = $true)][string]$Executable)
 $ErrorActionPreference = 'Stop'
 $exe = (Resolve-Path -LiteralPath $Executable).Path
-$output = Join-Path $PSScriptRoot ('..\artifacts\winui-smoke\' + [Guid]::NewGuid().ToString('N'))
+$output = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('HS2Manager\Tests\winui-smoke\' + [Guid]::NewGuid().ToString('N'))
 $output = [IO.Path]::GetFullPath($output)
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 # Use an isolated, offline library: startup checks must never change the user's data.

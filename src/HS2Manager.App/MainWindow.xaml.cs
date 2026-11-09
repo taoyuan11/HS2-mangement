@@ -239,6 +239,7 @@ public partial class MainWindow : Window
         var menu = new MenuFlyout();
         void Add(string title, RoutedEventHandler handler) { var item = new MenuFlyoutItem { Text = title }; item.Click += handler; menu.Items.Add(item); }
         Add("仅导出原始 PNG…", ExportPng_Click);
+        Add("导出 3D 模型…", ExportModel_Click);
         if (ViewModel.IsTrash) Add("恢复到原目录", Restore_Click);
         else { Add("移动到文件夹…", Move_Click); if (ViewModel.SelectionCount == 1) Add("重命名…", Rename_Click); Add("移入可恢复隔离区…", Quarantine_Click); }
         Add("在资源管理器中显示", Reveal_Click); menu.ShowAt((FrameworkElement)sender);

@@ -127,7 +127,7 @@ internal static class CharacterEditChecks
     { try { action(); } catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or InvalidOperationException) { return; } throw new Exception("Expected failure: " + label); }
     private static async Task ThrowsAsync(Func<Task> action, string label)
     { try { await action(); } catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or OperationCanceledException) { return; } throw new Exception("Expected failure: " + label); }
-    private static byte[] Fixture()
+    internal static byte[] Fixture()
     {
         EditableMessagePack Scalar(object? v) => EditableMessagePack.Scalar(v);
         EditableMessagePack Vector() => EditableMessagePack.Array(Scalar(.5f), Scalar(.5f), Scalar(.5f));

@@ -15,7 +15,11 @@
 
 直接运行根目录 `start.cmd`。无需 Visual Studio；首次构建需联网还原 NuGet。构建工具和 Windows App SDK 由固定版本的 NuGet 包提供。
 
-默认数据仍在程序旁的 `Data`。源码输出现在位于 `bin/<配置>/net10.0-windows10.0.19041.0/win-x64`；若此处没有 `Data`，会查找同一配置下旧 `net10.0-windows/Data`（包括旧 RID 子目录），继续使用已有数据库与设置，不复制、不覆盖。已有新目录优先，显式 `--data` 优先级最高。便携安装不执行源码目录回退。
+本机磁盘上的默认数据仍在程序旁的 `Data`。源码输出现在位于 `bin/<配置>/net10.0-windows10.0.19041.0/win-x64`；若此处没有 `Data`，会查找同一配置下旧 `net10.0-windows/Data`（包括旧 RID 子目录），继续使用已有数据库与设置。已有新目录优先，显式 `--data` 优先级最高。便携安装不执行源码目录回退。
+
+源码位于 NAS / 网络映射盘时，默认改用 `%LOCALAPPDATA%\HS2Manager\Source\<项目与配置标识>\Data`，避免 SQLite 数据库落在网络盘而导致启动被拒绝。首次迁移通过 SQLite 备份复制数据库（包含已提交的 WAL 数据），同时复制设置、封面、操作记录与日志，保留原目录；预览缓存重新生成。复制完成后一次性启用本机目录，失败可重试，已有本机目录不覆盖。显式 `--data` 仍须指向本机磁盘。
+
+`start.cmd` 通过 `scripts/Start-Source.ps1` 启动。网络盘源码的编译产物也放入该本机标识目录下的 `Build`，避免 NAS 上已执行过的 EXE 无法覆盖。启动器保留原源码目录信息，因此仍能迁移旧数据、定位最近构建的 Unity Player；本机源码保留原来的构建路径。
 
 发布采用未打包的自包含目录，同时携带 .NET 和 Windows App SDK 运行时。无需 MSIX、管理员权限或预先安装 Windows App Runtime。发布流程依据 [Microsoft 的未打包 WinUI 3 部署说明](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/unpackage-winui-app)。
 

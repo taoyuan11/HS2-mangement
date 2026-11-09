@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$PlayerDirectory,
-    [string]$Definition='artifacts/checks/unity-character.json',
+    [string]$Definition='',
     [string]$OutputPath='',
     [string]$Fixture='',
     [string]$PrimeDefinition='',
@@ -11,6 +11,11 @@ param(
 )
 $ErrorActionPreference='Stop'
 $workspace=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+if (!$Definition) {
+    . (Join-Path $workspace 'scripts\LocalWorkspace.ps1')
+    $testRoot = if ($env:HS2MANAGER_TEST_ROOT) { $env:HS2MANAGER_TEST_ROOT } elseif ([HS2Manager.Core.StoragePaths]::IsNetwork($workspace)) { Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'HS2Manager\Tests' } else { $workspace }
+    $Definition = Join-Path $testRoot 'artifacts\checks\unity-character.json'
+}
 $player=(Resolve-Path -LiteralPath $PlayerDirectory).Path
 $definitionPath=(Resolve-Path -LiteralPath $Definition).Path
 if(!$OutputPath){$OutputPath=Join-Path $player 'character-check'}

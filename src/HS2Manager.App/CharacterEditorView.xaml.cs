@@ -56,6 +56,13 @@ public sealed partial class CharacterEditorView : UserControl
         catch(Exception error){if(!disposed)EditorMessage.Text="素材目录读取失败："+error.Message;}
     }
     private void DraftChanged(){UpdateState();QueuePreview();}
+    private async void ExportModel_Click(object sender, RoutedEventArgs e)
+    {
+        if(Session==null||saving||model.IsBusy)return;
+        Session.EndGesture();
+        var source=new ModelExportSource(Session.Card,Session.Snapshot());
+        await owner.ExportModelsAsync(new[]{source});
+    }
     private void PreviewChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e)
     {
         if(e.PropertyName!=nameof(MainViewModel.EditDefinition)||model.EditDefinition==null)return;

@@ -49,6 +49,8 @@ namespace HS2Manager.UnityPreview
         private bool asyncReadback;
         private float interactionUntil;
         private bool playing=true;
+        private bool modelExporting;
+        private string canceledExport="";
         private float elapsed;
         private void Start()
         {
@@ -94,6 +96,7 @@ namespace HS2Manager.UnityPreview
                     if(message.Session!=session || message.Version!=KernelWire.Version)throw new IOException("Protocol mismatch.");
                     if(message.Kind=="Load" || message.Kind=="Update")Interlocked.Exchange(ref latestLoad,message.Load);
                     if(message.Kind=="Cancel")Interlocked.CompareExchange(ref latestLoad,-message.Load,message.Load);
+                    if(message.Kind=="CancelModelExport")Interlocked.Exchange(ref canceledExport,message.RequestId);
                     commands.Enqueue(message);
                 }
             }
@@ -108,6 +111,12 @@ namespace HS2Manager.UnityPreview
                 try
                 {
                     if(message.Kind=="Quit"){Application.Quit(0);return;}
+                    if(message.Kind=="ExportModel")
+                    {
+                        if(modelExporting||character!=null)Send(new KernelMessage{Kind="ModelExportError",RequestId=message.RequestId,Text="模型导出需要空闲的独立导出内核。"});
+                        else{modelExporting=true;StartCoroutine(DriveModelExport(message));}
+                        continue;
+                    }
                     if(message.Kind=="Load" || message.Kind=="Update")
                     {
                         if(message.Load!=Interlocked.Read(ref latestLoad))continue;
@@ -142,6 +151,62 @@ namespace HS2Manager.UnityPreview
             }
             if(character!=null && playing && !loading){elapsed+=Time.deltaTime;character.UpdateMotion(Time.deltaTime,elapsed);}
             shaderClock?.Set(elapsed,playing&&!loading?Time.deltaTime:0);
+        }
+        private IEnumerator DriveModelExport(KernelMessage message)
+        {
+            var steps=new Stack<IEnumerator>();
+            steps.Push(ExportCharacter(message));
+            Exception failure=null;
+            try
+            {
+                while(steps.Count>0)
+                {
+                    object next=null;
+                    try
+                    {
+                        var step=steps.Peek();
+                        if(!step.MoveNext()){(steps.Pop() as IDisposable)?.Dispose();continue;}
+                        next=step.Current;
+                    }
+                    catch(Exception error){failure=error;}
+                    if(failure!=null)break;
+                    var nested=next as IEnumerator;
+                    if(nested!=null){steps.Push(nested);continue;}
+                    yield return next;
+                }
+            }
+            finally
+            {
+                while(steps.Count>0)(steps.Pop() as IDisposable)?.Dispose();
+                modelExporting=false;
+            }
+            if(failure==null)Send(new KernelMessage{Kind="ModelExported",RequestId=message.RequestId});
+            else{Send(new KernelMessage{Kind="ModelExportError",RequestId=message.RequestId,Text=failure.Message});Debug.LogException(failure);}
+        }
+        private IEnumerator ExportCharacter(KernelMessage message)
+        {
+            var request=JsonUtility.FromJson<ModelExportRequest>(File.ReadAllText(message.Path));
+            if(request==null||!Path.IsPathRooted(request.OutputDirectory))throw new IOException("无效的模型导出请求。");
+            Func<bool> canceled=()=>disconnected||Interlocked.CompareExchange(ref canceledExport,null,null)==message.RequestId;
+            Action<string> progress=text=>Send(new KernelMessage{Kind="ModelExportProgress",RequestId=message.RequestId,Text=text});
+            var data=CharacterData.Read(request.DefinitionPath);
+            if(data==null||data.SchemaVersion!=1)throw new IOException("无效的模型角色定义。");
+            var previousPriority=Application.backgroundLoadingPriority;
+            Application.backgroundLoadingPriority=UnityEngine.ThreadPriority.High;
+            try
+            {
+                using(var store=new OriginalAssetStore())
+                {
+                    yield return store.Prepare(data,canceled,progress);
+                    using(var source=new OriginalCharacter(data,store))
+                    {
+                        source.Exporting=true;
+                        yield return source.Build(canceled,progress);
+                        using(var exporter=new FbxCharacterExporter(source,request.OutputDirectory,request.EditRevision,canceled,progress))yield return exporter.Export();
+                    }
+                }
+            }
+            finally{Application.backgroundLoadingPriority=previousPriority;}
         }
         // Drive nested iterators ourselves so every exception and cancellation is observed,
         // including exceptions raised after yielding an asynchronous native bundle request.

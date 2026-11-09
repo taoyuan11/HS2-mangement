@@ -256,7 +256,7 @@ namespace HS2Manager.UnityPreview
         }
         private void CompleteClothSetup()
         {
-            foreach(var pair in pendingCloths)if(pair.Key!=null)pair.Key.enabled=pair.Value;
+            foreach(var pair in pendingCloths)if(pair.Key!=null)pair.Key.enabled=!Exporting&&pair.Value;
             pendingCloths.Clear();
         }
 

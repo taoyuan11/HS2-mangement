@@ -21,9 +21,11 @@ public sealed class UnityPreviewSession : IDisposable
     private Task? process,reader;
     private readonly TaskCompletionSource ready=new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Dictionary<long,TaskCompletionSource<KernelMessage>> loads=[];
+    private readonly Dictionary<string,TaskCompletionSource<KernelMessage>> exports=[];
     private long sequence;
     private byte[]? frameBuffer;
     private int disposed;
+    private int readerThreadId;
     private string dataDirectory="";
     private long presentationLoad,presentationStarted;
     private bool presented;
@@ -50,15 +52,41 @@ public sealed class UnityPreviewSession : IDisposable
             string packaged=Path.Combine(AppContext.BaseDirectory,"UnityPreview","HS2Manager.UnityPreview.exe");
             if(File.Exists(packaged))return packaged;
             // Source launches use the last successful local build. Portable installs stay self-contained.
-            for(var folder=new DirectoryInfo(AppContext.BaseDirectory);folder!=null;folder=folder.Parent)
+            string? sourceRoot=Environment.GetEnvironmentVariable("HS2MANAGER_SOURCE_ROOT");
+            string searchRoot=!string.IsNullOrWhiteSpace(sourceRoot)&&File.Exists(Path.Combine(sourceRoot,"HS2Manager.slnx"))?sourceRoot:AppContext.BaseDirectory;
+            for(var folder=new DirectoryInfo(searchRoot);folder!=null;folder=folder.Parent)
                 if(File.Exists(Path.Combine(folder.FullName,"HS2Manager.slnx")))
                 {
                     string marker=Path.Combine(folder.FullName,"artifacts","unity-preview","current-player.txt");
-                    if(File.Exists(marker)){string player=File.ReadAllText(marker).Trim();if(Path.IsPathFullyQualified(player)&&File.Exists(player))return player;}
+                    if(File.Exists(marker))
+                    {
+                        string? player=ResolveSourcePlayer(folder.FullName, File.ReadAllText(marker).Trim());
+                        if(player!=null)return player;
+                    }
                     break;
                 }
             return packaged;
         }
+    }
+
+    internal static string? ResolveSourcePlayer(string root, string recorded)
+    {
+        if (string.IsNullOrWhiteSpace(recorded)) return null;
+        if (Path.IsPathFullyQualified(recorded) && File.Exists(recorded)) return recorded;
+        // Old builds recorded an absolute checkout path. Rebase its artifact
+        // suffix after moving the checkout; new builds record a relative path.
+        string relative = recorded.Replace('/', '\\');
+        if (Path.IsPathFullyQualified(relative))
+        {
+            const string marker = "\\artifacts\\unity-preview\\";
+            int index = relative.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (index < 0) return null;
+            relative = relative[(index + 1)..];
+        }
+        if (Path.IsPathRooted(relative)) return null;
+        string target = Path.GetFullPath(Path.Combine(root, relative));
+        string prefix = Path.GetFullPath(Path.Combine(root, "artifacts", "unity-preview")) + Path.DirectorySeparatorChar;
+        return target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && File.Exists(target) ? target : null;
     }
 
     public async Task StartAsync(string player,string data,CancellationToken cancellation)
@@ -95,6 +123,7 @@ public sealed class UnityPreviewSession : IDisposable
     }
     private void Read()
     {
+        readerThreadId=Environment.CurrentManagedThreadId;
         try
         {
             while(!lifetime.IsCancellationRequested)
@@ -102,7 +131,16 @@ public sealed class UnityPreviewSession : IDisposable
                 var message=JsonSerializer.Deserialize<KernelMessage>(KernelWire.Read(events!),UnityCharacterService.JsonOptions)??throw new IOException("Empty kernel response.");
                 if(message.Session!=session || message.Version!=KernelWire.Version)throw new IOException("独立内核协议不匹配。");
                 if(message.Kind=="Ready")ready.TrySetResult();
-                if(message.Kind=="Progress")Progress?.Invoke(message);
+                if(message.Kind=="Progress" || message.Kind=="ModelExportProgress")Progress?.Invoke(message);
+                if(message.Kind=="ModelExported" || message.Kind=="ModelExportError")
+                {
+                    lock(exports)if(exports.TryGetValue(message.RequestId,out var export))
+                    {
+                        if(message.Kind=="ModelExported")export.TrySetResult(message);
+                        else export.TrySetException(new IOException(message.Text));
+                    }
+                    continue;
+                }
                 if(message.Kind=="Metrics")PreviewPerformance.Write(dataDirectory,new{Kind="kernel",Session=session,Load=message.Load,Stages=JsonSerializer.Deserialize<JsonElement>(message.Text)});
                 TaskCompletionSource<KernelMessage>? pending;
                 lock(loads)loads.TryGetValue(message.Load,out pending);
@@ -122,6 +160,7 @@ public sealed class UnityPreviewSession : IDisposable
         lifetime.Cancel();
         ready.TrySetException(error);
         lock(loads)foreach(var pending in loads.Values)pending.TrySetException(error);
+        lock(exports)foreach(var pending in exports.Values)pending.TrySetException(error);
         Failed?.Invoke(error.Message);
     }
     public void Send(KernelMessage message)
@@ -132,6 +171,22 @@ public sealed class UnityPreviewSession : IDisposable
     }
     public async Task<KernelMessage> LoadAsync(string definition,long generation,CancellationToken cancellation)
         => await ApplyAsync(definition,generation,0,false,cancellation);
+    public async Task<KernelMessage> ExportModelAsync(string requestPath,CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        string id=Guid.NewGuid().ToString("N");
+        var completion=new TaskCompletionSource<KernelMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock(exports)exports.Add(id,completion);
+        try
+        {
+            Send(new KernelMessage{Kind="ExportModel",RequestId=id,Path=Path.GetFullPath(requestPath)});
+            using var registration=cancellation.Register(()=>{try{Send(new KernelMessage{Kind="CancelModelExport",RequestId=id});}catch{}completion.TrySetCanceled(cancellation);});
+            // The registration completes our asynchronous TCS. Passing the token to
+            // WaitAsync too can run disposal inline inside a reader progress callback.
+            return await completion.Task.WaitAsync(TimeSpan.FromMinutes(15)).ConfigureAwait(false);
+        }
+        finally{lock(exports)exports.Remove(id);}
+    }
     public Task<KernelMessage> UpdateAsync(string definition,long generation,long revision,bool update,CancellationToken cancellation)
         => ApplyAsync(definition,generation,revision,update,cancellation);
     private async Task<KernelMessage> ApplyAsync(string definition,long generation,long revision,bool update,CancellationToken cancellation)
@@ -186,8 +241,9 @@ public sealed class UnityPreviewSession : IDisposable
         if(Interlocked.Exchange(ref disposed,1)!=0)return;
         lifetime.Cancel();pipe?.Dispose();events?.Dispose();
         try{process?.GetAwaiter().GetResult();}catch{}
-        try{reader?.GetAwaiter().GetResult();}catch{}
+        if(Environment.CurrentManagedThreadId!=readerThreadId)try{reader?.GetAwaiter().GetResult();}catch{}
         lock(loads)foreach(var pending in loads.Values)pending.TrySetCanceled();
+        lock(exports)foreach(var pending in exports.Values)pending.TrySetCanceled();
         view?.Dispose();map?.Dispose();frameLock?.Dispose();lifetime.Dispose();frameBuffer=null;LatestFrame=null;
     }
 }

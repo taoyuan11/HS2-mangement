@@ -8,6 +8,7 @@ internal static class CoreChecks
     public static async Task Run(string game, string output)
     {
         NativeRenderingDataChecks.Run();
+        await ModelExportSafetyChecks.Run(output);
         await NativeCompatibilityChecks.Run(output);
         await ScanSettingsChecks.Run(output);
         await PreviewCacheChecks.Run(output);

@@ -29,6 +29,9 @@ namespace HS2Manager.UnityPreview.Editor
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
                 EditorSceneManager.SaveScene(scene, "Assets/Generated/Bootstrap.unity");
                 PlayerSettings.companyName = "HS2Manager";
+                var defines = PlayerSettings.GetScriptingDefineSymbolsForGroup(BuildTargetGroup.Standalone);
+                if (!(";"+defines+";").Contains(";FBXSDK_RUNTIME;"))
+                    PlayerSettings.SetScriptingDefineSymbolsForGroup(BuildTargetGroup.Standalone, defines+";FBXSDK_RUNTIME");
                 PlayerSettings.productName = "HS2Manager Independent Preview";
                 PlayerSettings.runInBackground = true;
                 PlayerSettings.displayResolutionDialog = ResolutionDialogSetting.Disabled;

@@ -10,7 +10,7 @@
     <Button x:Name="UndoButton" Content="撤销" Click="Undo_Click" ToolTipService.ToolTip="Ctrl+Z"/><Button x:Name="RedoButton" Content="重做" Click="Redo_Click" ToolTipService.ToolTip="Ctrl+Y"/>
     <Button Content="恢复"><Button.Flyout><MenuFlyout><MenuFlyoutItem Text="恢复当前分类" Click="RestoreCategory_Click"/><MenuFlyoutItem Text="恢复全部到最近保存" Click="RestoreAll_Click"/></MenuFlyout></Button.Flyout></Button>
     <Button x:Name="SaveButton" Content="另存新卡" Click="Save_Click" Style="{StaticResource PrimaryButton}" ToolTipService.ToolTip="Ctrl+S · 原封面保持不变"/>
-    <Button Content="更多"><Button.Flyout><MenuFlyout><MenuFlyoutItem Text="另存到其他文件夹…" Click="SaveFolder_Click"/><MenuFlyoutItem Text="备份后覆盖原卡" Click="Overwrite_Click"/><MenuFlyoutSeparator/><MenuFlyoutItem Text="恢复编辑备份…" Click="RestoreBackup_Click"/><MenuFlyoutItem Text="切换人物卡…" Click="SwitchCard_Click"/></MenuFlyout></Button.Flyout></Button>
+    <Button Content="更多"><Button.Flyout><MenuFlyout><MenuFlyoutItem Text="导出 3D 模型…" Click="ExportModel_Click"/><MenuFlyoutSeparator/><MenuFlyoutItem Text="另存到其他文件夹…" Click="SaveFolder_Click"/><MenuFlyoutItem Text="备份后覆盖原卡" Click="Overwrite_Click"/><MenuFlyoutSeparator/><MenuFlyoutItem Text="恢复编辑备份…" Click="RestoreBackup_Click"/><MenuFlyoutItem Text="切换人物卡…" Click="SwitchCard_Click"/></MenuFlyout></Button.Flyout></Button>
    </StackPanel>
   </Grid>
   <Grid Grid.Row="1" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="156"/><ColumnDefinition Width="*"/><ColumnDefinition Width="340"/></Grid.ColumnDefinitions>

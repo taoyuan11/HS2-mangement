@@ -11,6 +11,7 @@ artifacts/
 **/UserSettings/
 src/HS2Manager.UnityPreview/Assets/Generated/
 src/HS2Manager.UnityPreview/Assets/Generated.meta
+src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx/
 *.alf
 *.ulf
 __pycache__/

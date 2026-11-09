@@ -1,5 +1,7 @@
 # Third-party components
 
+- Autodesk FBX SDK C# bindings (`com.autodesk.fbx` 4.2.0): Unity Companion License; native FBX SDK 2020.3.1: Autodesk FBX SDK License and Services Agreement. The independent Unity player includes the Windows x64 runtime for model export. Full notices: `licenses/Autodesk-FBX-SDK-4.2.0.txt`. Source: https://github.com/Unity-Technologies/com.autodesk.fbx.
+
 HS2 Manager is an independent utility. HoneySelect 2, Studio, Unity assets and game assemblies belong to their respective owners and are not distributed with this project or the portable package.
 
 - .NET runtime and Microsoft.Data.Sqlite: Microsoft and .NET Foundation, MIT. License texts and runtime third-party notices are included in `licenses`. Source: https://github.com/dotnet/runtime and https://github.com/dotnet/efcore.

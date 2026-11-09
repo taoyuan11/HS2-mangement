@@ -3,12 +3,20 @@ using HS2Manager.Core;
 
 try
 {
-var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+var projectFolder = new DirectoryInfo(AppContext.BaseDirectory);
+while (projectFolder != null && !File.Exists(Path.Combine(projectFolder.FullName, "HS2Manager.slnx"))) projectFolder = projectFolder.Parent;
+var root = Environment.GetEnvironmentVariable("HS2MANAGER_TEST_ROOT") ?? projectFolder?.FullName ?? Environment.CurrentDirectory;
+if (StoragePaths.IsNetwork(root)) root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HS2Manager", "Tests");
 var gameArg = Array.IndexOf(args, "--game");
 var game = gameArg >= 0 ? args[gameArg + 1] : @"Z:\games\hs2\HS two DX - TSYMQ";
 var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
-if (args.Contains("--prepare-edit-game")) await CharacterEditGameChecks.Prepare(game,args[Array.IndexOf(args,"--output")+1]);
+if (args.Contains("--data-location")) { DataLocationChecks.Run(); return; }
+if (args.Contains("--nas-files")) { await NasFileChecks.Run(args[Array.IndexOf(args, "--workspace") + 1], data); return; }
+if (args.Contains("--model-export-lifecycle")) await ModelExportLifecycleChecks.Run(args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--definition")+1],args[Array.IndexOf(args,"--output")+1]);
+else if (args.Contains("--model-export-catalog")) await ModelExportCatalogChecks.Run(args[Array.IndexOf(args,"--catalog")+1],args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1],args.Contains("--keep-assets"));
+else if (args.Contains("--model-export")) await ModelExportChecks.Run(game,data,args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1],args.Contains("--card")?args[Array.IndexOf(args,"--card")+1]:null,args.Contains("--catalog")?args[Array.IndexOf(args,"--catalog")+1]:null,args.Contains("--count")?int.Parse(args[Array.IndexOf(args,"--count")+1]):1,args.Contains("--draft"),args.Contains("--clothing")?int.Parse(args[Array.IndexOf(args,"--clothing")+1]):0,!args.Contains("--no-accessories"));
+else if (args.Contains("--prepare-edit-game")) await CharacterEditGameChecks.Prepare(game,args[Array.IndexOf(args,"--output")+1]);
 else if (args.Contains("--edit-preview")) await CharacterEditPreviewChecks.Run(game,data,args[Array.IndexOf(args,"--player")+1]);
 else if (args.Contains("--card-edit")) await CharacterEditChecks.Run(data, args.Contains("--real-edit") ? game : null);
 else if (args.Contains("--card-delete")) await CardDeletionChecks.Run(data);

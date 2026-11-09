@@ -273,7 +273,7 @@ public sealed class CardExportService(CardRepository repository)
         if (card != null && cards.Count(c => c.Name == card.Name) > 1) label += " [" + Path.GetFileName(card.Source) + "]";
         return (label.Length > 0 ? label + "：" : "") + issue.Message;
     }
-    private static void ValidateOutput(string game, string output)
+    internal static void ValidateOutput(string game, string output)
     {
         if (ExportPaths.Within(output, game) || Path.GetFullPath(output).Equals(Path.GetFullPath(game), StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("请选择游戏目录之外的导出位置，以免修改或重复扫描原游戏资源。");
