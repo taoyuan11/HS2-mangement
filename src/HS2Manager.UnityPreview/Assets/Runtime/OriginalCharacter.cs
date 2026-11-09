@@ -75,6 +75,7 @@ namespace HS2Manager.UnityPreview
             if(canceled())throw new OperationCanceledException();
             CharacterDiagnostics.MaterialTrace(Root,"extensions");
             ApplyDryMakerState();
+            ApplyPreviewVisibility();
             InitializeHeels();
             InitializePartAnimations();
             PoseFace(1);
@@ -483,7 +484,7 @@ namespace HS2Manager.UnityPreview
         {
             var clothes=parts.Where(p=>p.Key.Role=="clothes").Select(p=>p.Key).ToArray();
             var lower=clothes.Where(p=>p.Slot==0||p.Slot==1).LastOrDefault(p=>selections.ContainsKey("clothes."+p.Slot+".OverBodyBMask"));
-            bool lowerEnabled=lower!=null&&(lower.List.String("BreakDisableMask")!="1"||definition.Clothes.Get("parts").At(lower.Slot).Float("breakRate")==0);
+            bool lowerEnabled=Visibility.ClothesVisible(1)&&lower!=null&&(lower.List.String("BreakDisableMask")!="1"||definition.Clothes.Get("parts").At(lower.Slot).Float("breakRate")==0);
             foreach(var entry in parts)
             {
                 string mask=entry.Key.Role=="body"?"OverBodyMask":entry.Key.Role=="clothes"&&entry.Key.Slot==2?"OverBraMask":null;
@@ -494,6 +495,7 @@ namespace HS2Manager.UnityPreview
                     if(material==null)continue;
                     if(mask!=null && (entry.Key.Role=="body" || renderer.name=="o_bra_a"))
                     {
+                        foreach(string property in new[]{"_alpha_a","_alpha_b"})if(material.HasProperty(property))material.SetFloat(property,Visibility.ClothesVisible(0)?1:0);
                         if(material.HasProperty("_AlphaMask")&&selections.ContainsKey(key))SetTexture(material,"_AlphaMask",key);
                         if(material.HasProperty("_alpha_c"))material.SetFloat("_alpha_c",definition.Clothes.Get("parts").At(0).Float("breakRate")==0?0:1);
                     }

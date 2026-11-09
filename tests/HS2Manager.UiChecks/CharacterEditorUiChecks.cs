@@ -26,6 +26,21 @@ internal static class CharacterEditorUiChecks
             var categories=(ListView)editor.FindName("Categories");var groups=(ListView)editor.FindName("Groups");var parameters=(StackPanel)editor.FindName("Parameters");
             var viewport=(UnityPreviewViewport)editor.FindName("EditorNativeViewport");await viewport.WaitForRenderAsync();
             if(!viewport.HasFrame)throw new Exception("Editor did not present a Unity frame: "+viewport.RenderError);
+            var clothingVisibility=(ComboBox)editor.FindName("ClothingVisibility");
+            var accessoryVisibility=(ToggleSwitch)editor.FindName("AccessoryVisibility");
+            byte[] originalDraft=session.Document.ToBytes();long initialRevision=session.Revision;
+            categories.SelectedIndex=1;await WaitVisibility(2);
+            categories.SelectedIndex=4;
+            foreach(string group in groups.Items.Cast<string>().Where(g=>g=="上衣"||g=="鞋子"||g=="内衣"||g.StartsWith("内衣 · ")).ToArray())
+            {groups.SelectedItem=group;await WaitVisibility(group.StartsWith("内衣")?1:0);}
+            clothingVisibility.SelectedIndex=3;await WaitVisibility(2);
+            categories.SelectedIndex=0;await WaitVisibility(2);
+            clothingVisibility.SelectedIndex=1;await WaitVisibility(0);
+            accessoryVisibility.IsOn=false;await WaitVisibility(0,false);
+            clothingVisibility.SelectedIndex=0;categories.SelectedIndex=1;await WaitVisibility(2,false);
+            accessoryVisibility.IsOn=true;categories.SelectedIndex=0;await WaitVisibility(0);
+            if(session.IsDirty||session.Revision!=initialRevision||session.CanUndo||!session.Document.ToBytes().SequenceEqual(originalDraft))throw new Exception("Preview visibility changed draft or undo history");
+            Console.WriteLine("Editor automatic clothing, manual override, accessory visibility and draft isolation passed");
             foreach(string theme in new[]{"Light","Dark"})
             {
                 ThemeService.Apply(theme);
@@ -54,9 +69,13 @@ internal static class CharacterEditorUiChecks
             session.SetValue("body.shapeValueBody[0]",.77f);await WaitPreview();
             if(model.PreviewCamera!=camera||model.PreviewLightIntensity!=.7||model.PlaybackLabel!=playback)throw new Exception("Editing reset camera/environment/playback");
             categories.SelectedIndex=2;groups.SelectedIndex=1;
+            await WaitPreview();
             Console.WriteLine("Editor revisions passed; checking asset picker");
             foreach(int sourceFilter in new[]{1,2})
             {
+                await UiTest.WaitUntil(()=>editor.IsEnabled,"Editor remained disabled before asset selection");
+                canvas.UpdateLayout();
+                Console.WriteLine("Selecting hair source "+sourceFilter+"; editor enabled="+editor.IsEnabled);
                 UiTest.Invoke(UiTest.Descendants<Button>(parameters).Single(b=>b.Tag?.ToString()=="hair.parts[0].id"));
                 await UiTest.WaitUntil(()=>UiTest.OpenDialog(canvas.XamlRoot)!=null,"Asset picker missing");
                 var dialog=UiTest.OpenDialog(canvas.XamlRoot)!;
@@ -80,6 +99,7 @@ internal static class CharacterEditorUiChecks
                 if(Convert.ToInt32(session.Document.GetValue("hair.parts[0].id"))!=selected.Asset.Id)throw new Exception("UI selection did not update hair ID");
             }
             // Terminate only this check's owned kernel, then reconnect through the visible UI action.
+            clothingVisibility.SelectedIndex=3;accessoryVisibility.IsOn=false;await WaitVisibility(2,false);
             using(var owned=Process.GetProcessById(pid)){owned.Kill();await owned.WaitForExitAsync();}
             await UiTest.WaitUntil(()=>model.HasPreviewError,"Kernel disconnection not reported");
             var beforeReconnect=session.Document.ToBytes();long revision=session.Revision;
@@ -87,6 +107,7 @@ internal static class CharacterEditorUiChecks
             await WaitPreview();
             if(model.UnitySession!.ProcessId==pid||session.Revision!=revision||!session.Document.ToBytes().SequenceEqual(beforeReconnect)||!session.IsDirty)throw new Exception("Reconnect lost draft or reused dead process");
             pid=model.UnitySession.ProcessId;
+            await WaitVisibility(2,false);
             if(model.PreviewCamera!=camera||model.PreviewLightIntensity!=.7||model.PlaybackLabel!=playback)throw new Exception("Reconnect reset view state");
             Console.WriteLine("Editor assets and reconnect passed; checking saving");
             if(!await editor.SaveAsync())throw new Exception("Save-as failed: "+((TextBlock)editor.FindName("EditorMessage")).Text);
@@ -108,13 +129,18 @@ internal static class CharacterEditorUiChecks
                 var dialog=UiTest.OpenDialog(canvas.XamlRoot);
                 return dialog?.Title?.ToString()=="保存角色修改？"?UiTest.Descendants<Button>(dialog).FirstOrDefault(b=>b.Content?.ToString()==text):null;
             }
+            async Task WaitVisibility(int clothing,bool accessories=true)
+            {
+                await WaitPreview();
+                if(model.EditDefinition?.Visibility is not { } state||state.Clothing!=clothing||state.Accessories!=accessories)throw new Exception("Editor preview visibility did not reach kernel");
+            }
             async Task WaitPreview()
             {
                 var deadline=DateTime.UtcNow.AddMinutes(3);
                 while(DateTime.UtcNow<deadline)
                 {
                     if(model.HasPreviewError)throw new Exception(model.PreviewError);
-                    if(!model.PreviewBusy&&model.UnitySession?.LatestFrame?.Revision==session.Revision)return;
+                    if(!model.PreviewBusy&&model.UnitySession?.LatestFrame is { } frame&&frame.Revision==session.Revision&&frame.Load==model.UnitySession.CurrentLoad)return;
                     await Task.Delay(60);
                 }
                 throw new TimeoutException("Editor preview: "+model.PreviewStatus);

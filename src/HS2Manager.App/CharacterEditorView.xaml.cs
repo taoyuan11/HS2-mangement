@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using HS2Manager.Core;
+using HS2Manager.Preview.Contracts;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -29,6 +30,7 @@ public sealed partial class CharacterEditorView : UserControl
     private bool saving,disposed,building,dragging,panning;
     private Point lastPointer;
     private string capabilitiesKey="";
+    private CharacterPreviewVisibility previewVisibility=new();
     private string Category => (Categories.SelectedItem as CategoryItem)?.Id??"face";
     public CharacterEditorView(){InitializeComponent();}
     public async Task OpenAsync(MainWindow window,MainViewModel viewModel,CardRecord card)
@@ -79,7 +81,7 @@ public sealed partial class CharacterEditorView : UserControl
             {
                 if(!immediate)await Task.Delay(220,delay.Token);
                 delay.Token.ThrowIfCancellationRequested();
-                await model.UpdateEditPreviewAsync(Session.Card,Session.Snapshot(),reconnect);
+                await model.UpdateEditPreviewAsync(Session.Card,Session.Snapshot(),reconnect,previewVisibility);
             }
             catch(OperationCanceledException){}
             catch(Exception error){if(!disposed)EditorMessage.Text=error.Message;}
@@ -114,7 +116,21 @@ public sealed partial class CharacterEditorView : UserControl
             if(Parameters.Children.Count==0)Parameters.Children.Add(new TextBlock{Text="此角色没有相应参数",TextWrapping=TextWrapping.Wrap});
         }
         finally{building=false;}
+        UpdatePreviewVisibility();
     }
+    private void UpdatePreviewVisibility()
+    {
+        if(Session==null||disposed)return;
+        int clothing=ClothingVisibility.SelectedIndex<=0
+            ?CharacterEditSchema.AutoClothingState(Category,Groups.SelectedItem as string??"")
+            :ClothingVisibility.SelectedIndex-1;
+        bool accessories=AccessoryVisibility.IsOn;
+        VisibilityStatus.Text=(ClothingVisibility.SelectedIndex<=0?"自动 · ":"")+new[]{"完整着装","内着","不穿衣物"}[clothing]+(accessories?"":" · 配饰已隐藏");
+        if(previewVisibility.Clothing==clothing&&previewVisibility.Accessories==accessories)return;
+        previewVisibility=new(){Clothing=clothing,Accessories=accessories};QueuePreview(true);
+    }
+    private void ClothingVisibility_Changed(object sender,SelectionChangedEventArgs e)=>UpdatePreviewVisibility();
+    private void AccessoryVisibility_Toggled(object sender,RoutedEventArgs e)=>UpdatePreviewVisibility();
     private FrameworkElement FieldControl(CharacterField field)
     {
         var panel=new StackPanel{Spacing=6};

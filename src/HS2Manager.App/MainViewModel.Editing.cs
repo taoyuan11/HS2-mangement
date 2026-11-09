@@ -11,7 +11,8 @@ public sealed partial class MainViewModel
     public CardRecord? CurrentPreviewCard => previewCard;
     public long AppliedEditRevision => ownedUnitySession?.AppliedRevision ?? -1;
     public HS2Manager.Preview.Contracts.CharacterDefinition? EditDefinition {get;private set;}
-    public Task UpdateEditPreviewAsync(CardRecord card, CharacterEditSnapshot snapshot, bool reconnect = false)
+    public Task UpdateEditPreviewAsync(CardRecord card, CharacterEditSnapshot snapshot, bool reconnect = false,
+        HS2Manager.Preview.Contracts.CharacterPreviewVisibility? visibility = null)
     {
         previewCancellation?.Cancel();
         var cancellation = new CancellationTokenSource();previewCancellation=cancellation;
@@ -27,7 +28,7 @@ public sealed partial class MainViewModel
             {
                 if(reconnect)DisposeUnitySession();
                 var progress=new Progress<string>(text=>{if(generation==previewGeneration)PreviewStatus=text;});
-                var preparing=unityCharacters.PrepareAsync(Settings.GamePath,DataDirectory,card,snapshot,progress,cancellation.Token,generation);
+                var preparing=unityCharacters.PrepareAsync(Settings.GamePath,DataDirectory,card,snapshot,progress,cancellation.Token,generation,visibility);
                 var starting=GetUnitySessionAsync(cancellation.Token);
                 await Task.WhenAll(preparing,starting);
                 cancellation.Token.ThrowIfCancellationRequested();

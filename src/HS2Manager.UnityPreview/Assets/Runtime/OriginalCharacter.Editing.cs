@@ -32,7 +32,7 @@ namespace HS2Manager.UnityPreview
         [Serializable] private sealed class MaterialPart {public string Role;public int Slot;public float[] Colors;}
         private static void AppendMaterialParameters(StringBuilder output,Parameter value)
         {
-            if(value.Name=="shapeValueFace"||value.Name=="shapeValueBody"||value.Name=="dictBundle"||value.Name=="addMove"||value.Name=="noShake"||value.Name=="bustWeight"||value.Name=="bustSoftness"||value.Name=="hideOpt"||value.Name=="parentKey")return;
+            if(value.Name=="shapeValueFace"||value.Name=="shapeValueBody"||value.Name=="dictBundle"||value.Name=="addMove"||value.Name=="noShake"||value.Name=="bustWeight"||value.Name=="bustSoftness"||value.Name=="effectiveBustSoftness"||value.Name=="hideOpt"||value.Name=="parentKey")return;
             // JsonUtility has a seven-level nesting limit, while colors and clothing
             // patterns can be deeper. Visit the parameter tree without truncation.
             output.Append('(').Append(value.Name.Length).Append(':').Append(value.Name)
@@ -62,7 +62,9 @@ namespace HS2Manager.UnityPreview
         {
             if(canceled())throw new OperationCanceledException();
             bool materialsChanged=MaterialSignature(definition)!=MaterialSignature(next)||definition.Parts.Length!=next.Parts.Length||definition.Parts.Any(p=>!next.Parts.Any(n=>SamePrefab(p,n)));
+            bool clothingChanged=Visibility.Clothing!=(next.Visibility??new CharacterPreviewVisibility()).Clothing;
             MaterialsRefreshed=materialsChanged;UpdatedParts=0;RebuiltParts=0;
+            RestorePreviewVisibility();
             foreach(var chain in dynamicChains)chain.Restore();
             foreach(var chain in bodyDynamics)chain.Restore();
             foreach(var pair in heelRest){pair.Key.localPosition=pair.Value.Item1;pair.Key.localRotation=pair.Value.Item2;pair.Key.localScale=pair.Value.Item3;}
@@ -124,10 +126,10 @@ namespace HS2Manager.UnityPreview
                 {
                     foreach(var entry in parts)
                     {if(canceled())throw new OperationCanceledException();progress?.Invoke("更新材质 · "+entry.Key.Role);ApplyMaterials(entry.Key,entry.Value);yield return null;}
-                    ApplyClothingMasks();
-                    foreach(var entry in parts)ApplyExtensions(entry.Key,entry.Value);
                 }
-                ApplyDryMakerState();InitializeHeels();InitializePartAnimations();InitializePhysics();PoseFace(1);CompleteClothSetup();
+                if(materialsChanged||clothingChanged)ApplyClothingMasks();
+                if(materialsChanged)foreach(var entry in parts)ApplyExtensions(entry.Key,entry.Value);
+                ApplyDryMakerState();ApplyPreviewVisibility();InitializeHeels();InitializePartAnimations();InitializePhysics();PoseFace(1);CompleteClothSetup();
             }
             finally{collectingGenerated=false;}
         }

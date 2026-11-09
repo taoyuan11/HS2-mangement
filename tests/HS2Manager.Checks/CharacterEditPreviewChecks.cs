@@ -15,12 +15,24 @@ internal static class CharacterEditPreviewChecks
         string copy=Path.Combine(output,"female.png");File.Copy(Path.Combine(game,"UserData","chara","navi","navi.png"),copy);
         var card=new CardParser().Parse(copy);card.Root=output;repository.Save(card);
         var draft=new CharacterEditSession(card,CharacterDocument.Open(copy));int pid=0;long load=100;
+        var visibility=new CharacterPreviewVisibility();
         try
         {
             await kernel.StartAsync(player,repository.DataPath,default);pid=kernel.ProcessId;
             await Apply(false);kernel.Send(new(){Kind="Resize",Width=640,Height=480});kernel.Send(new(){Kind="Play",Playing=false});
             var first=await Frame();
             var previousIds=Objects(load);
+            byte[] originalDraft=draft.Document.ToBytes();
+            foreach(int clothing in new[]{2,1,0})
+            {
+                visibility=new(){Clothing=clothing};await Apply();var frame=await Frame();
+                Check(Objects(load).All(p=>previousIds.TryGetValue(p.Key,out int id)&&id==p.Value),"visibility retains part objects");
+                Check(!Metrics(load).GetProperty("MaterialsRefreshed").GetBoolean(),"visibility reuses composed textures");
+                if(clothing!=0)Check(frame.Pixels.Where((b,i)=>i%4!=3&&Math.Abs(b-first.Pixels[i])>5).Count()>500,"clothing visibility changes rendered pixels");
+                await ImageCodec.SavePngAsync(Path.Combine(output,"clothing-"+clothing+".png"),frame.Width,frame.Height,frame.Pixels);
+            }
+            Check(!draft.IsDirty&&draft.Revision==0&&draft.Document.ToBytes().SequenceEqual(originalDraft),"visibility leaves draft, history and saved outfit unchanged");
+            first=await Frame();
             draft.SetValue("body.shapeValueBody[0]",.9f);await Apply();var shape=await Frame();
             Check(shape.Pixels.Where((b,i)=>i%4!=3&&Math.Abs(b-first.Pixels[i])>5).Count()>500,"shape changes rendered pixels");
             Check(Objects(load).All(p=>previousIds[p.Key]==p.Value),"shape retains all part objects");
@@ -54,12 +66,12 @@ internal static class CharacterEditPreviewChecks
             }
             draft.SetColor("body.skinColor",[.95f,.85f,.8f,1]);await Apply();var latest=await Frame();Check(latest.Revision==draft.Revision,"obsolete update cannot publish latest frame");
             File.WriteAllText(Path.Combine(output,"result.json"),JsonSerializer.Serialize(new{Passed=true,SourceReadFromDraft=true,LastRevision=latest.Revision,SelectedMod=mod.Guid,SavedCard=saved.Card.Path}));
-            Console.WriteLine("PASS editing preview: shape/color pixels, object/texture reuse, MOD-stock-MOD, revisions, superseded material updates, source isolation, save reference");
+            Console.WriteLine("PASS editing preview: clothing visibility and restoration without draft changes, shape/color pixels, object/texture reuse, MOD-stock-MOD, revisions, superseded material updates, source isolation, save reference");
         }
         finally{kernel.Dispose();service.ReleaseEditSources();if(pid>0&&Running(pid))throw new Exception("Editor preview process leaked: "+pid);}
         async Task<string> Prepare()
         {
-            var definition=await service.PrepareAsync(game,repository.DataPath,draft.Card,draft.Snapshot(),null,default,load+1);
+            var definition=await service.PrepareAsync(game,repository.DataPath,draft.Card,draft.Snapshot(),null,default,load+1,visibility);
             string path=Path.Combine(output,"revision-"+draft.Revision+".json");File.WriteAllText(path,JsonSerializer.Serialize(definition,UnityCharacterService.JsonOptions));return path;
         }
         async Task Apply(bool update=true)

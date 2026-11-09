@@ -8,6 +8,8 @@ namespace HS2Manager.Preview.Contracts
         public int SchemaVersion = 1;
         [System.Runtime.Serialization.OptionalField]
         public long EditRevision;
+        [System.Runtime.Serialization.OptionalField]
+        public CharacterPreviewVisibility Visibility = new CharacterPreviewVisibility();
         public string Name = "";
         public string CardHash = "";
         public string MotionState = "";

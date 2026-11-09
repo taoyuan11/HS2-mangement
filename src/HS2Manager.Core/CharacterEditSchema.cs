@@ -30,6 +30,13 @@ public static class CharacterEditSchema
     public static readonly (string Id, string Label)[] Categories = [("face", "脸部"), ("body", "身体"), ("hair", "发型"), ("makeup", "妆容"), ("clothes", "服装"), ("accessory", "配饰")];
     public static readonly string[] HairNames = ["后发", "前发", "侧发", "附加发型"];
     public static readonly string[] ClothesNames = ["上衣", "下装", "内衣", "内裤", "手套", "连裤袜", "袜子", "鞋子"];
+    public static int AutoClothingState(string category, string group)
+    {
+        // CustomChangeMainMenu.ChangeWindowSetting and CvsC_Clothes.UpdateCustomUI.
+        if (category == "body") return 2;
+        int slot = Array.IndexOf(ClothesNames, group.Split(" · ", 2, StringSplitOptions.None)[0]);
+        return category == "clothes" && slot is >= 2 and <= 6 ? 1 : 0;
+    }
     private static readonly (string Group, string[] Labels)[] FaceShape =
     [
         ("整体", ["脸部宽度", "上半脸前后", "上半脸高度", "下半脸前后", "下半脸宽度"]),

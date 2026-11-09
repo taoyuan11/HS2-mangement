@@ -24,7 +24,7 @@ public sealed class UnityCharacterService
     }
 
     public async Task<CharacterDefinition> PrepareAsync(string game, string data, CardRecord card, CharacterEditSnapshot snapshot,
-        IProgress<string>? progress, CancellationToken cancellation, long load)
+        IProgress<string>? progress, CancellationToken cancellation, long load, CharacterPreviewVisibility? visibility = null)
     {
         await preparation.WaitAsync(cancellation).ConfigureAwait(false);
         try
@@ -42,7 +42,7 @@ public sealed class UnityCharacterService
                 var source = new CardRecord { Id = card.Id, Path = backing, Name = card.Name, Sex = snapshot.Document.Sex, PngLength = snapshot.Document.PngLength,
                     Status = CardStatus.Valid, Size = snapshot.Document.SourceSize, ModifiedUtcTicks = File.GetLastWriteTimeUtc(backing).Ticks,
                     Dependencies = CharacterAssetReferences.All(snapshot.Document), PluginDataIds = snapshot.Document.Extensions?.Entries().Select(p => p.Key?.ToString() ?? "").ToList() ?? [] };
-                var definition = Prepare(game, data, source, progress, cancellation, snapshot);
+                var definition = Prepare(game, data, source, progress, cancellation, snapshot, visibility);
                 definition.EditRevision = snapshot.Revision;
                 return definition;
             }, cancellation).ConfigureAwait(false);
@@ -59,8 +59,9 @@ public sealed class UnityCharacterService
         editingMods=null;editingModScope="";
     }
 
-    private CharacterDefinition Prepare(string game, string data, CardRecord card, IProgress<string>? progress, CancellationToken cancellation, CharacterEditSnapshot? snapshot = null)
+    private CharacterDefinition Prepare(string game, string data, CardRecord card, IProgress<string>? progress, CancellationToken cancellation, CharacterEditSnapshot? snapshot = null, CharacterPreviewVisibility? visibility = null)
     {
+        visibility ??= new();
         var sourceInfo = new FileInfo(card.Path);
         string cardStamp = PreviewMetadataCache.Stamp(card.Path);
         if (sourceInfo.Length != card.Size || sourceInfo.LastWriteTimeUtc.Ticks != card.ModifiedUtcTicks)
@@ -209,6 +210,7 @@ public sealed class UnityCharacterService
             catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException)
             { warnings.Add(part.Label + "：" + ex.Message); }
         }
+        bool braWorn=worn.ContainsKey(2)&&visibility.ClothesVisible(2), topWorn=worn.ContainsKey(0)&&visibility.ClothesVisible(0);
         if(appearance.PushUp!=null)
         {
             // Preserve PushUp's contribution even if another live part owns an
@@ -217,10 +219,10 @@ public sealed class UnityCharacterService
                 {Parent=p.Value.Parent,Position=(float[])p.Value.Position.Clone(),Rotation=(float[])p.Value.Rotation.Clone(),Scale=(float[])p.Value.Scale.Clone()})};
             foreach(var bone in rig.Part.UnmodifiedBones)
                 unmodified.Bones[bone.Name]=new NativeBone{Parent=bone.Parent,Position=(float[])bone.Position.Clone(),Rotation=(float[])bone.Rotation.Clone(),Scale=(float[])bone.Scale.Clone()};
-            appearance.PushUp.Apply(unmodified,CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(),worn.ContainsKey(2),worn.ContainsKey(0),Text(shapeBundle,"cf_anmShapeBody"));
+            appearance.PushUp.Apply(unmodified,CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(),braWorn,topWorn,Text(shapeBundle,"cf_anmShapeBody"));
             var unmodifiedNames=rig.Part.UnmodifiedBones.Select(b=>b.Name).ToHashSet(StringComparer.Ordinal);
             rig.Part.UnmodifiedBones=Bones(unmodified).Where(b=>unmodifiedNames.Contains(b.Name)).ToArray();
-            bool hide=appearance.PushUp.Apply(rig.Rig,CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(),worn.ContainsKey(2),worn.ContainsKey(0),Text(shapeBundle,"cf_anmShapeBody"));
+            bool hide=appearance.PushUp.Apply(rig.Rig,CardAppearanceReader.Flatten(appearance.Body.GetValueOrDefault("shapeValueBody")).ToArray(),braWorn,topWorn,Text(shapeBundle,"cf_anmShapeBody"));
             rig.Part.Bones=Bones(rig.Rig);
             if(hide)parts.RemoveAll(p=>p.Role=="accessory"&&p.Parent is "N_Tikubi_L" or "N_Tikubi_R");
         }
@@ -296,10 +298,10 @@ public sealed class UnityCharacterService
         using (PreviewPerformance.Measure("cardHash"))
             cardHash = snapshot != null ? snapshot.Document.SourceHash + ":" + snapshot.Revision : metadata.Get("card-hash", PreviewMetadataCache.Stamp(card.Path), () =>
             { using var source = File.OpenRead(card.Path); return Convert.ToHexString(SHA256.HashDataAsync(source, cancellation).GetAwaiter().GetResult()); }, cancellation);
-        var heels = UnityHeelReader.Read(worn.GetValueOrDefault(7),warnings);
+        var heels = visibility.ClothesVisible(7) ? UnityHeelReader.Read(worn.GetValueOrDefault(7),warnings) : new HeelDefinition();
         var definition = new CharacterDefinition
         {
-            Name = card.Name, Sex = appearance.Sex, CardHash = cardHash,
+            Name = card.Name, Sex = appearance.Sex, CardHash = cardHash, Visibility = visibility,
             BundlePaths = paths.Order(StringComparer.OrdinalIgnoreCase).ToArray(), Parts = parts.ToArray(), Selections = selections.ToArray(),
             Face = ParameterOf(appearance.Face), Body = ParameterOf(appearance.Body), Hair = ParameterOf(appearance.Hair), Clothes = ParameterOf(appearance.Clothes),
             Diagnostics = warnings.Distinct().ToArray(), BodyVisible = appearance.BodyVisible, EyeOpenMax = appearance.EyeOpenMax ?? 1,
@@ -314,7 +316,7 @@ public sealed class UnityCharacterService
                 .Concat(appearance.ClothesOverlays.Select(o => new OverlayDefinition { Name=o.Name, Replace=o.Override, Texture=Embedded(o.Texture) })).ToArray()
         };
         if(appearance.PushUp!=null)
-            definition.Body.Children=definition.Body.Children.Append(new Parameter{Name="effectiveBustSoftness",Number=appearance.PushUp.EffectiveSoftness(definition.Body.Float("bustSoftness"),worn.ContainsKey(2),worn.ContainsKey(0))}).ToArray();
+            definition.Body.Children=definition.Body.Children.Append(new Parameter{Name="effectiveBustSoftness",Number=appearance.PushUp.EffectiveSoftness(definition.Body.Float("bustSoftness"),braWorn,topWorn)}).ToArray();
         definition.Face.Children=definition.Face.Children.Append(new Parameter{Name="disableBlinking",Number=appearance.DisableBlinking?1:0}).ToArray();
         definition.Hair.Children=definition.Hair.Children.Append(new Parameter{Name="unlockedSliders",Number=unlockedSliders?1:0}).ToArray();
         definition.ParameterNodes=definition.CountParameterNodes();
