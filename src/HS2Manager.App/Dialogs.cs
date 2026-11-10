@@ -72,10 +72,10 @@ public static class Dialogs
         var accessories = new CheckBox { Name = "ModelExportAccessories", Content = "包含配饰", IsChecked = true };
         var panel = new StackPanel { Spacing = 14, MinWidth = 340, MaxWidth = 440 };
         panel.Children.Add(new TextBlock { Text = $"导出 {count} 个 FBX 可动画角色", TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBlock { Text = "保留骨架、蒙皮、表情和 PBR 贴图，附 Blender 自动材质导入脚本及 Unity / Unreal 导入说明。", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "保留骨架、蒙皮、表情和 PBR 贴图，附 Blender / Unreal 自动材质导入脚本及 Unity 导入说明。", TextWrapping = TextWrapping.Wrap });
         if (draft) panel.Children.Add(new TextBlock { Text = "包含点击导出时的未保存修改。", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         panel.Children.Add(clothing); panel.Children.Add(accessories);
-        panel.Children.Add(new TextBlock { Text = "每个角色独立成包；材质采用通用 PBR 近似。Blender 请运行包内的“Blender导入.py”，以应用完整材质。", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "每个角色独立成包；材质采用通用 PBR 近似。请在目标软件运行包内的“Blender导入.py”或“Unreal导入.py”，以应用完整材质。", TextWrapping = TextWrapping.Wrap });
         var result = await ShowAsync(owner, new ContentDialog { Title = "导出 3D 模型", Content = panel, PrimaryButtonText = "选择导出位置", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary });
         return result == ContentDialogResult.Primary ? new(clothing.SelectedIndex, accessories.IsChecked == true) : null;
     }

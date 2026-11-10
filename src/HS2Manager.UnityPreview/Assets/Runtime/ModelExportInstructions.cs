@@ -4,7 +4,7 @@ namespace HS2Manager.UnityPreview
     {
         internal const string Text=@"FBX 可动画角色导入
 
-文件：character.fbx、Textures、materials.json、骨骼映射.json、Blender导入.py。
+文件：character.fbx、Textures、materials.json、骨骼映射.json、Blender导入.py、Unreal导入.py。
 请一起移动整个角色文件夹；贴图使用相对路径。FBX 为右手 Y-up、厘米，HS2 源单位按 10 厘米换算。
 体形已经转换为角色的参考形态；保留原骨架、额外骨骼、权重和表情。文件不包含待机动画或物理组件。
 保存的默认表情已烘焙到基准网格，导入后所有形变权重应为 0，以避免重复叠加。
@@ -28,15 +28,17 @@ Unity 2022.3 LTS / Unity 6 URP
 6. AlphaMode=Mask 开启 Alpha Clipping，阈值见 AlphaCutoff；Blend 选择 Transparent；DoubleSided 开启 Render Face Both。
 7. Emission 为 sRGB，接 Emission Map 并启用 Emission。使用 SkinnedMeshRenderer 的 BlendShapes 检查眨眼和嘴部形变。
 
-Unreal Engine 5（验收基线 5.6）
-1. 导入 character.fbx，开启 Skeletal Mesh、Import Morph Targets，创建新 Skeleton；导入法线和切线。Import Uniform Scale=1，开启 Convert Scene / Convert Scene Unit。
-2. 将 BaseColor、Normal、Metallic、Roughness、Occlusion、Emission 分别接入同名材质输入。BaseColor/Emission 开启 sRGB，其余关闭。
-3. 法线来自 OpenGL +Y，Normal 贴图开启 Flip Green Channel，避免凹凸反向。Mask 选择 Masked，并将 BaseColor 的 A 接 Opacity Mask；Blend 选择 Translucent 并接 Opacity；DoubleSided 开启 Two Sided。
-4. 按骨骼映射.json 的 Unreal 列创建 IK Rig 链，Hips/pelvis 为重定向根；建立 IK Retargeter，校正源与目标参考姿态后再使用现成人形动画。
-5. 在 Skeletal Mesh 编辑器测试 Morph Targets。额外骨骼由自己的动画或物理方案控制。
+Unreal Engine 5（实际验证版本见项目验证记录）
+1. 在 Edit > Plugins 启用 Python Editor Script Plugin 和 Editor Scripting Utilities，按编辑器提示重启。
+2. 保持整个角色文件夹完整，在 Tools > Execute Python Script 选择本包的 Unreal导入.py。无需先手动导入 FBX。
+3. 脚本在 /Game/HS2Characters 下创建独立角色目录，导入 Skeletal Mesh、Skeleton 和 Morph Targets，按材质槽自动连接全部贴图。重复运行新增目录，保留已有资产和场景灯光。
+4. 自动设置 BaseColor/Emission 为 sRGB，数据贴图为线性；OpenGL +Y 法线开启 Flip Green Channel。皮肤使用可调散射；眼球保留不透明虹膜及镜面反光；眼周阴影使用无光照乘色，避免灰色面片；泪线使用表面半透明。
+5. 头发使用双面 Masked、抖动覆盖和各向异性，避免发片半透明排序穿透。建议项目使用 TSR 或 TAA；低抗锯齿质量下边缘可能有颗粒。材质参数可继续调整。
+6. 按骨骼映射.json 的 Unreal 列创建 IK Rig 链，Hips/pelvis 为重定向根；建立 IK Retargeter，校正源与目标参考姿态后再使用现成人形动画。在 Skeletal Mesh 编辑器测试 Morph Targets；额外骨骼由自己的动画或物理方案控制。
+7. 手动导入时：Import Uniform Scale=1，开启 Convert Scene / Convert Scene Unit，导入法线和切线。仅导入 FBX 默认材质不会应用完整材质清单，建议使用上述脚本。
 
 材质说明
-本包是通用 metallic/roughness PBR 近似。专用皮肤散射、眼球折射、头发各向异性、描边、MatCap 和屏幕后处理需要在目标引擎另行设置。
+本包是通用 metallic/roughness PBR 近似。脚本提供可编辑的皮肤散射、头发各向异性及透明设置；专用眼球折射、描边、MatCap 和屏幕后处理仍需在目标引擎另行设置。对比外观时请使用相近灯光、曝光和视图变换。
 导出报告列出缺失和未知 Shader；存在警告时请检查对应部件。未发现目标编辑器时不代表已经通过目标引擎验收。
 ";
     }

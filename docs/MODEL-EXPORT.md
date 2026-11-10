@@ -14,6 +14,7 @@
 | `骨骼映射.json` | 唯一导出骨骼名、原 Transform 路径、Unity Humanoid 和 Unreal 人形骨骼对应关系 |
 | `导入说明.txt` | Unity URP / Unreal 的材质接线、人形动画配置、法线方向及尺寸说明 |
 | `Blender导入.py` | Blender 4+ 导入入口，按清单自动重建材质并放入独立角色集合 |
+| `Unreal导入.py` | UE5 编辑器导入入口，自动导入骨架/表情、重建材质并匹配材质槽 |
 | `model-result.json` | 网格和骨骼数量、形变默认值、参考形态抽样及诊断 |
 | `files.json`、`导出报告.txt` | 文件 SHA-256 清单和角色处理结果；输出目录另有批次总报告 |
 
@@ -33,7 +34,7 @@ FBX 为右手 Y-up、厘米，源 HS2 单位按 10 厘米换算。使用引擎�
 
 ## 通用材质与引擎设置
 
-支持 Blender 的自动材质导入，以及 Unity 2022.3 / Unity 6 URP 和 Unreal Engine 5 的手动材质配置。不自动安装工具或生成 Humanoid、IK Rig。
+支持 Blender 和 Unreal Engine 5 的自动材质导入，以及 Unity 2022.3 / Unity 6 URP 的手动材质配置。不自动安装工具或生成 Humanoid、IK Rig。
 
 ### Blender
 
@@ -54,7 +55,18 @@ blender --background --python '角色文件夹/Blender导入.py' -- '角色文�
 
 新版烘焙按 AIT 通道解释皮肤和服装的金属度/光泽，按原遮罩合成头发渐变，并修正眼球的虹膜/瞳孔 UV、瞳孔 Alpha 和颜色 Alpha。已有旧包可使用新导入脚本补齐接线，但贴图中的旧烘焙误差需要重新导出才能修正。
 
-### Unity / Unreal
+### Unreal Engine 5
+
+1. 在 **Edit → Plugins** 启用 **Python Editor Script Plugin** 和 **Editor Scripting Utilities**，按编辑器提示重启。
+2. 保持角色包完整，在 **Tools → Execute Python Script** 选择导出包中的 `Unreal导入.py`。无需先导入 FBX。
+3. 脚本在 `/Game/HS2Characters/` 下新建角色目录，导入 Skeletal Mesh、Skeleton 和 Morph Targets，按 FBX 原材质槽匹配 `materials.json`。重复运行会创建新目录，保留之前的资产、灯光及曝光设置。
+4. 将 Skeletal Mesh 放入场景查看。头发的抖动透明建议使用 **TSR / TAA**；低抗锯齿质量下边缘可能有颗粒。按附带骨骼映射设置 IK Rig / Retargeter，再测试动画。
+
+脚本会设置颜色贴图 sRGB、数据贴图线性、法线压缩与 Flip Green Channel，并将 AO 接独立遮蔽输入。皮肤采用可调散射；头发采用双面 Masked、抖动覆盖、沿发片 UV V 的各向异性和视角相关光泽；睫毛采用双面裁剪。眼球保留不透明的虹膜与镜面反光，眼周阴影采用 Unlit / Modulate 乘色叠加，泪线使用表面半透明光照。参数及贴图节点均可编辑。
+
+仅拖入 FBX 时，UE 的默认材质导入不会应用上述设置。原游戏眼周乘色贴图也不能直接作为普通受光 Base Color。旧 FBX 的多 UV 网格可能缺少第 0 层材质索引，导致 UE 将头部和部分头发错误套用身体材质；新版导出显式写入此层，导入脚本还会拒绝材质槽不完整的旧包。请用新版重新导出整个角色包。脚本使用明确的 FBX 导入工厂，避免新版本默认 Interchange 路径忽略骨架、法线和单位选项。
+
+### 手动材质设置
 
 - Base Color 和 Emission 使用 sRGB；法线、金属度、粗糙度、AO 使用线性数据。
 - 法线是 OpenGL +Y。Unity 设为 Normal Map；Unreal 开启 Flip Green Channel。
@@ -62,7 +74,7 @@ blender --background --python '角色文件夹/Blender导入.py' -- '角色文�
 - Mask 模式开启 Alpha Clipping / Masked，Blend 模式使用 Transparent / Translucent；按 `DoubleSided` 设置双面。
 - 皮肤、妆容、服装图案和覆盖层复用已经合成的贴图；眼睛和头发转换为通用基础色。原游戏合成贴图的 Alpha 可能保存其他数据，导出时按材质类型转换并应用遮罩。
 
-Blender 的皮肤散射、眼球清漆和头发各向异性属于通用近似；Unity / Unreal 需要自行设置对应效果。游戏专用的视角相关高光、眼球视差折射、第二套 UV 头发挑染、MatCap、描边和后处理未完整迁移。未知 Shader 使用近似并列入报告，不承诺还原原游戏的全部视觉效果。
+脚本的皮肤散射、眼睛反光和头发各向异性属于通用近似；Unity 需自行设置这些效果。游戏专用眼球视差折射、第二套 UV 头发挑染、MatCap、描边和后处理未完整迁移。未知 Shader 使用近似并列入报告，不承诺还原原游戏的全部视觉效果。外观对照时需要统一灯光、曝光和视图变换。
 
 ## 构建与验证
 
@@ -75,6 +87,7 @@ Blender 的皮肤散射、眼球清漆和头发各向异性属于通用近似；
 .\scripts\Test-ModelExport.ps1 -OutputDirectory '<输出目录>' -EditorPath '<Unity.exe>'
 .\scripts\Test-ModelMaterialBake.ps1 -OutputDirectory '<新的烘焙检查目录>'
 .\scripts\Test-BlenderExport.ps1 -PackageDirectory '<角色文件夹>' -OutputDirectory '<新的检查目录>' -BlenderPath '<blender.exe>'
+.\scripts\Test-UnrealExport.ps1 -PackageDirectory '<角色文件夹>' -OutputDirectory '<新的检查目录>' -EditorPath '<UnrealEditor-Cmd.exe>'
 .tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export-lifecycle --player '<Player.exe>' --definition '<角色定义.json>' --output '<检查目录>'
 ```
 
@@ -82,6 +95,6 @@ Blender 的皮肤散射、眼球清漆和头发各向异性属于通用近似；
 
 回读检查使用独立 Unity 项目，仅载入导出包，检查蒙皮参考形态、形变数量与默认值、眨眼/嘴部变形以及手臂运动。引擎可能在 UV 和切线接缝处分裂或重排顶点，因此按几何位置匹配抽样，允许最大 2 毫米误差。另输出基础色材质的正反面截图用于检查外观；截图不代表完整 URP 或 Unreal 材质验收。
 
-当前机器只有 Unity 2018.4。Unity 2022.3、Unity 6 URP 与 Unreal 5.6 的实际导入验收尚未执行；旧版 Unity 回读结果不能替代这些目标环境的验收。既有 84 张人物卡的游戏预览一致性结论属于原预览功能，不能用于声称 FBX 或通用材质具有相同画面。
+Unity 2022.3、Unity 6 URP 与 Unreal 5.6 的实际导入验收尚未执行。Unreal 5.8 的自动导入验证范围见下列验证记录；旧版 Unity 回读结果不能替代这些目标环境的验收。既有 84 张人物卡的游戏预览一致性结论属于原预览功能，不能用于声称 FBX 或通用材质具有相同画面。
 
 本次 84 张结构检查及 8 张独立回读的结果见 [导出验证记录](MODEL-EXPORT-VALIDATION.md)。

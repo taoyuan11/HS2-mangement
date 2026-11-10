@@ -62,7 +62,7 @@ NAS 离线时保留既有索引与封面；完整目录枚举失败时不会把�
 
 人物列表可单张或批量“导出 3D 模型…”，预览工具栏和编辑页“更多”也提供入口。编辑页包含点击时的未保存修改。可选择服装显示范围和配饰，每个角色独立输出 FBX、PBR 贴图、材质参数、骨骼映射、Unity / Unreal 导入说明及校验清单。
 
-保留原骨架、蒙皮和表情，支持在目标引擎配置人形动画；默认表情烘焙到基础网格以避免导入后重复叠加。材质采用通用近似，不包含原游戏 Shader、动画或物理组件。Blender 用户在 Scripting 中打开导出包的 `Blender导入.py` 并运行，即可自动导入模型和重建皮肤、头发、眼睛等材质；只导入 FBX 不会应用完整材质清单。另附 Unity 2022.3 / Unity 6 URP 和 Unreal Engine 5 的手动导入说明，Unity / Unreal 目标版本实机验收仍待执行。操作、限制与验证命令见 [3D 模型导出说明](docs/MODEL-EXPORT.md)。
+保留原骨架、蒙皮和表情，支持在目标引擎配置人形动画；默认表情烘焙到基础网格以避免导入后重复叠加。材质采用通用近似，不包含原游戏 Shader、动画或物理组件。Blender 用户在 Scripting 中运行导出包的 `Blender导入.py`；Unreal 用户启用 Python Editor Script Plugin 和 Editor Scripting Utilities 后，在 Tools → Execute Python Script 运行 `Unreal导入.py`。脚本自动导入模型并重建皮肤、头发、眼睛与透明材质；只导入 FBX 不会应用完整材质清单。另附 Unity 2022.3 / Unity 6 URP 的手动导入说明。操作、限制与实际验证版本见 [3D 模型导出说明](docs/MODEL-EXPORT.md)。
 
 ## 角色外观编辑
 
@@ -159,7 +159,7 @@ WinUI 3 采用未打包（`WindowsPackageType=None`）部署，发布时同时�
 .\build-desktop.ps1
 ```
 
-输出为当前 Windows 用户桌面的 `HS2Manager` 文件夹，包含程序、运行时和 Unity 预览内核，可直接运行其中的 `HS2Manager.exe`；不生成 ZIP 或压缩包校验文件。脚本支持与 `build.ps1` 相同的 `-GamePath`、`-SkipTests`、`-PreviewTest`、`-PreviewCard` 和 `-UnityPlayerDirectory` 参数。若桌面已有 `HS2Manager`，会停止并提示先移走或重命名，保留已有程序和 `Data`。
+输出为当前 Windows 用户桌面的 `HS2Manager` 文件夹，包含程序、运行时和 Unity 预览内核，可直接运行其中的 `HS2Manager.exe`；不生成 ZIP 或压缩包校验文件。脚本支持与 `build.ps1` 相同的 `-GamePath`、`-SkipTests`、`-PreviewTest`、`-PreviewCard` 和 `-UnityPlayerDirectory` 参数。若桌面已有 `HS2Manager`，构建成功后自动替换程序文件并保留原有 `Data`（数据库、设置、收藏等）；旧版多余文件会清理。构建失败时保留旧版本，替换失败时恢复旧目录。更新前请先关闭正在运行的桌面版程序。
 
 NAS 项目通过映射盘或 UNC 路径启动时会复用同一资料库，包括已有的本机资料目录。迁移包含编辑备份 `CardBackups`，并修正操作记录中的备份路径，支持继续恢复原卡。`build.ps1` 将 .NET 中间文件和发布暂存放在本机；`build-unity-preview.ps1` 将 Unity 源文件同步到 `%LOCALAPPDATA%\HS2Manager\UnityBuild` 后构建，`Library`、`Temp` 不在 NAS 上生成。成功的 Player 复制回项目，使用相对路径记录，项目移动后仍可找到。独立运行核心/UI 检查时，NAS 项目的测试资料默认写入 `%LOCALAPPDATA%\HS2Manager\Tests\artifacts`。
 

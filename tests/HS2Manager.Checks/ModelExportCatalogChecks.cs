@@ -33,6 +33,8 @@ internal static class ModelExportCatalogChecks
                 }
                 var result=JsonSerializer.Deserialize<ModelExportResult>(File.ReadAllText(Path.Combine(folder,"model-result.json")),UnityCharacterService.JsonOptions)!;
                 if(result.Meshes<1||result.Bones<10||result.Vertices<100)throw new Exception("Invalid character structures.");
+                foreach(string engine in new[]{"Blender","Unreal"})
+                    if(!File.Exists(Path.Combine(folder,engine+"导入.py")))throw new Exception("Missing material importer: "+engine);
                 using var materials=JsonDocument.Parse(File.ReadAllText(Path.Combine(folder,"materials.json")));
                 foreach(var material in materials.RootElement.GetProperty("Materials").EnumerateArray())
                     foreach(string texture in new[]{"BaseColor","Normal","Metallic","Roughness","Occlusion","Emission"})

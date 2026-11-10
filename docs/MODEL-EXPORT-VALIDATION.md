@@ -35,7 +35,7 @@
 
 ## 验证边界
 
-本机没有 Unity 2022.3、Unity 6 URP 和 Unreal Engine 5.6，尚未执行这些目标环境的实际导入、材质及动画重定向验收。Unity 2018.4 回读只证明该环境中的文件结构、参考形态和基本变形，不替代目标引擎验收。
+本机没有 Unity 2022.3、Unity 6 URP 和 Unreal Engine 5.6，尚未执行这些目标环境的实际导入、材质及动画重定向验收。后续 Unreal 5.8 检查范围见本文末尾；Unity 2018.4 回读只证明该环境中的文件结构、参考形态和基本变形，不替代目标引擎验收。
 
 通用 PBR 的光照、透明排序、皮肤散射和头发效果与原游戏不同。检查截图使用基础色材质，仅用于发现缺失、透明遮罩和几何问题，不是画面一致性测试。既有游戏预览的 SSIM 验收不适用于本功能。
 
@@ -78,3 +78,34 @@
 `tests/Test-BlenderTextImport.py` 清除测试命令行的角色参数后，调用与 Alt+P 相同的 `bpy.ops.text.run_script()`，实际载入下载目录中的中文角色包：30 个网格、30 个材质、152 张贴图。未保存场景、已保存场景的相对路径、内部文本提示、命令行参数及路径边界共 8 项检查通过。本次仅验证路径入口和导入，不增加材质渲染结论。
 
 证据：[原错误复现](../artifacts/model-export/blender-path-fix/reproduction.json)、[修复后检查](../artifacts/model-export/blender-path-fix/verified/validation.json)。源码和该现有角色包的脚本已更新；此前发布的 ZIP 不包含此路径修复。
+
+## Unreal 自动材质导入优化（2026-11-09）
+
+使用本机 **Unreal Engine 5.8.4**（`58902052`），在独立临时项目中实际运行随包交付的 `Unreal导入.py`。重新导出女性、男性及女性 MOD 三个代表样本，共 **80 个源网格 / 80 个材质**；原卡 SHA-256 不变。此结果不扩展为 84 张卡的 Unreal 画面一致性验收。
+
+| 检查 | 结果 |
+| --- | --- |
+| 新内核生成 FBX、PBR 贴图和 Unreal / Blender 导入脚本 | 3/3；随包脚本 SHA-256 与源码相同 |
+| UE 骨骼网格导入、材质槽匹配及保存 | 3/3，3 个 Skeletal Mesh、80 个材质槽完整保留 |
+| BaseColor/Emission sRGB、线性数据贴图、法线压缩和绿通道翻转 | 80 个材质全部通过 |
+| 皮肤散射、眼球不透明、眼周 Unlit/Modulate、头发双面抖动遮罩 | 分类设置检查通过 |
+| UE Morph Targets 导入 | 144 / 148 / 144；数量低于源通道总数，动画重定向不在本轮验收范围 |
+| 重复导入保留已有材质及用户编辑标记 | 通过；新建独立目录 |
+| 角色包路径边界、材质编号及缺失贴图检查 | 通过 |
+| Unity GPU 烘焙 | 13/13，通过新增的无主法线头发细节检查 |
+| 修复后 Unity 独立回读几何及表情 | 3/3，80 个网格、455 个形变目标；抽样最大位置误差 0.0006 毫米 |
+| 主程序及 Unity 源码编译、核心回归、便携启动/关闭 | 通过；主程序及 Unity 源码编译 0 警告 / 0 错误 |
+
+最主要的问题是旧 FBX 的多 UV 网格没有显式将材质索引挂到第 0 层。UE 只从该层读取材质，三个样本因此分别丢失 5 / 4 / 2 个材质槽，头部和部分头发错误套用身体材质。现在显式绑定到第 0 层，29 / 19 / 32 个材质槽全部保留，并在导入时检查完整性。重新计算切线或关闭法线只能掩盖该问题，不能修复材质对应关系。
+
+另修复头发细节法线在缺少主法线时退化为单像素的问题。自动材质导入保留原发色，按原 Shader 的 N·V 关系近似头发光泽；头发使用切线空间 V 方向各向异性和写入深度的抖动遮罩，避免通用半透明发片的排序穿透。眼球保留烘焙虹膜和镜面反光，眼周乘色贴图不再作为普通受光表面。眼周 Modulate 使用非方向体积透明模式，避免 UE 为不支持的动态透明光照回退到默认材质。
+
+测试项目使用传统材质路径（`r.Substrate=0`），没有修改用户项目设置；Substrate 项目尚未验证。Unity 2022.3 / Unity 6、UE 5.6、IK 重定向、原游戏后处理及复杂 MOD Shader 的画面一致性仍未验证。MOD 样本保留原有“配饰 3 资源不存在”诊断。
+
+证据：
+
+- [三个样本实际导出](../artifacts/model-export/unreal-packages-summary.json)、[UE 自动导入结果](../artifacts/model-export/unreal-optimized-validation/validation.json)。
+- [GPU 烘焙检查](../artifacts/model-export/unreal-bake-v2/material-bake-validation.json)、[修复后 Unity 独立回读](../artifacts/model-export/unreal-unity-import-validation.json)。
+- [UE 同灯光导入前后渲染记录](../artifacts/model-export/unreal-optimized-validation/render-validation.json)：三个角色的正面和面部截图；面部对照临时隐藏配饰以检查眼睛，全身保留配饰。不代表原游戏环境下的 1:1 还原。
+- 最终导出内核为 `artifacts/model-export/player-unreal-layerfix`，程序集 SHA-256 为 `5AE7976C51D5BAC3A037C3D09BE0A70814EDA29D21A8BD029C541E90A5D7049F`。
+- 可运行便携目录为 `artifacts/release/HS2Manager-unreal-optimized-win-x64`，内含相同内核，需用此版本重新导出角色包。

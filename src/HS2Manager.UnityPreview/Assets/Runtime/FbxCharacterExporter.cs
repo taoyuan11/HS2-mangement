@@ -262,6 +262,10 @@ namespace HS2Manager.UnityPreview
                 foreach(var color in colors)colorLayer.GetDirectArray().Add(new FbxColor(color.r,color.g,color.b,color.a));
             }
             var materialLayer=geometry.CreateElementMaterial();materialLayer.SetMappingMode(FbxLayerElement.EMappingMode.eByPolygon);materialLayer.SetReferenceMode(FbxLayerElement.EReferenceMode.eIndexToDirect);
+            // UE reads material indices from layer 0. CreateElementMaterial may
+            // attach to the most recently created UV layer, which makes meshes
+            // with UV1 (head, tears, some hair/clothes) fall back to body material.
+            geometry.GetLayer(0).SetMaterials(materialLayer);
             var polygonMaterials=new List<int>();
             var rendererMaterials=renderer.sharedMaterials;
             for(int sub=0;sub<mesh.subMeshCount;sub++)

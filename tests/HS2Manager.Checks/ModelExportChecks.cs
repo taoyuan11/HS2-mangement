@@ -31,7 +31,7 @@ internal static class ModelExportChecks
         {
             Console.WriteLine(item.Source+" -> "+item.Directory+" "+item.Status+" "+item.Message);
             if(item.Status is ModelExportStatus.Failed or ModelExportStatus.Cancelled)throw new Exception("Model export failed: "+item.Message);
-            foreach(string required in new[]{"character.fbx","materials.json","骨骼映射.json","导入说明.txt","导出报告.txt","files.json","Blender导入.py"})
+            foreach(string required in new[]{"character.fbx","materials.json","骨骼映射.json","导入说明.txt","导出报告.txt","files.json","Blender导入.py","Unreal导入.py"})
                 if(!File.Exists(Path.Combine(item.Directory,required)))throw new Exception("Missing export file: "+required);
             using(var stream=File.OpenRead(Path.Combine(item.Directory,"character.fbx")))
             {

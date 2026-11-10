@@ -70,6 +70,10 @@ namespace HS2Manager.UnityPreview.Editor
                 m.SetTexture("_MainTex",Texture(Color.white));Expect("Eye shadow opaque area is tint",Read(0),Color.red);
                 m.SetFloat("_HasOcclusionMap",1);m.SetFloat("_OcclusionStrength",0);m.SetTexture("_OcclusionMap",Texture(Color.black));
                 Expect("Disabled AO is neutral",Read(4),Color.white);
+                m.CopyPropertiesFromMaterial(defaults);
+                m.SetFloat("_OriginalHair",1);m.SetFloat("_HasDetailMask",1);m.SetFloat("_DetailScale",1);
+                m.SetTexture("_DetailMask",Texture(new Color(.5f,.75f,1,1)));
+                Expect("Hair detail normal works without primary bump",Read(1),new Color(.5f,.75f,.933f,1));
                 report.Passed=true;
             }
             catch(Exception error){report.Error=error.ToString();Debug.LogException(error);}

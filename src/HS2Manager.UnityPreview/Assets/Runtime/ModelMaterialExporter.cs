@@ -107,8 +107,12 @@ namespace HS2Manager.UnityPreview
                 .Select(p=>TextureOf(source,p)).Where(t=>t!=null).ToArray();
             int width=textures.Length==0?1:textures.Max(t=>t.width),height=textures.Length==0?1:textures.Max(t=>t.height);
             record.BaseColor=Bake(id,"basecolor",0,width,height,true,canceled);
-            var normal=TextureOf(source,"_BumpMap");var normal2=TextureOf(source,"_BumpMap2");
-            record.Normal=Bake(id,"normal",1,Math.Max(normal==null?1:normal.width,normal2==null?1:normal2.width),Math.Max(normal==null?1:normal.height,normal2==null?1:normal2.height),false,canceled);
+            var normals=new[]{TextureOf(source,"_BumpMap"),TextureOf(source,"_BumpMap2"),originalHair?TextureOf(source,"_DetailMask"):null}.Where(t=>t!=null).ToArray();
+            // Hair detail normals are sampled at 16x in the source shader. A
+            // missing primary normal must not collapse their bake to one pixel.
+            int normalWidth=normals.Length==0?1:normals.Max(t=>t.width),normalHeight=normals.Length==0?1:normals.Max(t=>t.height);
+            if(originalHair&&TextureOf(source,"_DetailMask")!=null){normalWidth=Math.Max(normalWidth,width);normalHeight=Math.Max(normalHeight,height);}
+            record.Normal=Bake(id,"normal",1,normalWidth,normalHeight,false,canceled);
             var detail=TextureOf(source,"_DetailMainTex");var metallicMap=TextureOf(source,"_MetallicGlossMap");
             int dw=Math.Max(detail==null?1:detail.width,metallicMap==null?1:metallicMap.width),dh=Math.Max(detail==null?1:detail.height,metallicMap==null?1:metallicMap.height);
             record.Metallic=Bake(id,"metallic",2,dw,dh,false,canceled);
@@ -168,9 +172,12 @@ namespace HS2Manager.UnityPreview
         internal void Save()
         {
             File.WriteAllText(Path.Combine(directory,"materials.json"),JsonUtility.ToJson(new MaterialRecords{Materials=records.ToArray()},true));
-            var importer=Resources.Load<TextAsset>("BlenderImport.py");
-            if(importer==null)throw new IOException("Blender 材质导入脚本未包含在播放器中。");
-            File.WriteAllText(Path.Combine(directory,"Blender导入.py"),importer.text,new System.Text.UTF8Encoding(false));
+            foreach(string engine in new[]{"Blender","Unreal"})
+            {
+                var importer=Resources.Load<TextAsset>(engine+"Import.py");
+                if(importer==null)throw new IOException(engine+" 材质导入脚本未包含在播放器中。");
+                File.WriteAllText(Path.Combine(directory,engine+"导入.py"),importer.text,new System.Text.UTF8Encoding(false));
+            }
         }
         public void Dispose(){Object.DestroyImmediate(baker);Object.DestroyImmediate(defaults);}
     }
