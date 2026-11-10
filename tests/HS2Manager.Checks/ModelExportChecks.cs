@@ -5,7 +5,7 @@ using HS2Manager.Preview.Contracts;
 
 internal static class ModelExportChecks
 {
-    internal static async Task Run(string game,string data,string player,string output,string? cardPath,string? catalog,int count,bool draft,int clothing=0,bool accessories=true)
+    internal static async Task Run(string game,string data,string player,string output,string? cardPath,string? catalog,int count,bool draft,int clothing=0,bool accessories=true,ModelExportTarget target=ModelExportTarget.GenericFbx,string tool="")
     {
         Directory.CreateDirectory(output);
         string[] cards;
@@ -25,14 +25,16 @@ internal static class ModelExportChecks
             session.SetValue("body.shapeValueBody[0]",.67f);
             sources[0]=new(sources[0].Card,session.Snapshot());
         }
-        var report=await new ModelExportService().ExportAsync(sources,game,Path.Combine(data,"model-export"),output,new(clothing,accessories),new Progress<WorkProgress>(p=>Console.WriteLine(p.Message)),default,player);
+        var report=await new ModelExportService().ExportAsync(sources,game,Path.Combine(data,"model-export"),output,new(clothing,accessories,target,target==ModelExportTarget.Blender?tool:"",target==ModelExportTarget.Unreal?tool:""),new Progress<WorkProgress>(p=>Console.WriteLine(p.Message)),default,player);
         Console.WriteLine(report.Summary);
         foreach(var item in report.Items)
         {
             Console.WriteLine(item.Source+" -> "+item.Directory+" "+item.Status+" "+item.Message);
             if(item.Status is ModelExportStatus.Failed or ModelExportStatus.Cancelled)throw new Exception("Model export failed: "+item.Message);
-            foreach(string required in new[]{"character.fbx","materials.json","骨骼映射.json","导入说明.txt","导出报告.txt","files.json","Blender导入.py","Unreal导入.py"})
+            foreach(string required in new[]{"骨骼映射.json","导入说明.txt","导出报告.txt","files.json"})
                 if(!File.Exists(Path.Combine(item.Directory,required)))throw new Exception("Missing export file: "+required);
+            if(Directory.EnumerateFiles(item.Directory,"*.py",SearchOption.AllDirectories).Any())throw new Exception("Export contains internal Python scripts.");
+            if(target==ModelExportTarget.GenericFbx)
             using(var stream=File.OpenRead(Path.Combine(item.Directory,"character.fbx")))
             {
                 byte[] expectedHeader=System.Text.Encoding.ASCII.GetBytes("Kaydara FBX Binary");
@@ -42,13 +44,23 @@ internal static class ModelExportChecks
             var result=JsonSerializer.Deserialize<ModelExportResult>(File.ReadAllText(Path.Combine(item.Directory,"model-result.json")),UnityCharacterService.JsonOptions)!;
             if(result.Meshes<1||result.Bones<10||result.BlendShapes<1)throw new Exception("Incomplete character structures.");
             if(draft&&item.Source==cards[0]&&result.EditRevision!=sources[0].Snapshot!.Revision)throw new Exception("Wrong draft revision.");
+            if(result.Target!=target.ToString()||!File.Exists(Path.Combine(item.Directory,result.EntryPoint)))throw new Exception("Wrong native target or entry point.");
+            if(target!=ModelExportTarget.GenericFbx)
+            {
+                if(File.Exists(Path.Combine(item.Directory,"character.fbx"))||Directory.Exists(Path.Combine(item.Directory,"Textures")))throw new Exception("Native delivery contains intermediate resources.");
+                using var native=JsonDocument.Parse(File.ReadAllText(Path.Combine(item.Directory,"native-result.json")));
+                if(!native.RootElement.GetProperty("Passed").GetBoolean()||!native.RootElement.GetProperty("Reopened").GetBoolean())throw new Exception("Native file was not reopened.");
+            }
+            if(target==ModelExportTarget.GenericFbx)
+            {
             using var materials=JsonDocument.Parse(File.ReadAllText(Path.Combine(item.Directory,"materials.json")));
             foreach(var material in materials.RootElement.GetProperty("Materials").EnumerateArray())
             {
                 if(!accessories&&material.GetProperty("Role").GetString()=="accessory")throw new Exception("Hidden accessory was exported.");
                 if(clothing==2&&material.GetProperty("Role").GetString()=="clothes")throw new Exception("Hidden clothing was exported.");
-                foreach(string texture in new[]{"BaseColor","Normal","Metallic","Roughness","Occlusion","Emission"})
+                foreach(string texture in new[]{"BaseColor","Normal","Metallic","Roughness","Occlusion","Emission","HairStreakMask"})
                     if(material.TryGetProperty(texture,out var value)&&!string.IsNullOrEmpty(value.GetString())&&!File.Exists(Path.Combine(item.Directory,value.GetString()!)))throw new Exception("Missing material texture.");
+            }
             }
             using var hashes=JsonDocument.Parse(File.ReadAllText(Path.Combine(item.Directory,"files.json")));
             foreach(var entry in hashes.RootElement.EnumerateArray())

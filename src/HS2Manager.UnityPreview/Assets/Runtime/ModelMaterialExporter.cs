@@ -17,9 +17,13 @@ namespace HS2Manager.UnityPreview
             public string AlphaMode="Opaque";
             public float AlphaCutoff=.5f;
             public float HairExtraGloss;
+            public string HairStreakMask;
+            public float[] HairStreakColor = new float[] { 1, 1, 1, 1 };
+            public int HairStreakUv = 1;
+            public float HairStreakStrength;
             public bool DoubleSided;
         }
-        [Serializable] private sealed class MaterialRecords{public int SchemaVersion=2;public MaterialRecord[] Materials;}
+        [Serializable] private sealed class MaterialRecords{public int SchemaVersion=3;public MaterialRecord[] Materials;}
         private readonly FbxScene scene;
         private readonly string directory;
         private readonly List<string> warnings;
@@ -61,8 +65,7 @@ namespace HS2Manager.UnityPreview
             // The original hair shader uses screen-door coverage rather than a
             // single hard threshold. Preserve strand coverage in Blender.
             if(originalHair)record.AlphaMode="Blend";
-            if(eyeShadow)record.AlphaMode="Blend";
-            if(tear)record.AlphaMode="Mask";
+            if(eyeShadow||tear||shader=="AIT/Clothes Alpha")record.AlphaMode="Blend";
             record.AlphaCutoff=Number(source,.5f,"_Cutoff");
             record.DoubleSided=hair||lash||Number(source,2,"_Cull","_CullMode")==0;
             // Copy only matching properties. The bake mode and feature flags are then set explicitly.
@@ -94,7 +97,14 @@ namespace HS2Manager.UnityPreview
             baker.SetFloat("_NamidaScale",Number(source,0,"_NamidaScale"));
             baker.SetFloat("_OcclusionStrength",Number(source,1,"_OcclusionStrength","_OcculusionStrength"));
             if(originalHair&&Number(source,0,"_Mesh_onoff")>0&&TextureOf(source,"_MeshColorMask_B")!=null)
-                warnings.Add(renderer+"：头发挑染使用第二套 UV，基础色烘焙保留主发色；挑染需在目标软件按 UV1 配置。");
+            {
+                var streak=TextureOf(source,"_MeshColorMask_B");
+                record.HairStreakMask=Bake(id,"hair_streak",6,streak.width,streak.height,false,canceled);
+                var tint=ColorOf(source,Color.white,"_MeshColor_01").linear;
+                record.HairStreakColor=new[]{tint.r,tint.g,tint.b,tint.a};
+                record.HairStreakStrength=Mathf.Clamp01(Number(source,0,"_Mesh_onoff"));
+                warnings.Add(renderer+"：挑染保留独立 UV1 遮罩，原生导出自动接线；通用 FBX 需按材质清单配置。");
+            }
             baker.SetFloat("_IgnoreMainAlpha",skin||shader.IndexOf("Clothes True",StringComparison.OrdinalIgnoreCase)>=0?1:0);
             baker.SetFloat("_BakeAlpha",record.AlphaMode=="Opaque"?0:1);
             baker.SetFloat("_BaseMetallic",Mathf.Clamp01(Number(source,0,"_Metallic")));
@@ -172,12 +182,6 @@ namespace HS2Manager.UnityPreview
         internal void Save()
         {
             File.WriteAllText(Path.Combine(directory,"materials.json"),JsonUtility.ToJson(new MaterialRecords{Materials=records.ToArray()},true));
-            foreach(string engine in new[]{"Blender","Unreal"})
-            {
-                var importer=Resources.Load<TextAsset>(engine+"Import.py");
-                if(importer==null)throw new IOException(engine+" 材质导入脚本未包含在播放器中。");
-                File.WriteAllText(Path.Combine(directory,engine+"导入.py"),importer.text,new System.Text.UTF8Encoding(false));
-            }
         }
         public void Dispose(){Object.DestroyImmediate(baker);Object.DestroyImmediate(defaults);}
     }

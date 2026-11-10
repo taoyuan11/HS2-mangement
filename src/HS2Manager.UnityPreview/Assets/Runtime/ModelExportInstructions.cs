@@ -2,44 +2,23 @@ namespace HS2Manager.UnityPreview
 {
     internal static class ModelExportInstructions
     {
-        internal const string Text=@"FBX 可动画角色导入
+        internal const string Text=@"通用 FBX 可动画角色
 
-文件：character.fbx、Textures、materials.json、骨骼映射.json、Blender导入.py、Unreal导入.py。
+文件：character.fbx、Textures、materials.json、骨骼映射.json。
 请一起移动整个角色文件夹；贴图使用相对路径。FBX 为右手 Y-up、厘米，HS2 源单位按 10 厘米换算。
-体形已经转换为角色的参考形态；保留原骨架、额外骨骼、权重和表情。文件不包含待机动画或物理组件。
-保存的默认表情已烘焙到基准网格，导入后所有形变权重应为 0，以避免重复叠加。
-如需沿用原始游戏表情控制值，先将 HS2_ResetExpressions（若存在）设为 100，再设置原始形变通道。model-result.json 同时记录导出 DefaultWeights（全 0）与 SourceDefaultWeights。
+体形已经转换为参考形态；保留原骨架、额外骨骼、蒙皮、表情、UV、法线和切线。不包含待机动画或物理组件。
+默认表情已烘焙到基础网格，导入后的形变权重应为 0。沿用游戏原始控制值时，先将 HS2_ResetExpressions（若存在）设为 100，再设置原始形变通道。Unreal 的形变权重使用对应的 0–1 数值。
 
-Blender 4.0 及以上（实测版本见项目验证记录）
-1. 保持整个角色文件夹完整。打开 Blender 的 Scripting 工作区，在文本编辑器中选择 Open，打开本包的 Blender导入.py，然后 Run Script（Alt+P）。
-2. 脚本会导入 character.fbx 到一个新的角色集合，自动连接 PBR 贴图、设置 sRGB / Non-Color、OpenGL 法线、透明阈值和双面材质。无需先手动导入 FBX；重复运行会新增一个角色。
-3. 使用 Material Preview 或 Rendered 查看；Solid 模式不显示完整材质。脚本保留现有场景、灯光和色彩管理。
-4. Skin 使用少量皮肤散射，Hair 使用 UV 切线各向异性，Eye 使用清漆层，EyeShadow 使用乘色透明节点。这些均是可编辑近似；AO influence 节点控制额外遮蔽，0 可关闭。
-5. 灯光、曝光和 AgX / Standard 等视图变换会改变观感。做颜色对照时先统一灯光和曝光；不能把材质预览默认 HDRI 当作游戏环境。
-6. 导入后另存 .blend。需要独立携带时使用 File > External Data > Pack Resources 将贴图打包。
-命令行也可使用：blender --background --python Blender导入.py -- 角色文件夹
+手动导入与材质
+1. 导入骨架、蒙皮、BlendShapes / Morph Targets、原始法线和切线，保持单位转换及缩放 1。
+2. 按 materials.json 的 Id 匹配 FBX 材质槽。BaseColor 和 Emission 使用 sRGB；Normal、Metallic、Roughness、Occlusion 使用线性数据。
+3. Normal 为 OpenGL +Y；Unreal 需翻转绿色通道。Unity URP 需将 Roughness 取反为 Smoothness 并打包到金属贴图 Alpha。
+4. AlphaMode=Mask 使用 Alpha Clipping，阈值见 AlphaCutoff；Blend 使用半透明；按 DoubleSided 设置双面。
+5. HairStreakMask 使用 HairStreakUv 指定的 UV 通道，按 HairStreakColor 和 HairStreakStrength 混合挑染颜色。
+6. 参照骨骼映射.json 配置 Unity Humanoid 或 Unreal IK Rig / Retargeter，并检查参考姿态。
 
-Unity 2022.3 LTS / Unity 6 URP
-1. 将整个角色文件夹复制到 Assets。Model 保持 Convert Units，Scale Factor=1；开启 Import BlendShapes。
-2. Rig 选择 Humanoid、Create From This Model，按骨骼映射.json 的 UnityHumanoid 列配置。保留辅助骨骼；在 Configure 中检查并校正 T-Pose，然后 Apply。
-3. 新建 URP/Lit 材质，并依照 materials.json 的 Id 对应 FBX 材质槽。
-4. BaseColor 接 Base Map，使用 sRGB；Normal 设置 Texture Type=Normal map，关闭 Flip Green Channel。
-5. Metallic、Roughness、Occlusion 为线性数据，取消 sRGB。Unity 需要将 Roughness 取反为 Smoothness；将 Metallic 写入金属贴图 R、Smoothness 写入 A。Occlusion 使用 G 通道（本包灰度图各 RGB 相同）。
-6. AlphaMode=Mask 开启 Alpha Clipping，阈值见 AlphaCutoff；Blend 选择 Transparent；DoubleSided 开启 Render Face Both。
-7. Emission 为 sRGB，接 Emission Map 并启用 Emission。使用 SkinnedMeshRenderer 的 BlendShapes 检查眨眼和嘴部形变。
-
-Unreal Engine 5（实际验证版本见项目验证记录）
-1. 在 Edit > Plugins 启用 Python Editor Script Plugin 和 Editor Scripting Utilities，按编辑器提示重启。
-2. 保持整个角色文件夹完整，在 Tools > Execute Python Script 选择本包的 Unreal导入.py。无需先手动导入 FBX。
-3. 脚本在 /Game/HS2Characters 下创建独立角色目录，导入 Skeletal Mesh、Skeleton 和 Morph Targets，按材质槽自动连接全部贴图。重复运行新增目录，保留已有资产和场景灯光。
-4. 自动设置 BaseColor/Emission 为 sRGB，数据贴图为线性；OpenGL +Y 法线开启 Flip Green Channel。皮肤使用可调散射；眼球保留不透明虹膜及镜面反光；眼周阴影使用无光照乘色，避免灰色面片；泪线使用表面半透明。
-5. 头发使用双面 Masked、抖动覆盖和各向异性，避免发片半透明排序穿透。建议项目使用 TSR 或 TAA；低抗锯齿质量下边缘可能有颗粒。材质参数可继续调整。
-6. 按骨骼映射.json 的 Unreal 列创建 IK Rig 链，Hips/pelvis 为重定向根；建立 IK Retargeter，校正源与目标参考姿态后再使用现成人形动画。在 Skeletal Mesh 编辑器测试 Morph Targets；额外骨骼由自己的动画或物理方案控制。
-7. 手动导入时：Import Uniform Scale=1，开启 Convert Scene / Convert Scene Unit，导入法线和切线。仅导入 FBX 默认材质不会应用完整材质清单，建议使用上述脚本。
-
-材质说明
-本包是通用 metallic/roughness PBR 近似。脚本提供可编辑的皮肤散射、头发各向异性及透明设置；专用眼球折射、描边、MatCap 和屏幕后处理仍需在目标引擎另行设置。对比外观时请使用相近灯光、曝光和视图变换。
-导出报告列出缺失和未知 Shader；存在警告时请检查对应部件。未发现目标编辑器时不代表已经通过目标引擎验收。
+本包采用通用 PBR 材质，不附带 Blender 或 Unreal 脚本。需要自动建立专用材质、灯光和相机时，请在 HS2 Manager 选择“Blender 3D 模型”或“Unreal 3D 模型”原生导出。
+未知 Shader、眼球折射、MatCap、描边及后处理可能存在差异；缺失资源与效果近似见导出报告。
 ";
     }
 }

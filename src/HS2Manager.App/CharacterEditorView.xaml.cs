@@ -61,7 +61,7 @@ public sealed partial class CharacterEditorView : UserControl
         if(Session==null||saving||model.IsBusy)return;
         Session.EndGesture();
         var source=new ModelExportSource(Session.Card,Session.Snapshot());
-        await owner.ExportModelsAsync(new[]{source});
+        await owner.ExportModelsAsync(new[]{source},previewVisibility.Clothing,previewVisibility.Accessories);
     }
     private void PreviewChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e)
     {

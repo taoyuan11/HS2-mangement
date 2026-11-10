@@ -1,4 +1,56 @@
-# FBX 导出验证记录
+# 模型导出验证记录
+
+## 原生导出与场景验证（2026-11-10）
+
+本轮验证新的三目标导出流程：干净的通用 FBX、可直接打开的 Blender `.blend`、独立 Unreal `.uproject`。下方 2026-11-09 的 FBX / 手动脚本记录保留为历史，不作为新原生流程的验收结论。
+
+实际运行软件为 **Blender 5.3.0 Release Candidate** 和 **Unreal 5.8.4-58902052**；Unity 导出内核为 2018.4.11f1、协议 v4。其他目标版本未经本轮实机验证。
+
+| 样本 | Blender 网格 / 材质 / 打包图像 | Blender 形变通道 | Unreal 材质 / 原生资产 / Morph Targets |
+| --- | --- | --- | --- |
+| 女性 Fur | 29 / 29 / 148 | 150 | 29 / 182 / 146 |
+| 男性 Hero | 19 / 19 / 98 | 155 | 19 / 122 / 151 |
+| 女性 MOD / 高跟鞋 | 32 / 32 / 165 | 150 | 32 / 202 / 146 |
+
+Unreal 每个角色合并为一个 Skeletal Mesh；同名形变跨网格合并，两个女性样本的舌头/牙齿默认零位移通道被引擎省略并写入报告。已降低 Unreal MorphThresholdPosition，保留此前会被默认阈值过滤的约 0.1 毫米睫毛、泪线形变；是否可省略依据内核记录的实际位移，不能只按通道名称判断。
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| 三种实际服务导出、中文输出目录、未保存草稿、隐藏配饰与服装选项 | 通过；原卡 SHA-256 不变 |
+| 通用包无转换脚本；原生包无 FBX、脚本及外置贴图中间文件 | 通过 |
+| 两张卡批量、同名目录自动编号 | 通过，原目录保留，新目录使用 `(2)` |
+| Blender 独立进程回读、打包图像、材质槽、形变名称及默认权重 | 三个代表样本通过 |
+| Unreal 独立进程回读、默认关卡、骨架、材质槽、资产依赖及形变清单 | 三个代表样本通过 |
+| 搬移到中文目录、暂时隐藏中间文件再回读 | 通过；补充眼睛、挑染与高跟鞋样本亦执行 |
+| Blender 参考形态抽样最大位置误差 | 0.000494 毫米，阈值 2 毫米 |
+| Unreal 原生网格经引擎导出后回读的最大位置误差 | 0.000871 毫米，阈值 2 毫米 |
+| 眨眼、嘴部形变与手臂蒙皮 | Blender 三组通过；Unreal 三组原生资产回读通过 |
+| 工具缺失、逐角色失败、请求失败、取消、内核异常退出 | 通过 |
+| 转换失败、超时、取消、宿主退出及子进程清理 | 四种进程所有权测试通过 |
+| 核心、WinUI 三目标对话框、设置、Unity 源码和应用构建 | 通过；最终构建 0 警告、0 错误 |
+
+Unreal 几何验证调用引擎自身的 SkeletalMeshExporterFBX，将已保存的原生资产写到**测试目录**，再检查参考位置、形变位移和骨骼权重；这些回读 FBX 不属于用户交付包。没有把 Blender 的结果当作 Unreal 的结果。
+
+### 同机位画面对照
+
+三张代表卡分别使用全身正面、面部和侧背面，共九组 Unity / Blender Eevee / Unreal TSR 对照。固定参考姿态、1280×960 画幅、相机、灯光和源调色 LUT；高跟鞋角色的 0.6 源单位（6 厘米）根节点抬升已从相机和灯光中同步消除，避免模型归零后取景错位。
+
+另补充隐藏面部配饰后的眼睛近景，以及使用真实头发网格、独立 UV1 遮罩和纹理缩放/偏移的人工挑染夹具。挑染夹具仅修改测试定义，不修改原人物卡。女性样本包含透明头发与半透明服装。
+
+- [女性对照](../artifacts/native-export/review-final/comparison-0.png)、[男性对照](../artifacts/native-export/review-final/comparison-1.png)、[MOD / 高跟鞋对照](../artifacts/native-export/review-final/comparison-2.png)。
+- [无配饰眼睛对照](../artifacts/native-export/review-final/comparison-eyes.png)、[UV1 挑染对照](../artifacts/native-export/review-final/comparison-streak.png)。
+- [图像指标](../artifacts/native-export/review-final/visual-metrics.json)：记录整图 MAE / RMSE、中央上中下区域均色与误差，以及允许 2 像素偏差的边缘 F1。边缘指标包含内部材质边缘，不等同于 Alpha 轮廓 IoU；背景占比较大，整图 MAE 不能独立证明人物外观一致。
+- [Blender 变形检查](../artifacts/native-export/review-final/blender-scene-validation.json)、[Unreal 原生资产回读检查](../artifacts/native-export/review-final/unreal-geometry.json)。
+
+### 可见差异与边界
+
+主体部件、服装和配饰位置保持，眼睛近景未出现白色眼片或眼周灰色面片。两种原生场景仍比源预览更暗，皮肤散射、头发与衣物反光不同；Unreal 皮肤偏暖，头发覆盖和睫毛边缘有更明显的抖动/锯齿。MOD 样本的 Hovl 粒子/中心辉光只保留通用材质近似，出现源预览中不明显的紫色表面；此项没有宣称还原。
+
+Blender Eevee 的 AO、暗角和间接光不与源实现等价，Unreal SkyLight 的漫反射和镜面环境共用源，源 SSR、色差等没有迁移。所有结果均保留这些差异警告和源 Shader 诊断；本轮确认原生交付与可编辑结构，并记录实际外观差异，**不宣称逐像素一致**。
+
+日志：[服务通用](../artifacts/native-export/service-generic.log)、[服务 Blender](../artifacts/native-export/service-blender.log)、[服务 Unreal](../artifacts/native-export/service-unreal.log)、[批量](../artifacts/native-export/batch-final.log)、[转换进程回收](../artifacts/native-export/owned-final.log)、[内核生命周期](../artifacts/native-export/lifecycle-final.log)、[核心](../artifacts/native-export/core-final.log)、[界面](../artifacts/native-export/ui-final.log)、[最终构建](../artifacts/native-export/build-delivery.log)、[Unity 源码](../artifacts/native-export/source-final.log)。
+
+## 历史：FBX 导出验证（2026-11-09）
 
 2026-11-09，本机固定基线的 84 张角色卡均完成实际 FBX 和贴图写出及结构检查，原卡 SHA-256 与基线一致。48 张无缺失诊断，36 张附带资源缺失、未适配效果或无法计算的部件诊断；这些包标为“存在缺失”，不能视为完整外观保证。
 

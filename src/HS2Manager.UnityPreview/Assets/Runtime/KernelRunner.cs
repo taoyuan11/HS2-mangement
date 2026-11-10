@@ -202,6 +202,11 @@ namespace HS2Manager.UnityPreview
                     {
                         source.Exporting=true;
                         yield return source.Build(canceled,progress);
+                        if(request.IncludeScene)
+                        {
+                            key.enabled=false;
+                            yield return ModelSceneExporter.Export(source,request,canceled,progress);
+                        }
                         using(var exporter=new FbxCharacterExporter(source,request.OutputDirectory,request.EditRevision,canceled,progress))yield return exporter.Export();
                     }
                 }

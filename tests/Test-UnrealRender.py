@@ -81,7 +81,7 @@ def setup():
         folder = Path(sample["Package"])
         records = json.loads((folder / "materials.json").read_text(encoding="utf-8-sig"))["Materials"]
         accessories = {r["Id"] for r in records if r.get("Role") == "accessory"}
-        importer = runpy.run_path(str(folder / "Unreal导入.py"), run_name="hs2_render_importer")
+        importer = runpy.run_path(request["Importer"], run_name="hs2_render_importer")
         options = unreal.FbxImportUI()
         for key, value in dict(automated_import_should_detect_type=False, import_as_skeletal=True,
                                import_mesh=True, import_materials=True, import_textures=True,

@@ -1,100 +1,69 @@
-# FBX 可动画角色导出
+# 通用、Blender 与 Unreal 模型导出
 
-在人物列表的底部操作栏、右键菜单、3D 预览工具栏或编辑页“更多”中选择“导出 3D 模型…”。列表支持单张和批量；编辑页在点击时取得不可变草稿，包含未保存修改，不写入原人物卡。
+人物列表的操作栏、右键菜单、3D 预览工具栏及编辑页“更多”均提供“导出 3D 模型…”。选择导出类型、服装和配饰范围，再选择游戏目录之外的输出位置。列表支持单张及批量；编辑页捕获点击时的未保存草稿，不写入原人物卡。
 
-选择完整着装、内着或不穿衣物，以及是否包含配饰，然后选择游戏目录之外的输出位置。每张卡独立成包，同名目录加序号；导出在临时目录完成并校验后发布。取消删除本张尚未发布的临时输出，保留已经完成的角色；单张失败继续后续卡片。
+| 类型 | 打开的文件 | 内容 |
+| --- | --- | --- |
+| 通用 3D 模型（FBX） | `character.fbx` | 骨架、蒙皮、形变、材质槽、UV、法线、切线，配套 PBR 贴图及 `materials.json` |
+| Blender 3D 模型 | `character.blend` | 可编辑模型、骨架、表情、材质节点，打包贴图及环境资源，Eevee 场景 |
+| Unreal 3D 模型 | `HS2Character.uproject` | Skeletal Mesh、Skeleton、Morph Targets、材质、贴图和默认 Preview 关卡 |
 
-## 输出内容
+通用包不再附带 Blender 或 Unreal Python 脚本。原生转换由程序调用本机软件完成，用户直接打开结果，无需手动运行脚本。原生交付包不含内部 FBX、Python 和贴图中间文件。
 
-| 文件 | 内容 |
-| --- | --- |
-| `character.fbx` | 二进制 FBX，原骨架、扩展骨骼、网格、蒙皮、表情、材质槽、UV、法线、切线、顶点色 |
-| `Textures/` | PNG 格式的 Base Color/Alpha、Normal、Metallic、Roughness、Occlusion，以及存在时的 Emission |
-| `materials.json` | 材质槽与贴图对应关系、颜色空间、透明模式、双面及裁剪阈值 |
-| `骨骼映射.json` | 唯一导出骨骼名、原 Transform 路径、Unity Humanoid 和 Unreal 人形骨骼对应关系 |
-| `导入说明.txt` | Unity URP / Unreal 的材质接线、人形动画配置、法线方向及尺寸说明 |
-| `Blender导入.py` | Blender 4+ 导入入口，按清单自动重建材质并放入独立角色集合 |
-| `Unreal导入.py` | UE5 编辑器导入入口，自动导入骨架/表情、重建材质并匹配材质槽 |
-| `model-result.json` | 网格和骨骼数量、形变默认值、参考形态抽样及诊断 |
-| `files.json`、`导出报告.txt` | 文件 SHA-256 清单和角色处理结果；输出目录另有批次总报告 |
+## 软件配置与打开方式
 
-结果区分完成、存在缺失、失败和取消。已知的通用材质近似显示为提示；角色加载阶段的缺失部件、未实现扩展等诊断列为“存在缺失”。用户可保留该包并按报告检查。角色包不包含游戏或插件程序集、原 AssetBundle、待机动画和物理组件。
+在 **设置 → 模型导出** 中选择 `blender.exe` 或 `UnrealEditor-Cmd.exe`；选择 `UnrealEditor.exe` 时自动使用同目录的命令行程序。自动检测常见安装目录、注册信息和 PATH，Blender 也检测桌面或下载目录中的便携版。导出弹窗允许调整并保存路径。
 
-原资源的骨骼引用不完整时，能够计算参考外形的网格仍可保留，并将缺失引用挂到有效根骨骼；对应动画需要人工检查。Unity 本身无法计算蒙皮的部件会跳过并明确列出，整个角色标为存在缺失。没有顶点的 LOD / billboard 占位对象不产生表面，直接忽略。
+导出前运行软件能力检查。工具缺失、必要接口不可用或转换失败时明确报错，不将中间 FBX 当作原生结果发布。通用 FBX 无需安装目标软件。实际测试版本见[验证记录](MODEL-EXPORT-VALIDATION.md)，其他版本不默认视为兼容。
 
-## 骨架、尺寸和表情
+Blender 打开 `character.blend`，使用 Rendered 视图或 F12 查看。模型与预览场景分组，灯光、相机和材质可编辑；贴图及环境资源已打包，环境光探针可重新烘焙。
 
-导出在角色组装完成、待机与物理模拟开始前取得参考姿态。体形、ABMX 和附加部件的变形通过 Unity 原生蒙皮计算转换到网格，权重保留，并为导出骨架重建绑定矩阵。没有权重的部件以单骨蒙皮附着，避免刚性配饰在动画中脱离。骨骼按 Transform 身份关联，同名节点有独立导出名称。
+Unreal 打开项目后默认进入 `/Game/HS2Character/Preview`。角色资产位于 `/Game/HS2Character/Character`，可使用 Asset Actions → Migrate 移入自己的项目。生成项目启用 Python Editor Script Plugin 和 Editor Scripting Utilities，使用传统材质路径、TSR 和固定曝光。相关设置仅写入生成项目；首次打开可能需要编译着色器。
 
-导出关节保留参考位置与旋转，使用单位缩放；体形的非均匀缩放已经烘焙到网格及关节位置，避免引擎重新解释继承缩放和剪切而使网格偏移。可选贴图槽会核对实际对象类型，旧资源中指向非贴图对象的无效引用使用默认值。
+## 场景与画面
 
-FBX 为右手 Y-up、厘米，源 HS2 单位按 10 厘米换算。使用引擎的单位转换，导入缩放保持 1。未将骨架改绑为 Unreal Mannequin 等标准骨架，需要按附带映射设置人形重定向。
+预览和编辑页冻结点击时的相机、画幅、背景与灯光调整；列表使用默认游戏环境和自动取景。所有目标沿用同一份草稿、服装和配饰配置。角色使用参考姿态及默认表情，不捕获待机动画、物理或点击瞬间的姿态。
 
-部分引擎不保留 FBX 的形变默认权重。为保持首次导入的外观，保存的默认表情烘焙到基础网格，导出的形变默认值全部为 0。若需使用原始表情控制值，将 `HS2_ResetExpressions`（存在时）设为 100，再设置原始通道；`SourceDefaultWeights` 记录原始值，`DefaultWeights` 记录导出值。Unity 使用 0–100，Unreal Morph Target 使用对应的 0–1 数值。
+独立内核重建实际预览环境，捕获有效灯光、环境照明、反射及求值后的调色 LUT，并将环境贴图和 LUT 转为可携带资源。纯色背景与环境照明分开处理。原生材质保留皮肤散射、头发渐变、UV1 挑染、各向异性、眼睛高光、眼周乘色、泪线、睫毛和透明遮罩的可编辑实现。
 
-## 通用材质与引擎设置
+跨引擎 BRDF、散射、环境响应、透明排序与屏幕空间效果仍有差异。Bloom、AO、暗角以目标软件参数近似；无法迁移的折射、MOD Shader、SSR、色差等逐项记录在报告中。原生包附 Unity 的 `预览参考.png`，Blender 还输出回读渲染的 `预览.png`。旧预览或 FBX 验收不等于新原生场景的画面一致性验收。
 
-支持 Blender 和 Unreal Engine 5 的自动材质导入，以及 Unity 2022.3 / Unity 6 URP 的手动材质配置。不自动安装工具或生成 Humanoid、IK Rig。
+## 骨架、尺寸与表情
 
-### Blender
+保留原骨架、扩展骨骼和权重。体形、ABMX 与非均匀缩放烘焙到参考网格和关节位置，并重建绑定矩阵。刚性配饰采用单骨蒙皮。空占位对象忽略，无法计算的部件明确列为缺失。
 
-1. 建议在空场景打开 **Scripting** 工作区，在文本编辑器中 **Open** 导出文件夹内的 `Blender导入.py`，然后 **Run Script / Alt+P**。无需先手动导入 FBX。
-2. 脚本读取旁边的 `character.fbx` 和 `materials.json`，创建独立角色集合，自动设置贴图、颜色空间、法线、透明和双面材质。重复运行会新增角色，已有角色的同名材质不会被覆盖。
-3. 使用 **Material Preview** 或 **Rendered** 查看；选中角色后按小键盘 `.` 聚焦。Solid 模式不能用来判断最终材质。脚本保留场景灯光、相机和色彩管理；灯光与曝光需按自己的场景调整。
-4. 另存 `.blend`；需要独立携带时，使用 **File → External Data → Pack Resources** 打包贴图。
+中间 FBX 使用右手 Y-up、厘米，HS2 源单位按 10 厘米换算。目标软件自动转换单位，不需额外缩放。未自动改绑为 Unreal Mannequin 等标准骨架，附带的 `骨骼映射.json` 可用于 Unity Humanoid 或 Unreal IK Rig / Retargeter。
 
-中文界面可将鼠标放在 3D 视图内按 `Shift+F11` 进入文本编辑器，选择 **文本 → 打开** 载入脚本，再将鼠标放在代码区域按 `Alt+P`。脚本使用文本编辑器记录的真实文件路径定位角色包；Blender 的 `__file__` 可能只是内部文本名称。更新磁盘上的脚本后，应重新打开文件，避免继续运行内存中的旧版本。缺失文件的报错会显示实际查找的完整路径。
+默认表情烘焙到基础网格，导出形变默认权重全部为 0，避免重复叠加。需要使用游戏原始控制值时，先设置 `HS2_ResetExpressions`（存在时），再设置原始通道。Unity 使用 0–100，Blender 与 Unreal 使用对应的 0–1 数值。`model-result.json` 保存原始及导出默认值和参考形态抽样。
 
-支持 Blender 4.0 及以上 API；实际验证版本和范围见 [验证记录](MODEL-EXPORT-VALIDATION.md)。命令行入口：
+## 通用 FBX 手动材质配置
 
-```powershell
-blender --background --python '角色文件夹/Blender导入.py' -- '角色文件夹'
-```
+- BaseColor、Emission 使用 sRGB；Normal、Metallic、Roughness、Occlusion、HairStreakMask 使用线性数据。
+- 法线为 OpenGL +Y；Unreal 翻转绿色通道，Unity 设置为 Normal Map。
+- Unity URP 将 Roughness 取反为 Smoothness，并按金属贴图 R/A 通道打包。
+- AlphaMode 为 Mask 时使用裁剪，为 Blend 时使用半透明；按 AlphaCutoff 和 DoubleSided 设置阈值及双面。
+- 挑染使用 HairStreakUv 指定的 UV 通道、独立遮罩、强度和颜色。仅导入 FBX 不会自动构建专用材质。
 
-材质保留独立且可编辑的节点：皮肤采用少量散射，头发采用 UV 切线各向异性，眼球采用清漆层；眼周乘色阴影使用透明着色器，避免变成受光的灰色面片。原头发的抖动覆盖率转为连续透明度；Eevee 与 Cycles 的透明排序和阴影仍可能不同。`HS2 AO influence` 节点控制 AO 对基础色的额外影响，默认 0.35，设为 0 可关闭；这是目标软件中的近似参数。
+## 发布、报告与清理
 
-新版烘焙按 AIT 通道解释皮肤和服装的金属度/光泽，按原遮罩合成头发渐变，并修正眼球的虹膜/瞳孔 UV、瞳孔 Alpha 和颜色 Alpha。已有旧包可使用新导入脚本补齐接线，但贴图中的旧烘焙误差需要重新导出才能修正。
+每张卡独立成包，同名目录自动编号。转换、结构和依赖检查、独立进程回读完成后才发布。取消清理尚未发布的角色，保留此前完成的角色；逐角色失败继续后续卡片。
 
-### Unreal Engine 5
+各包附骨骼映射、说明、`model-result.json`、`导出报告.txt` 和 `files.json` SHA-256 清单；原生结果另记录目标软件实际版本、入口及回读结果。完成与“存在缺失”分开统计，具体内容见报告。
 
-1. 在 **Edit → Plugins** 启用 **Python Editor Script Plugin** 和 **Editor Scripting Utilities**，按编辑器提示重启。
-2. 保持角色包完整，在 **Tools → Execute Python Script** 选择导出包中的 `Unreal导入.py`。无需先导入 FBX。
-3. 脚本在 `/Game/HS2Characters/` 下新建角色目录，导入 Skeletal Mesh、Skeleton 和 Morph Targets，按 FBX 原材质槽匹配 `materials.json`。重复运行会创建新目录，保留之前的资产、灯光及曝光设置。
-4. 将 Skeletal Mesh 放入场景查看。头发的抖动透明建议使用 **TSR / TAA**；低抗锯齿质量下边缘可能有颗粒。按附带骨骼映射设置 IK Rig / Retargeter，再测试动画。
-
-脚本会设置颜色贴图 sRGB、数据贴图线性、法线压缩与 Flip Green Channel，并将 AO 接独立遮蔽输入。皮肤采用可调散射；头发采用双面 Masked、抖动覆盖、沿发片 UV V 的各向异性和视角相关光泽；睫毛采用双面裁剪。眼球保留不透明的虹膜与镜面反光，眼周阴影采用 Unlit / Modulate 乘色叠加，泪线使用表面半透明光照。参数及贴图节点均可编辑。
-
-仅拖入 FBX 时，UE 的默认材质导入不会应用上述设置。原游戏眼周乘色贴图也不能直接作为普通受光 Base Color。旧 FBX 的多 UV 网格可能缺少第 0 层材质索引，导致 UE 将头部和部分头发错误套用身体材质；新版导出显式写入此层，导入脚本还会拒绝材质槽不完整的旧包。请用新版重新导出整个角色包。脚本使用明确的 FBX 导入工厂，避免新版本默认 Interchange 路径忽略骨架、法线和单位选项。
-
-### 手动材质设置
-
-- Base Color 和 Emission 使用 sRGB；法线、金属度、粗糙度、AO 使用线性数据。
-- 法线是 OpenGL +Y。Unity 设为 Normal Map；Unreal 开启 Flip Green Channel。
-- Unity URP 需要将 Roughness 取反为 Smoothness，再按金属贴图的 R/A 通道打包；Unreal 直接连接独立灰度贴图。
-- Mask 模式开启 Alpha Clipping / Masked，Blend 模式使用 Transparent / Translucent；按 `DoubleSided` 设置双面。
-- 皮肤、妆容、服装图案和覆盖层复用已经合成的贴图；眼睛和头发转换为通用基础色。原游戏合成贴图的 Alpha 可能保存其他数据，导出时按材质类型转换并应用遮罩。
-
-脚本的皮肤散射、眼睛反光和头发各向异性属于通用近似；Unity 需自行设置这些效果。游戏专用眼球视差折射、第二套 UV 头发挑染、MatCap、描边和后处理未完整迁移。未知 Shader 使用近似并列入报告，不承诺还原原游戏的全部视觉效果。外观对照时需要统一灯光、曝光和视图变换。
+中间资源及脚本位于应用数据目录的任务工作区，结束时清理。Unreal 本地派生数据缓存可复用，交付包不携带缓存。转换进程及子进程使用 Windows Job 管理，在完成、失败、超时、取消和应用退出时回收。默认各阶段超时 900 秒。
 
 ## 构建与验证
 
-`build-unity-preview.ps1` 自动获取并校验官方 `com.autodesk.fbx` 4.2.0，启用运行时绑定。为兼容 Unity 2018，嵌入包排除其可选测试目录，运行库未修改。SDK 和第三方许可随便携包分发，使用导出时不需要 Unity 编辑器或 Blender。
+内核协议升级为 v4，应用与 Player 必须一起更新。`build-unity-preview.ps1` 获取并校验 Autodesk FBX SDK 4.2.0；运行时无需 Unity 编辑器。
 
 ```powershell
 .\build-unity-preview.ps1
 .tools\dotnet\dotnet.exe build tests\HS2Manager.UnitySourceChecks -c Release --disable-build-servers
-.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export --player '<Player.exe>' --catalog '<人物卡目录清单.json>' --count 3 --draft --output '<输出目录>'
-.\scripts\Test-ModelExport.ps1 -OutputDirectory '<输出目录>' -EditorPath '<Unity.exe>'
-.\scripts\Test-ModelMaterialBake.ps1 -OutputDirectory '<新的烘焙检查目录>'
-.\scripts\Test-BlenderExport.ps1 -PackageDirectory '<角色文件夹>' -OutputDirectory '<新的检查目录>' -BlenderPath '<blender.exe>'
-.\scripts\Test-UnrealExport.ps1 -PackageDirectory '<角色文件夹>' -OutputDirectory '<新的检查目录>' -EditorPath '<UnrealEditor-Cmd.exe>'
-.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export-lifecycle --player '<Player.exe>' --definition '<角色定义.json>' --output '<检查目录>'
+.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export --player '<Player.exe>' --card '<人物卡.png>' --target Blender --tool '<blender.exe>' --draft --output '<输出目录>'
+.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --native-model-export --player '<Player.exe>' --definition '<角色定义.json>' --target Unreal --tool '<UnrealEditor-Cmd.exe>' --output '<新检查目录>'
+.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export-lifecycle --player '<Player.exe>' --definition '<角色定义.json>' --output '<新检查目录>'
 ```
 
-固定基线结构检查入口为 `--model-export-catalog`，接受 `--catalog`、`--player`、`--output`。此检查逐卡实际写出 FBX 和贴图，核对结构、贴图文件与原卡 SHA-256，保留统计及诊断后清理大体积资产；需要保留完整包时使用 `--model-export`。
+`--model-export` 支持 GenericFbx、Blender、Unreal，覆盖服务及原卡校验。`--native-model-export` 从定义生成原生文件，搬移到中文路径并使内部源目录不可访问，再次独立回读；`--view` 可提供 ModelExportView JSON 以生成同机位对照。旧 Test-BlenderExport / Test-UnrealExport 脚本用于内部材质构建器回归，不代表新的原生发布流程。
 
-回读检查使用独立 Unity 项目，仅载入导出包，检查蒙皮参考形态、形变数量与默认值、眨眼/嘴部变形以及手臂运动。引擎可能在 UV 和切线接缝处分裂或重排顶点，因此按几何位置匹配抽样，允许最大 2 毫米误差。另输出基础色材质的正反面截图用于检查外观；截图不代表完整 URP 或 Unreal 材质验收。
-
-Unity 2022.3、Unity 6 URP 与 Unreal 5.6 的实际导入验收尚未执行。Unreal 5.8 的自动导入验证范围见下列验证记录；旧版 Unity 回读结果不能替代这些目标环境的验收。既有 84 张人物卡的游戏预览一致性结论属于原预览功能，不能用于声称 FBX 或通用材质具有相同画面。
-
-本次 84 张结构检查及 8 张独立回读的结果见 [导出验证记录](MODEL-EXPORT-VALIDATION.md)。
+结构检查沿用最大 2 毫米的参考形态抽样阈值。实际版本、样本、截图及未覆盖范围记录在[验证记录](MODEL-EXPORT-VALIDATION.md)。

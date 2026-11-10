@@ -55,6 +55,8 @@ public sealed class AppSettings
     public bool RecursiveCardSearch { get; set; } = false;
     public List<string> Collections { get; set; } = [];
     public string Theme { get; set; } = "System";
+    public string BlenderPath { get; set; } = "";
+    public string UnrealEditorPath { get; set; } = "";
     public string Sort { get; set; } = "名称";
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 900;

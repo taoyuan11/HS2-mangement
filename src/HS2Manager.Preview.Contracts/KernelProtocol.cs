@@ -21,7 +21,7 @@ namespace HS2Manager.Preview.Contracts
     }
     public static class KernelWire
     {
-        public const int Version = 3, MaxWidth = 1920, MaxHeight = 1080, Header = 64;
+        public const int Version = 4, MaxWidth = 1920, MaxHeight = 1080, Header = 64;
         public const long MapBytes = Header + MaxWidth * MaxHeight * 4;
         public static void Write(Stream stream, string json)
         {

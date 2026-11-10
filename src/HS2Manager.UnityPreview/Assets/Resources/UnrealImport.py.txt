@@ -1,7 +1,5 @@
-"""HS2 Manager UE5 character importer. Enable Python Editor Script Plugin and
-Editor Scripting Utilities, then Tools > Execute Python Script on this file.
-Each run creates a new /Game/HS2Characters folder. Existing assets and scene
-lighting are preserved. Entry point: import_character(folder, destination=None).
+"""Internal UE5 material builder, invoked by the native project converter.
+Entry point: import_character(folder, destination=None).
 """
 import json
 import re
@@ -126,7 +124,7 @@ def make_material(folder, record, destination):
     if mode == "Blend" and kind != "EyeShadow":
         material.set_editor_property("translucency_lighting_mode", unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
     samples = {}
-    for key in ("BaseColor", "Normal", "Metallic", "Roughness", "Occlusion", "Emission"):
+    for key in ("BaseColor", "Normal", "Metallic", "Roughness", "Occlusion", "Emission", "HairStreakMask"):
         texture = import_texture(folder, record, key, destination + "/Textures")
         if texture:
             sampler = unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL if key == "Normal" else (
@@ -147,6 +145,18 @@ def make_material(folder, record, destination):
                                     ("Occlusion", "AMBIENT_OCCLUSION", "R"), ("Emission", "EMISSIVE_COLOR", "RGB")):
             if key in samples:
                 graph.output(samples[key], prop, channel)
+        if "HairStreakMask" in samples:
+            uv = graph.node("TextureCoordinate", "Hair streak UV", coordinate_index=record.get("HairStreakUv", 1))
+            graph.link(uv, samples["HairStreakMask"], "UVs")
+            strength = graph.node("Multiply", "Hair streak strength")
+            graph.link(samples["HairStreakMask"], strength, "A", "R")
+            graph.link(graph.scalar("Hair streak strength", record.get("HairStreakStrength", 1.0)), strength, "B")
+            tint = graph.node("VectorParameter", "Hair streak color", parameter_name="Hair streak color", default_value=unreal.LinearColor(*record.get("HairStreakColor", (1, 1, 1, 1))))
+            blend = graph.node("LinearInterpolate", "Hair streak")
+            graph.link(samples["BaseColor"], blend, "A", "RGB")
+            graph.link(tint, blend, "B")
+            graph.link(strength, blend, "Alpha")
+            graph.output(blend, "BASE_COLOR")
         if mode != "Opaque":
             graph.output(samples["BaseColor"], "OPACITY_MASK" if mode == "Mask" else "OPACITY", "A")
         if kind == "Skin":
@@ -216,7 +226,7 @@ def import_character(directory, destination=None):
     if not ids or len(ids) != len(set(ids)) or any(not re.fullmatch(r"mat_\d+", ident) for ident in ids):
         raise ValueError("materials.json 材质编号为空、重复或无效。")
     for record in records:
-        for key in ("BaseColor", "Normal", "Metallic", "Roughness", "Occlusion", "Emission"):
+        for key in ("BaseColor", "Normal", "Metallic", "Roughness", "Occlusion", "Emission", "HairStreakMask"):
             if record.get(key):
                 package_path(folder, record[key])
         if not record.get("BaseColor"):
@@ -235,7 +245,7 @@ def import_character(directory, destination=None):
                            mesh_type_to_import=unreal.FBXImportType.FBXIT_SKELETAL_MESH).items():
         options.set_editor_property(key, value)
     mesh_options = options.get_editor_property("skeletal_mesh_import_data")
-    for key, value in dict(import_morph_targets=True, import_uniform_scale=1.0, convert_scene=True,
+    for key, value in dict(import_morph_targets=True, morph_threshold_position=0.00001, import_uniform_scale=1.0, convert_scene=True,
                            convert_scene_unit=True, use_t0_as_ref_pose=False,
                            normal_import_method=unreal.FBXNormalImportMethod.FBXNIM_IMPORT_NORMALS_AND_TANGENTS).items():
         mesh_options.set_editor_property(key, value)

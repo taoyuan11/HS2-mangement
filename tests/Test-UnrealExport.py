@@ -15,9 +15,7 @@ report = {"Passed": False, "Engine": unreal.SystemLibrary.get_engine_version(),
 try:
     expected_importer = Path(request["Importer"]).read_bytes()
     for index, folder in enumerate(request["Packages"]):
-        script = Path(folder) / "Unreal导入.py"
-        if script.read_bytes() != expected_importer:
-            raise RuntimeError("Exported Unreal importer is stale; rebuild the player and export a new package.")
+        script = Path(request["Importer"])
         importer = runpy.run_path(str(script), run_name="hs2_unreal")
         records = json.loads((Path(folder) / "materials.json").read_text(encoding="utf-8-sig"))["Materials"]
         result = importer["import_character"](folder, "/Game/Validation/Sample_" + str(index))

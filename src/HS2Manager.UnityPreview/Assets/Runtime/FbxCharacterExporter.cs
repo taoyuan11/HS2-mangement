@@ -224,6 +224,7 @@ namespace HS2Manager.UnityPreview
                 float rebase=mesh.blendShapeCount==0?samples.Max(i=>(toRoot.MultiplyPoint3x4(reference[i])-transforms[i].MultiplyPoint3x4(vertices[i])).magnitude*.1f):0;
                 geometryInfo.Add(new ModelExportMesh{Node=node.GetName(),Vertices=vertices.Length,SampleIndices=samples,ReferencePositions=points,RebaseError=rebase,SkinInfluences=skin==null?0:(skin.quality==SkinQuality.Auto?(int)QualitySettings.blendWeights:(int)skin.quality),
                     BlendShapeNames=Enumerable.Range(0,mesh.blendShapeCount).Select(mesh.GetBlendShapeName).Concat(resetExpressions?new[]{"HS2_ResetExpressions"}:new string[0]).ToArray(),
+                    BlendShapeMaximumDisplacements=new float[mesh.blendShapeCount+(resetExpressions?1:0)],
                     DefaultWeights=new float[mesh.blendShapeCount+(resetExpressions?1:0)],SourceDefaultWeights=defaultWeights,NeutralResetShape=resetExpressions?"HS2_ResetExpressions":""});
             }
             finally{if(baked!=null)UnityEngine.Object.DestroyImmediate(baked);}
@@ -337,6 +338,8 @@ namespace HS2Manager.UnityPreview
                         for(int i=0;i<vertices.Length;i++)
                         {
                             var position=vertices[i]+(targetVertices==null?dv[i]:targetVertices[i]-neutralVertices[i]);
+                            var displacements=geometryInfo[geometryInfo.Count-1].BlendShapeMaximumDisplacements;
+                            displacements[shape]=Mathf.Max(displacements[shape],transforms[i].MultiplyVector(position-vertices[i]).magnitude*.1f);
                             var normal=normals.Length==vertices.Length?normals[i]+(targetNormals==null?dn[i]:targetNormals[i]-neutralNormals[i]):Vector3.up;
                             morph.SetControlPointAt(Point(transforms[i].MultiplyPoint3x4(position)),i);
                             morphNormals.GetDirectArray().Add(Direction(normalMatrices[i].MultiplyVector(normal).normalized));
@@ -358,6 +361,8 @@ namespace HS2Manager.UnityPreview
                     for(int i=0;i<vertices.Length;i++)
                     {
                         neutral.SetControlPointAt(Point(transforms[i].MultiplyPoint3x4(neutralVertices[i])),i);
+                        var displacements=geometryInfo[geometryInfo.Count-1].BlendShapeMaximumDisplacements;
+                        displacements[mesh.blendShapeCount]=Mathf.Max(displacements[mesh.blendShapeCount],transforms[i].MultiplyVector(neutralVertices[i]-vertices[i]).magnitude*.1f);
                         normal.GetDirectArray().Add(Direction(normalMatrices[i].MultiplyVector(neutralNormals.Length==vertices.Length?neutralNormals[i]:Vector3.up).normalized));
                     }
                     reset.AddTargetShape(neutral,100);blend.AddBlendShapeChannel(reset);result.BlendShapes++;
@@ -412,6 +417,15 @@ namespace HS2Manager.UnityPreview
                     if(part==finger+segment)return (finger=="Little"?"pinky":finger.ToLowerInvariant())+"_"+(segment=="Proximal"?"01":segment=="Intermediate"?"02":"03")+side;
             return "";
         }
-        public void Dispose(){materials.Dispose();manager.Dispose();}
+        public void Dispose()
+        {
+            materials.Dispose();
+            // SWIG's weak-handle finalizers touch the same native registry that
+            // FbxManager.Destroy tears down. Drain temporary wrappers before
+            // destroying the scene, especially after HDR/LUT capture allocations.
+            GC.Collect();GC.WaitForPendingFinalizers();
+            manager.Dispose();
+            GC.KeepAlive(scene);GC.KeepAlive(bones);GC.KeepAlive(meshNodes);
+        }
     }
 }

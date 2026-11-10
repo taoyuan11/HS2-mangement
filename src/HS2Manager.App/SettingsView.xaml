@@ -40,6 +40,7 @@
        <ListViewItem Tag="library" AutomationProperties.Name="资源库"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE8B7;" Style="{StaticResource ActionIcon}"/><TextBlock Text="资源库" VerticalAlignment="Center"/></StackPanel></ListViewItem>
        <ListViewItem Tag="appearance" AutomationProperties.Name="外观主题"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE790;" Style="{StaticResource ActionIcon}"/><TextBlock Text="外观主题" VerticalAlignment="Center"/></StackPanel></ListViewItem>
        <ListViewItem Tag="data" AutomationProperties.Name="数据与维护"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE713;" Style="{StaticResource ActionIcon}"/><TextBlock Text="数据与维护" VerticalAlignment="Center"/></StackPanel></ListViewItem>
+       <ListViewItem Tag="model-export" AutomationProperties.Name="模型导出"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE896;" Style="{StaticResource ActionIcon}"/><TextBlock Text="模型导出" VerticalAlignment="Center"/></StackPanel></ListViewItem>
       </ListView>
      </StackPanel>
      <StackPanel Grid.Row="1" Margin="12,16,6,0" Spacing="4"><TextBlock Text="HS2 Manager" FontSize="12" FontWeight="SemiBold"/><TextBlock Text="本地管理 · 便携运行" Style="{StaticResource SettingHint}"/></StackPanel>
@@ -126,6 +127,23 @@
        </StackPanel>
       </Border>
       <TextBlock Text="“跟随系统”会随 Windows 的应用颜色模式自动调整。" Style="{StaticResource SettingHint}" Margin="2,0"/>
+     </StackPanel>
+    </ScrollViewer>
+    <ScrollViewer x:Name="ModelExportPage" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
+     <StackPanel Spacing="14" Padding="0,0,12,2">
+      <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="10">
+       <TextBlock Text="Blender 原生模型" Style="{StaticResource SettingLabel}"/>
+       <TextBlock Text="选择已安装或便携版的 blender.exe。导出时后台生成 .blend，自动打包贴图、材质和预览场景。" Style="{StaticResource SettingHint}"/>
+       <TextBox x:Name="BlenderPathBox" PlaceholderText="自动检测 Blender 安装位置" AutomationProperties.Name="Blender 程序路径" TextWrapping="Wrap"/>
+       <Button Content="选择 Blender…" Click="BrowseBlender_Click" HorizontalAlignment="Left"/>
+      </StackPanel></Border>
+      <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="10">
+       <TextBlock Text="Unreal 原生项目" Style="{StaticResource SettingLabel}"/>
+       <TextBlock Text="选择 UnrealEditor-Cmd.exe。导出独立项目及预览关卡，生成时使用此引擎版本。" Style="{StaticResource SettingHint}"/>
+       <TextBox x:Name="UnrealPathBox" PlaceholderText="自动检测 Unreal Engine 安装位置" AutomationProperties.Name="Unreal Editor 程序路径" TextWrapping="Wrap"/>
+       <Button Content="选择 Unreal Editor…" Click="BrowseUnreal_Click" HorizontalAlignment="Left"/>
+      </StackPanel></Border>
+      <TextBlock Text="留空时自动检测。通用 FBX 导出不需要安装上述软件。原生文件的兼容版本和效果差异会写入导出报告。" Style="{StaticResource SettingHint}" TextWrapping="Wrap"/>
      </StackPanel>
     </ScrollViewer>
     <ScrollViewer x:Name="DataPage" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">

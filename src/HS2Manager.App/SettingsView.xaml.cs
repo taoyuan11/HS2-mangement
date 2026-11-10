@@ -17,6 +17,8 @@ public sealed partial class SettingsView : UserControl
         this.model = model;
         InitializeComponent();
         GamePathBox.Text = model.Settings.GamePath;
+        BlenderPathBox.Text = model.Settings.BlenderPath;
+        UnrealPathBox.Text = model.Settings.UnrealEditorPath;
         RecursiveBox.IsChecked = model.Settings.RecursiveCardSearch;
         roots = new(model.Settings.ExtraRoots);
         RootsList.ItemsSource = roots;
@@ -35,15 +37,26 @@ public sealed partial class SettingsView : UserControl
         LibraryPage.Visibility = section == "library" ? Visibility.Visible : Visibility.Collapsed;
         AppearancePage.Visibility = section == "appearance" ? Visibility.Visible : Visibility.Collapsed;
         DataPage.Visibility = section == "data" ? Visibility.Visible : Visibility.Collapsed;
-        SectionTitle.Text = section == "library" ? "资源库" : section == "appearance" ? "外观主题" : "数据与维护";
+        ModelExportPage.Visibility = section == "model-export" ? Visibility.Visible : Visibility.Collapsed;
+        SectionTitle.Text = section == "library" ? "资源库" : section == "appearance" ? "外观主题" : section == "model-export" ? "模型导出" : "数据与维护";
         SectionDescription.Text = section == "library" ? "连接游戏与人物卡目录，设置你的检索范围。"
-            : section == "appearance" ? "让工作空间适应你的使用习惯。" : "管理本地数据、数据库备份与预览缓存。";
+            : section == "appearance" ? "让工作空间适应你的使用习惯。" : section == "model-export" ? "配置生成原生模型所需的本机软件。" : "管理本地数据、数据库备份与预览缓存。";
     }
 
     private async void BrowseGame_Click(object sender, RoutedEventArgs e)
     {
         var path = await FilePickers.Folder(owner, "选择游戏目录");
         if (path != null) GamePathBox.Text = path;
+    }
+    private async void BrowseBlender_Click(object sender, RoutedEventArgs e)
+    {
+        var path = await FilePickers.Executable(owner);
+        if (path != null) BlenderPathBox.Text = path;
+    }
+    private async void BrowseUnreal_Click(object sender, RoutedEventArgs e)
+    {
+        var path = await FilePickers.Executable(owner);
+        if (path != null) UnrealPathBox.Text = path;
     }
 
     private async void AddRoot_Click(object sender, RoutedEventArgs e)
@@ -93,6 +106,8 @@ public sealed partial class SettingsView : UserControl
             string path = Path.GetFullPath(GamePathBox.Text.Trim());
             var extra = roots.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             model.Settings.GamePath = path;
+            model.Settings.BlenderPath = BlenderPathBox.Text.Trim();
+            model.Settings.UnrealEditorPath = UnrealPathBox.Text.Trim();
             model.Settings.ExtraRoots = extra;
             model.Settings.RecursiveCardSearch = RecursiveBox.IsChecked == true;
             model.ThemeChoice = (string)(DarkTheme.IsChecked == true ? DarkTheme.Tag : LightTheme.IsChecked == true ? LightTheme.Tag : SystemTheme.Tag);

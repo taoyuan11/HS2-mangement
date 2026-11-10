@@ -15,6 +15,11 @@ public static class FilePickers
         var picker = new FileOpenPicker { ViewMode = PickerViewMode.Thumbnail }; picker.FileTypeFilter.Add(".png"); Initialize(picker, owner);
         return (await picker.PickMultipleFilesAsync()).Select(file => file.Path).ToArray();
     }
+    public static async Task<string?> Executable(Window owner)
+    {
+        var picker = new FileOpenPicker { ViewMode = PickerViewMode.List }; picker.FileTypeFilter.Add(".exe"); Initialize(picker, owner);
+        return (await picker.PickSingleFileAsync())?.Path;
+    }
     public static async Task<string?> Save(Window owner, string name, string description, string extension)
     {
         var picker = new FileSavePicker { SuggestedFileName = name, DefaultFileExtension = extension };

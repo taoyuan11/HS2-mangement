@@ -16,6 +16,17 @@ internal static class ModelExportSafetyChecks
         try{await service.ExportAsync(sources,game,data,Path.Combine(game,"out"),new(),null,default);}
         catch(ArgumentException){refused=true;}
         if(!refused)throw new Exception("Model export accepted a game-directory output.");
+        foreach(var target in new[]{ModelExportTarget.Blender,ModelExportTarget.Unreal})
+        {
+            bool missing=false;
+            try{await service.ExportAsync(sources,game,data,Path.Combine(folder,"missing-tool"),new(Target:target,BlenderPath:Path.Combine(folder,"missing.exe"),UnrealEditorPath:Path.Combine(folder,"missing.exe")),null,default);}
+            catch(FileNotFoundException){missing=true;}
+            if(!missing||Directory.Exists(Path.Combine(folder,"missing-tool")))throw new Exception("Missing native tool was not rejected before model work.");
+        }
+        bool badView=false;
+        try{await service.ExportAsync(sources,game,data,Path.Combine(folder,"bad-view"),new(View:new(){FieldOfView=float.NaN}),null,default);}
+        catch(ArgumentException){badView=true;}
+        if(!badView)throw new Exception("Non-finite scene settings were accepted.");
         var failures=await service.ExportAsync(sources,game,data,Path.Combine(folder,"失败"),new(),null,default);
         if(failures.Items.Count!=2||failures.Items.Any(i=>i.Status!=ModelExportStatus.Failed)||!File.Exists(failures.ReportPath))throw new Exception("Invalid characters did not fail independently.");
         using var cancellation=new CancellationTokenSource();cancellation.Cancel();

@@ -1,8 +1,5 @@
-"""HS2 Manager: import a character folder with its PBR materials (Blender 4+).
-
-Open this file in Blender's Scripting workspace and Run Script. It imports the
-adjacent character.fbx into a new collection without changing existing objects,
-lighting or color management. Command line: blender -b --python this.py -- FOLDER
+"""Internal Blender material builder. Invoked by the native .blend converter.
+The source package is intermediate data, not a user-facing Python workflow.
 """
 import json
 import re
@@ -17,8 +14,7 @@ def package_path(folder, relative):
     if not path.is_relative_to(folder):
         raise ValueError("导出包文件不能指向角色文件夹之外：" + str(path))
     if not path.is_file():
-        raise ValueError("找不到导出包文件：" + str(path) +
-                         "\n请保持 Blender导入.py、character.fbx、materials.json 和 Textures 在同一个角色文件夹内。")
+        raise ValueError("模型转换中间文件缺失：" + str(path))
     return path
 
 
@@ -80,6 +76,22 @@ def make_material(folder, record):
     ao = texture("Occlusion", 350)
     if base:
         color = base.outputs["Color"]
+        streak = texture("HairStreakMask", 1000)
+        if streak:
+            uv = nodes.new("ShaderNodeUVMap")
+            uv.uv_map = "UV" + str(record.get("HairStreakUv", 1))
+            uv.name = "HS2 Hair streak UV"
+            links.new(uv.outputs["UV"], streak.inputs["Vector"])
+            strength = nodes.new("ShaderNodeMath")
+            strength.operation = "MULTIPLY"
+            strength.inputs[1].default_value = record.get("HairStreakStrength", 1.0)
+            links.new(streak.outputs["Color"], strength.inputs[0])
+            blend = nodes.new("ShaderNodeMixRGB")
+            blend.name = "HS2 Hair streak color"
+            links.new(strength.outputs[0], blend.inputs[0])
+            links.new(color, blend.inputs[1])
+            blend.inputs[2].default_value = record.get("HairStreakColor", (1, 1, 1, 1))
+            color = blend.outputs[0]
         if ao:
             multiply = nodes.new("ShaderNodeMixRGB")
             multiply.name = "HS2 AO influence"
@@ -223,7 +235,7 @@ def import_character(directory):
     if len(set(ids)) != len(ids):
         raise ValueError("Duplicate material IDs in materials.json")
     for record in records:
-        for key in ("BaseColor", "Normal", "Metallic", "Roughness", "Occlusion", "Emission"):
+        for key in ("BaseColor", "Normal", "Metallic", "Roughness", "Occlusion", "Emission", "HairStreakMask"):
             if record.get(key):
                 package_path(folder, record[key])
     before = set(bpy.data.objects)
@@ -239,6 +251,8 @@ def import_character(directory):
     else:
         bpy.ops.import_scene.fbx(filepath=str(fbx), use_anim=False, use_custom_normals=True)
     imported = set(bpy.data.objects) - before
+    geometry_path = folder / "model-result.json"
+    geometry = {m["Node"]: m for m in json.loads(geometry_path.read_text(encoding="utf-8-sig"))["Geometry"]} if geometry_path.is_file() else {}
     imported_materials = set(bpy.data.materials) - old_materials
     collection = bpy.data.collections.new("HS2 · " + folder.name)
     bpy.context.scene.collection.children.link(collection)
@@ -250,6 +264,18 @@ def import_character(directory):
         collection.objects.link(obj)
         if obj.type != "MESH":
             continue
+        # Blender 5's native importer names shape keys after FBX shape geometry,
+        # not blend-shape channels. Restore the documented editable channel names.
+        source = geometry.get(obj.name)
+        if source and obj.data.shape_keys:
+            for block in list(obj.data.shape_keys.key_blocks)[1:]:
+                match = re.fullmatch(r"Shape_\d+_(\d+)_\d+", block.name)
+                if match:
+                    block.name = source["BlendShapeNames"][int(match.group(1))]
+                elif block.name.startswith("NeutralExpressions_"):
+                    block.name = "HS2_ResetExpressions"
+        for index, uv in enumerate(obj.data.uv_layers):
+            uv.name = "UV" + str(index)
         for slot in obj.material_slots:
             name = slot.material.name if slot.material else ""
             ident = re.sub(r"\.\d{3,}$", "", name)
@@ -257,6 +283,9 @@ def import_character(directory):
                 raise ValueError("FBX material absent from materials.json: " + name)
             if ident not in materials:
                 materials[ident] = make_material(folder, records[ids.index(ident)])
+            record = records[ids.index(ident)]
+            if record.get("HairStreakMask") and len(obj.data.uv_layers) <= record.get("HairStreakUv", 1):
+                raise ValueError("挑染材质缺少所需 UV 通道：" + obj.name)
             slot.material = materials[ident]
     # Drop only unused data created by this FBX import. Keep existing user data.
     for material in imported_materials:

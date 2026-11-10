@@ -565,6 +565,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
     public void SetEnvironment(Color background, double light, bool useGameBackground = false)
     {
+        exportEnvironment = new() { UseGameBackground = useGameBackground, Background = [background.R/255f,background.G/255f,background.B/255f,1], KeyLightMultiplier = (float)light };
         PreviewBackground = new SolidColorBrush(background);
         if(UnitySession!=null)
         {
@@ -576,6 +577,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void TogglePlayback(){previewPlaying=!previewPlaying;UnitySession?.Send(new HS2Manager.Preview.Contracts.KernelMessage{Kind="Play",Playing=previewPlaying});Changed(nameof(PlaybackLabel));}
     public void RestoreEnvironment()
     {
+        exportEnvironment = new();
         ResetEnvironmentControls();
         if(UnitySession==null)return;
         UnitySession.Send(new HS2Manager.Preview.Contracts.KernelMessage{Kind="Environment",Load=previewGeneration,Text="restore"});

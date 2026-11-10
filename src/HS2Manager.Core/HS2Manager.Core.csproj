@@ -10,4 +10,9 @@
   <ItemGroup><Compile Include="../../scripts/OwnedToolProcess.cs" Link="OwnedToolProcess.cs" /></ItemGroup>
   <ItemGroup><InternalsVisibleTo Include="HS2Manager.Checks" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Resources/classdata.tpk" /></ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="ModelExport/*.py" />
+    <EmbeddedResource Include="../HS2Manager.UnityPreview/Assets/Resources/BlenderImport.py.txt" LogicalName="HS2Manager.Core.ModelExport.BlenderImport.py" />
+    <EmbeddedResource Include="../HS2Manager.UnityPreview/Assets/Resources/UnrealImport.py.txt" LogicalName="HS2Manager.Core.ModelExport.UnrealImport.py" />
+  </ItemGroup>
 </Project>

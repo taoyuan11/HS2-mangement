@@ -64,20 +64,60 @@ public static class Dialogs
         return await ShowAsync(owner, dialog) == ContentDialogResult.Primary
             ? new CardExportOptions(separate.IsChecked == true ? CardExportMode.PerCard : CardExportMode.Merged, SelectedLevel()) : null;
     }
-    public static async Task<ModelExportOptions?> ModelExportOptions(Window owner, int count, bool draft)
+    public static async Task<ModelExportOptions?> ModelExportOptions(Window owner, int count, bool draft, ModelExportOptions? initial = null)
     {
+        initial ??= new();
+        var target = new ComboBox { Name = "ModelExportTarget", Header = "导出类型", HorizontalAlignment = HorizontalAlignment.Stretch };
+        foreach (var kind in Enum.GetValues<ModelExportTarget>()) target.Items.Add(ModelExportTools.Name(kind));
+        target.SelectedIndex = (int)initial.Target;
         var clothing = new ComboBox { Name = "ModelExportClothing", Header = "导出服装", HorizontalAlignment = HorizontalAlignment.Stretch };
         foreach (string text in new[] { "完整着装", "内着", "不穿衣物" }) clothing.Items.Add(text);
-        clothing.SelectedIndex = 0;
-        var accessories = new CheckBox { Name = "ModelExportAccessories", Content = "包含配饰", IsChecked = true };
-        var panel = new StackPanel { Spacing = 14, MinWidth = 340, MaxWidth = 440 };
-        panel.Children.Add(new TextBlock { Text = $"导出 {count} 个 FBX 可动画角色", TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBlock { Text = "保留骨架、蒙皮、表情和 PBR 贴图，附 Blender / Unreal 自动材质导入脚本及 Unity 导入说明。", TextWrapping = TextWrapping.Wrap });
+        clothing.SelectedIndex = initial.Clothing;
+        var accessories = new CheckBox { Name = "ModelExportAccessories", Content = "包含配饰", IsChecked = initial.Accessories };
+        var description = new TextBlock { Name = "ModelExportDescription", TextWrapping = TextWrapping.Wrap };
+        var toolPath = new TextBox { Name = "ModelExportToolPath", PlaceholderText = "自动检测，或选择已安装的软件", TextWrapping = TextWrapping.Wrap };
+        var browse = new Button { Content = "选择程序…" };
+        var toolPanel = new StackPanel { Spacing = 8 };
+        toolPanel.Children.Add(toolPath); toolPanel.Children.Add(browse);
+        var error = new InfoBar { IsOpen = false, Severity = InfoBarSeverity.Error };
+        string blender = initial.BlenderPath, unreal = initial.UnrealEditorPath;
+        ModelExportTarget selected = initial.Target;
+        void RefreshTarget()
+        {
+            selected = (ModelExportTarget)target.SelectedIndex;
+            toolPanel.Visibility = selected == ModelExportTarget.GenericFbx ? Visibility.Collapsed : Visibility.Visible;
+            toolPath.Header = selected == ModelExportTarget.Blender ? "Blender 程序" : "Unreal Editor 程序";
+            string configured = selected == ModelExportTarget.Blender ? blender : unreal;
+            toolPath.Text = string.IsNullOrEmpty(configured) ? ModelExportTools.Detect(selected) : configured;
+            description.Text = selected switch
+            {
+                ModelExportTarget.Blender => "生成可直接打开的 .blend，包含可编辑材质、打包贴图、灯光和相机。使用参考姿态；无需运行脚本。",
+                ModelExportTarget.Unreal => "生成独立 Unreal 项目，包含骨骼模型、材质和默认预览关卡。使用参考姿态；无需运行脚本。",
+                _ => "生成通用 FBX、PBR 贴图和骨骼映射，不附带 Blender / Unreal 脚本。材质需在目标软件中配置。"
+            };
+            error.IsOpen = false;
+        }
+        toolPath.TextChanged += (_, _) => { if (selected == ModelExportTarget.Blender) blender = toolPath.Text; else if (selected == ModelExportTarget.Unreal) unreal = toolPath.Text; };
+        target.SelectionChanged += (_, _) => RefreshTarget();
+        browse.Click += async (_, _) => { var file = await FilePickers.Executable(owner); if (file != null) toolPath.Text = file; };
+        RefreshTarget();
+        var panel = new StackPanel { Spacing = 14, MinWidth = 340, MaxWidth = 460 };
+        panel.Children.Add(new TextBlock { Text = $"导出 {count} 个角色，保留骨架、蒙皮和表情。", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(target); panel.Children.Add(description); panel.Children.Add(toolPanel);
         if (draft) panel.Children.Add(new TextBlock { Text = "包含点击导出时的未保存修改。", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         panel.Children.Add(clothing); panel.Children.Add(accessories);
-        panel.Children.Add(new TextBlock { Text = "每个角色独立成包；材质采用通用 PBR 近似。请在目标软件运行包内的“Blender导入.py”或“Unreal导入.py”，以应用完整材质。", TextWrapping = TextWrapping.Wrap });
-        var result = await ShowAsync(owner, new ContentDialog { Title = "导出 3D 模型", Content = panel, PrimaryButtonText = "选择导出位置", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary });
-        return result == ContentDialogResult.Primary ? new(clothing.SelectedIndex, accessories.IsChecked == true) : null;
+        panel.Children.Add(new TextBlock { Text = "每个角色独立成包。跨软件材质和后处理存在近似，差异与缺失会列入报告。", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(error);
+        var dialog = new ContentDialog { Title = "导出 3D 模型", Content = new ScrollViewer { Content = panel, MaxHeight = 620, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, PrimaryButtonText = "选择导出位置", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary };
+        ModelExportOptions Capture() => initial with { Clothing = clothing.SelectedIndex, Accessories = accessories.IsChecked == true, Target = selected,
+            BlenderPath = selected == ModelExportTarget.Blender ? toolPath.Text : blender,
+            UnrealEditorPath = selected == ModelExportTarget.Unreal ? toolPath.Text : unreal };
+        dialog.PrimaryButtonClick += (_, e) =>
+        {
+            try { ModelExportTools.Resolve(Capture()); }
+            catch (Exception failure) { e.Cancel = true; error.Message = failure.Message; error.IsOpen = true; }
+        };
+        return await ShowAsync(owner, dialog) == ContentDialogResult.Primary ? Capture() : null;
     }
     public static async Task<bool> Confirm(Window owner, string title, string message)
         => await ShowAsync(owner, new ContentDialog { Title = title, Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap }, PrimaryButtonText = "确定", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close }) == ContentDialogResult.Primary;

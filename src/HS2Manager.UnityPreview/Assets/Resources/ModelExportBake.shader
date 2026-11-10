@@ -140,6 +140,7 @@ Shader "Hidden/HS2Manager/ModelExportBake"
    float4 frag(v2f_img input):SV_Target
    {
     float2 uv=input.uv;
+    if(_BakeKind==6){float mask=tex2D(_MeshColorMask_B,uv*_MeshColorMask_B_ST.xy+_MeshColorMask_B_ST.zw).r;return float4(mask,mask,mask,1);}
     if(_BakeKind==0)return baseColor(uv);
     if(_BakeKind==1)
     {

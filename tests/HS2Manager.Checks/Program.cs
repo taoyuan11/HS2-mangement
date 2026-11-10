@@ -3,6 +3,9 @@ using HS2Manager.Core;
 
 try
 {
+if (args.Contains("--background") && Environment.GetEnvironmentVariable("HS2_NATIVE_FIXTURE") != null) { await NativeExportLifecycleChecks.Fixture(args); return; }
+if (args.Contains("--native-owner-host")) { await NativeExportLifecycleChecks.Owner(args[1]); return; }
+if (args.Contains("--native-export-lifecycle")) { await NativeExportLifecycleChecks.Run(args[Array.IndexOf(args,"--output")+1]); return; }
 var projectFolder = new DirectoryInfo(AppContext.BaseDirectory);
 while (projectFolder != null && !File.Exists(Path.Combine(projectFolder.FullName, "HS2Manager.slnx"))) projectFolder = projectFolder.Parent;
 var root = Environment.GetEnvironmentVariable("HS2MANAGER_TEST_ROOT") ?? projectFolder?.FullName ?? Environment.CurrentDirectory;
@@ -13,9 +16,14 @@ var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
 if (args.Contains("--data-location")) { DataLocationChecks.Run(); return; }
 if (args.Contains("--nas-files")) { await NasFileChecks.Run(args[Array.IndexOf(args, "--workspace") + 1], data); return; }
-if (args.Contains("--model-export-lifecycle")) await ModelExportLifecycleChecks.Run(args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--definition")+1],args[Array.IndexOf(args,"--output")+1]);
+if (args.Contains("--native-model-export"))
+{
+    string Arg(string name,string fallback="") => Array.IndexOf(args,name) is int i && i>=0 ? args[i+1] : fallback;
+    await NativeModelExportChecks.Run(Arg("--player"),Arg("--definition"),Arg("--output"),Enum.Parse<ModelExportTarget>(Arg("--target","Blender"),true),Arg("--tool"),args.Contains("--package")?Arg("--package"):null,args.Contains("--verify-only"),args.Contains("--view")?Arg("--view"):null);
+}
+else if (args.Contains("--model-export-lifecycle")) await ModelExportLifecycleChecks.Run(args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--definition")+1],args[Array.IndexOf(args,"--output")+1]);
 else if (args.Contains("--model-export-catalog")) await ModelExportCatalogChecks.Run(args[Array.IndexOf(args,"--catalog")+1],args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1],args.Contains("--keep-assets"));
-else if (args.Contains("--model-export")) await ModelExportChecks.Run(game,data,args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1],args.Contains("--card")?args[Array.IndexOf(args,"--card")+1]:null,args.Contains("--catalog")?args[Array.IndexOf(args,"--catalog")+1]:null,args.Contains("--count")?int.Parse(args[Array.IndexOf(args,"--count")+1]):1,args.Contains("--draft"),args.Contains("--clothing")?int.Parse(args[Array.IndexOf(args,"--clothing")+1]):0,!args.Contains("--no-accessories"));
+else if (args.Contains("--model-export")) await ModelExportChecks.Run(game,data,args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1],args.Contains("--card")?args[Array.IndexOf(args,"--card")+1]:null,args.Contains("--catalog")?args[Array.IndexOf(args,"--catalog")+1]:null,args.Contains("--count")?int.Parse(args[Array.IndexOf(args,"--count")+1]):1,args.Contains("--draft"),args.Contains("--clothing")?int.Parse(args[Array.IndexOf(args,"--clothing")+1]):0,!args.Contains("--no-accessories"),args.Contains("--target")?Enum.Parse<ModelExportTarget>(args[Array.IndexOf(args,"--target")+1],true):ModelExportTarget.GenericFbx,args.Contains("--tool")?args[Array.IndexOf(args,"--tool")+1]:"");
 else if (args.Contains("--prepare-edit-game")) await CharacterEditGameChecks.Prepare(game,args[Array.IndexOf(args,"--output")+1]);
 else if (args.Contains("--edit-preview")) await CharacterEditPreviewChecks.Run(game,data,args[Array.IndexOf(args,"--player")+1]);
 else if (args.Contains("--card-edit")) await CharacterEditChecks.Run(data, args.Contains("--real-edit") ? game : null);

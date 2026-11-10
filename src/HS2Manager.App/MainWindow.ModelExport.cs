@@ -13,12 +13,21 @@ public partial class MainWindow
             : ViewModel.SelectedRecords.Select(c => new ModelExportSource(c)).ToArray();
         await ExportModelsAsync(sources);
     }
-    public async Task ExportModelsAsync(IReadOnlyList<ModelExportSource> sources)
+    public async Task ExportModelsAsync(IReadOnlyList<ModelExportSource> sources, int clothing = 0, bool accessories = true)
     {
         if (ViewModel.IsBusy || sources.Count == 0) return;
-        var options = await Dialogs.ModelExportOptions(this, sources.Count, sources.Any(s => s.Snapshot != null));
+        var captured = sources.ToArray();
+        var initial = new ModelExportOptions(clothing, accessories, BlenderPath: ViewModel.Settings.BlenderPath, UnrealEditorPath: ViewModel.Settings.UnrealEditorPath,
+            View: sources.Count == 1 && (ViewModel.IsPreview || ViewModel.IsEditing) ? ViewModel.CaptureModelExportView() : null);
+        var options = await Dialogs.ModelExportOptions(this, sources.Count, sources.Any(s => s.Snapshot != null), initial);
         if (options == null) return;
         var folder = await FilePickers.Folder(this, "选择 3D 模型导出位置（游戏目录之外）");
-        if (folder != null) await ViewModel.ExportModelsAsync(sources, folder, options);
+        if (folder != null)
+        {
+            ViewModel.Settings.BlenderPath = options.BlenderPath;
+            ViewModel.Settings.UnrealEditorPath = options.UnrealEditorPath;
+            ViewModel.Settings.Save(ViewModel.DataDirectory);
+            await ViewModel.ExportModelsAsync(captured, folder, options);
+        }
     }
 }
