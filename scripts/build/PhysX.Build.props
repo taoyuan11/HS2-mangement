@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <ItemDefinitionGroup>
+        <ClCompile>
+            <!-- 编译器与链接器不能共用同一 PDB，编译缓存按项目和配置保存在中间目录。 -->
+            <ProgramDataBaseFileName>$(IntDir)$(TargetName).compile.pdb</ProgramDataBaseFileName>
+        </ClCompile>
+    </ItemDefinitionGroup>
+</Project>

@@ -55,10 +55,32 @@ try {
     $env:_CL_ = '/WX- /Wv:18'
     $log = Join-Path $BuildDirectory 'build-sdk.log'
     # 由 MSVC 通过默认属性文件选择已安装的 Windows SDK。
-    & $msbuild (Join-Path $localSource 'PhysX_3.4/Source/compiler/vc15win64/PhysX.sln') '/t:PhysX;PhysXExtensions' /p:Configuration=release /p:Platform=x64 /p:PlatformToolset=v143 /m:4 /nr:false /v:minimal *> $log
-    if ($LASTEXITCODE -ne 0) {
-        Get-Content $log -Tail 30
-        throw 'PhysX compilation failed.'
+    # 最后导入编译设置，覆盖 SDK 中编译器与链接器共用 PDB 的旧配置。
+    $sdkArguments = @(
+        (Join-Path $localSource 'PhysX_3.4/Source/compiler/vc15win64/PhysX.sln'),
+        '/p:Configuration=release', '/p:Platform=x64', '/p:PlatformToolset=v143',
+        ('/p:ForceImportBeforeCppTargets=' + (Join-Path $PSScriptRoot 'PhysX.Build.props')),
+        '/nr:false', '/v:minimal'
+    )
+    & $msbuild @sdkArguments '/t:PhysX;PhysXExtensions' /m:4 *> $log
+    $sdkExitCode = $LASTEXITCODE
+    if ($sdkExitCode -ne 0 -and (Select-String -LiteralPath $log -Pattern '\berror\s+(C1052|C2859|LNK1209|LNK1318)\s*:' -Quiet)) {
+        # 旧 PDB 损坏时先完整清理依赖，再串行重建一次，避免多个链接器争用调试数据库。
+        # 分开保存日志，保留首次失败原因；其他错误不重试，重建仍失败时照常终止。
+        Write-Warning "检测到 PhysX 调试数据库异常，正在清理并重建一次。原始日志：$log"
+        $cleanLog = Join-Path $BuildDirectory 'build-sdk-clean.log'
+        & $msbuild @sdkArguments '/t:PhysX:Clean;PhysXExtensions:Clean' /m:1 *> $cleanLog
+        if ($LASTEXITCODE -ne 0) {
+            Get-Content -LiteralPath $cleanLog -Tail 30
+            throw "PhysX cleanup failed. Log: $cleanLog"
+        }
+        $log = Join-Path $BuildDirectory 'build-sdk-rebuild.log'
+        & $msbuild @sdkArguments '/t:PhysX;PhysXExtensions' /m:1 *> $log
+        $sdkExitCode = $LASTEXITCODE
+    }
+    if ($sdkExitCode -ne 0) {
+        Get-Content -LiteralPath $log -Tail 30
+        throw "PhysX compilation failed. Log: $log"
     }
 }
 finally {

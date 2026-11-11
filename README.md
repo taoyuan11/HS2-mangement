@@ -143,6 +143,8 @@ C++ 版本已执行真实人物字段、无损读写、保存事务和界面流�
 
 `build-cpp.ps1` 默认使用增量构建。若 WinUI 的 PCH / PDB 缓存不一致导致 C2859 或 LNK1209，脚本会自动重建当前配置的 WinUI 项目并重试一次，保留已构建的 CMake 模块；重建失败或其他错误仍会终止构建。
 
+PhysX 构建将编译器 PDB 放入各项目的中间目录，与链接器 PDB 分开，避免旧 SDK 共用调试数据库。遇到 LNK1318 等 PDB 缓存错误时，脚本会清理相关 Release 依赖并串行重建一次；其他错误或重试失败仍会终止发布。首次失败、清理和重建日志分别保存在 PhysX 构建目录的 `build-sdk.log`、`build-sdk-clean.log` 和 `build-sdk-rebuild.log` 中。
+
 日常可双击 `start.cmd`，以 Release 配置构建并运行；首次使用先运行一次完整 `build.ps1` 准备原生适配层。源码在 NAS 时，编译产物放在 `%LOCALAPPDATA%/HS2Manager/CppBuild/<项目标识>`，资料库保留原来的 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
 
 `build-desktop.ps1` 创建当前用户桌面的 `HS2Manager` 目录，不生成 ZIP；若已有安装，完整构建成功后替换程序并保留 `Data`，失败则保留或恢复旧目录。支持 `-GamePath`、`-SkipTests`、`-PreviewTest` 和 `-PreviewCard`。更新前关闭该安装的程序。
