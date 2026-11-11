@@ -12,7 +12,7 @@ try {
     if(!(Test-Path -LiteralPath $build.Executable -PathType Leaf)){throw '原生构建没有生成程序。'}
     $env:HS2MANAGER_SOURCE_ROOT=$source
     # Keep the existing source-library identity, including mapped-drive aliases.
-    # DataLocation also recognises this historical path after C# moves to tests.
+    # DataLocation recognises this historical identity after the C# sources are removed.
     $env:HS2MANAGER_SOURCE_OUTPUT=Join-Path $source 'src/HS2Manager.App/bin/Release/net10.0-windows10.0.19041.0/win-x64'
     & $build.Executable @launchArguments | Out-Host
     $code=$LASTEXITCODE

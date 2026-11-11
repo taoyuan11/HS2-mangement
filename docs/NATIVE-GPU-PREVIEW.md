@@ -1,6 +1,6 @@
 # 原生 GPU 预览与无引擎发布
 
-> 历史记录：本文的架构、命令、版本、性能和通过数量对应迁移前的 C# 实现及其当时的预览后端。旧源码现存于 `tests/reference/src`。本次 C++ 重写的实际检查见 [C++ 验证结果](CPP-VALIDATION.md)，当前构建与架构见 [C++ 迁移说明](CPP-MIGRATION.md)；本文数字不自动计入新版本验收。
+> 历史记录：本文的架构、命令、版本、性能和通过数量对应迁移前的 C# 实现及其当时的预览后端。旧源码和专用脚本已移除，历史命令需检出相应 Git 版本后运行。本次 C++ 重写的实际检查见 [C++ 验证结果](CPP-VALIDATION.md)，当前构建与架构见 [C++ 迁移说明](CPP-MIGRATION.md)；本文数字不自动计入新版本验收。
 
 预览、角色编辑、通用 FBX、Blender/Unreal 转换及正式构建均脱离 Unity Editor、Player 和 UnityEngine 程序集。继续读取本机游戏和 MOD 的序列化资源与 PE 元数据；不加载游戏或插件程序集，不执行资源中 MonoBehaviour 的代码。
 
@@ -30,7 +30,7 @@ WinUI 视口处理 DPI、窗口缩放及页面切换；隐藏停止绘制，关�
 
 微软 C#/WinRT 2.2 的 .NET 运行库保留一个没有调用者的 Mono 兼容类型及六条 P/Invoke 声明，见 [对应上游源码](https://github.com/microsoft/CsWinRT/blob/2.2.0.241111.1/src/WinRT.Runtime/MonoSupport.cs)。审计仅对已检查的未修改二进制 SHA-256 `BCF3A14E8712A90837FC5C0D8C8A24696AF2BD7F74E9767597EC81EDEDFB23DB` 记录这些可选声明；其它 Mono 导入、运行库文件及冒名程序集仍拒绝。实际应用、编辑器、预览和原生 DLL 检查均另外验证没有加载 Unity/Mono 模块。升级该依赖后必须重新核对，不能按文件名放行。
 
-历史实现位于 `tests/HS2Manager.Legacy*` 和原参考工程，必须显式选择，不能发布，不在正式解决方案或启动链路中。没有自动回退入口。所有转换和测试工具通过 Windows Job Object 登记所有权，正常、取消、失败、超时及宿主退出路径均回收本次启动的后代。
+当时的历史实现位于 `tests/HS2Manager.Legacy*` 和原参考工程；这些工程现已移除，只可通过 Git 历史查看。当时没有自动回退入口，转换和测试工具通过 Windows Job Object 登记所有权，正常、取消、失败、超时及宿主退出路径均回收本次启动的后代。
 
 ## 验收复现
 

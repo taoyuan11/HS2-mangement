@@ -1,7 +1,0 @@
-<Project>
-  <PropertyGroup>
-    <LangVersion>latest</LangVersion>
-    <Deterministic>true</Deterministic>
-    <GamePath Condition="'$(GamePath)' == ''">Z:\games\hs2\HS two DX - TSYMQ</GamePath>
-  </PropertyGroup>
-</Project>

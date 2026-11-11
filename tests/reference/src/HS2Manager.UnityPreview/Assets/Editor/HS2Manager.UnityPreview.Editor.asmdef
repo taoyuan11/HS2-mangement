@@ -1,7 +1,0 @@
-{
-  "name": "HS2Manager.UnityPreview.Editor",
-  "references": ["HS2Manager.Preview.Contracts"],
-  "includePlatforms": ["Editor"],
-  "excludePlatforms": [],
-  "allowUnsafeCode": false
-}

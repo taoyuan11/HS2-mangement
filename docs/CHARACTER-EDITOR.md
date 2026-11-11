@@ -33,7 +33,7 @@ Ctrl+S 与“另存新卡”默认保存为原目录的“原文件名-编辑.pn
 
 ## 历史 C# 验证入口
 
-以下命令对应 `tests/reference/src` 中保留的参考实现及旧测试工程。当前 C++ 构建和检查入口见 [C++ 迁移说明](CPP-MIGRATION.md#构建与检查)。
+以下为迁移前参考实现及旧测试工程的历史命令；对应源码和专用脚本已移除，复现需检出 Git 历史版本。当前 C++ 构建和检查入口见 [C++ 迁移说明](CPP-MIGRATION.md#构建与检查)。
 
 `HS2Manager.Checks --card-edit --real-edit` 验证无损往返、字段读写、PNG/插件保留、撤销、文件冲突、占用、备份恢复和中断索引补齐。`--edit-preview --player <exe>` 验证画面变化、对象复用、原版/MOD 往返、修订取消及原卡隔离；`HS2Manager.UiChecks --character-editor --player <exe>` 验证实际界面流程。`--prepare-edit-game` 生成测试副本，测试采集器核对游戏实际读取值与资源选择。
 

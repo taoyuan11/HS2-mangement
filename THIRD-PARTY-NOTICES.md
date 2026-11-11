@@ -18,9 +18,9 @@ Blender and Unreal Engine are optional, separately installed user tools. Their a
 
 HS2 Manager is an independent utility. HoneySelect 2, Studio, Unity assets and game assemblies belong to their respective owners. No game DLLs, MOD archives, character cards or reference screenshots are distributed. PE / CLI metadata is read as data with a restricted numeric evaluator; game or plugin code is not loaded or invoked.
 
-## Historical C# comparison sources
+## Historical C# dependency notices
 
-The components below are retained for historical source and validation references. They are excluded from the C++ application's build, runtime and portable package. Their original license texts remain available in `licenses`.
+The C# application, Unity comparison sources and their dedicated build/test tools have been removed from the working tree and remain available in Git history. The entries below describe their historical dependencies, not dependencies of the current C++ application. Original license texts remain available in `licenses` for the retained validation records.
 
 - Native rendering modules: Vortice.Direct3D11, Vortice.DXGI and Vortice.D3DCompiler 3.8.3, and Vortice.Mathematics 2.1.0, Amer Koleci and contributors, MIT. See `licenses/Vortice.Windows-LICENSE.txt`. Source: https://github.com/amerkoleci/Vortice.Windows.
 - SharpGen.Runtime and SharpGen.Runtime.COM 2.4.2-beta: Alexandre Mutel, Jeremy Koritzinsky and Amer Koleci, MIT. See `licenses/SharpGen.Runtime-LICENSE.txt`. Source: https://github.com/SharpGenTools/SharpGenTools.
@@ -42,10 +42,10 @@ HS2 Manager is an independent utility. HoneySelect 2, Studio, Unity assets and g
 - BepInEx is referenced only from the user's existing installation and is not bundled. https://github.com/BepInEx/BepInEx.
 - Microsoft.NETFramework.ReferenceAssemblies.net46 is a build-only dependency and is not included in the application package.
 
-The in-process native preview reads the user's local `abdata` and MOD archives and caches decoded geometry and textures locally. Shape formulas are read from the installed game's PE metadata with a restricted numeric evaluator; game assemblies and plugin code are never loaded or invoked. No character cards, preview screenshots, model caches, MOD packages or proprietary game DLLs are bundled. The legacy bridge source remains available separately and is not built or shipped by the default build.
+The in-process native preview reads the user's local `abdata` and MOD archives and caches decoded geometry and textures locally. Shape formulas are read from the installed game's PE metadata with a restricted numeric evaluator; game assemblies and plugin code are never loaded or invoked. No character cards, preview screenshots, model caches, MOD packages or proprietary game DLLs are bundled. The retired bridge source is available in Git history.
 
 - AssetsTools.NET.MonoCecil 3.0.4 and Mono.Cecil: MIT; metadata-only component schema reading.
 - AssetRipper TPK class database: MIT; license in `licenses/AssetRipper-Tpk.txt`.
 - Unity Post Processing 2.1.7: Unity Companion License, in `licenses/Unity-PostProcessing.md`.
 
-Historical comparison sources retain their original notices, including the Unity Companion licensed FBX C# wrapper. No Unity Player, Mono runtime or UnityEngine assembly is distributed in the native package.
+Original notices for the retired comparison sources, including the Unity Companion licensed FBX C# wrapper, remain in Git history. No Unity Player, Mono runtime or UnityEngine assembly is distributed in the native package.

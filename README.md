@@ -139,7 +139,7 @@ C++ 版本已执行真实人物字段、无损读写、保存事务和界面流�
 
 `build-desktop.ps1` 创建当前用户桌面的 `HS2Manager` 目录，不生成 ZIP；若已有安装，完整构建成功后替换程序并保留 `Data`，失败则保留或恢复旧目录。支持 `-GamePath`、`-SkipTests`、`-PreviewTest` 和 `-PreviewCard`。更新前关闭该安装的程序。
 
-在 Visual Studio 打开 `HS2Manager.Native.sln` 或 `HS2Manager.slnx`。生产代码在 `src/HS2Manager.NativeApp`、`NativeCore`、`NativeScene`、`NativeRendering` 和 `NativeExport`；底层库也可通过根目录 `CMakeLists.txt` 构建。旧 C#、Unity 与桥接源代码保存在 `tests/reference/src`，独立参考解决方案为 `tests/reference/HS2Manager.Reference.slnx`；它们不在正式构建、启动、发布链路中，也不提供自动回退。
+在 Visual Studio 打开 `HS2Manager.Native.sln` 或 `HS2Manager.slnx`。生产代码在 `src/HS2Manager.NativeApp`、`NativeCore`、`NativeScene`、`NativeRendering` 和 `NativeExport`；底层库也可通过根目录 `CMakeLists.txt` 构建。旧 C#、Unity 与桥接源代码、参考解决方案及专用构建和测试脚本已移除，可通过 Git 历史查看。冻结数值基准保留在 `tests/fixtures`，供 C++ 回归检查及历史对照使用。
 
 ## 范围与兼容性
 

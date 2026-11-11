@@ -5,14 +5,7 @@ Data/
 artifacts/
 *.user
 *.suo
-**/Library/
-**/Temp/
 **/Logs/
-**/UserSettings/
-tests/reference/src/HS2Manager.UnityPreview/Assets/Generated/
-tests/reference/src/HS2Manager.UnityPreview/Assets/Generated.meta
-tests/reference/src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx/
-*.alf
-*.ulf
+# Ignore locally cached outputs from the retired reference projects.
+tests/reference/
 __pycache__/
-*_wpftmp.csproj

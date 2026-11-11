@@ -1,4 +1,4 @@
-"""Run inside an isolated UE commandlet via scripts/Test-UnrealExport.ps1."""
+"""Run inside an isolated UE commandlet with HS2_UNREAL_VALIDATION pointing to its request JSON."""
 import json
 import os
 import runpy
