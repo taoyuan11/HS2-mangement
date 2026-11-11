@@ -91,6 +91,20 @@ int wmain(int argc, wchar_t **argv)
 {
     try
     {
+        if (argc == 3 && std::wstring_view(argv[1]) == L"--verify")
+        {
+            CardRepository repository(argv[2]);
+            auto all = repository.All();
+            auto valid = std::count_if(all.begin(), all.end(),
+                                       [](auto const &card)
+                                       {
+                                           return card.Status == CardStatus::Valid;
+                                       });
+            if (all.size() != 81 || valid != 80)
+                throw std::runtime_error("UI startup did not preserve or index the populated fixture");
+            std::cout << "PASS UI library: 80 characters, 1 image-only\n";
+            return 0;
+        }
         if (argc != 3)
             throw std::runtime_error("Usage: hs2_ui_fixtures <new local test directory> <cover PNG>");
         fs::path root = fs::absolute(argv[1]);

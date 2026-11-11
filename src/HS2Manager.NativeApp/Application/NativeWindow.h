@@ -32,7 +32,7 @@ namespace hs2::ui
     class NativeWindow : public std::enable_shared_from_this<NativeWindow>
     {
     public:
-        static std::shared_ptr<NativeWindow> Create(fs::path dataDirectory);
+        static std::shared_ptr<NativeWindow> Create(fs::path dataDirectory, std::unique_ptr<CardRepository> repository);
         ~NativeWindow();
 
         xaml::Window Window() const
@@ -43,7 +43,7 @@ namespace hs2::ui
     private:
         friend class NativeEditor;
         friend class NativePreview;
-        explicit NativeWindow(fs::path dataDirectory);
+        NativeWindow(fs::path dataDirectory, std::unique_ptr<CardRepository> repository);
         void Initialize();
         void BindEvents(xaml::FrameworkElement const &root, std::wstring_view view);
         xaml::FrameworkElement LoadView(std::wstring_view view);

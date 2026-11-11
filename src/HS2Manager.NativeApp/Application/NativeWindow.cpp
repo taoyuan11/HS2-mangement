@@ -161,18 +161,17 @@ namespace hs2::ui
             Markup::XamlReader::Load(ReadText(ExecutableDirectory() / L"Styles.xaml")).as<ResourceDictionary>());
     }
 
-    std::shared_ptr<NativeWindow> NativeWindow::Create(fs::path directory)
+    std::shared_ptr<NativeWindow> NativeWindow::Create(fs::path directory, std::unique_ptr<CardRepository> repository)
     {
-        auto result = std::shared_ptr<NativeWindow>(new NativeWindow(std::move(directory)));
+        auto result = std::shared_ptr<NativeWindow>(new NativeWindow(std::move(directory), std::move(repository)));
         result->Initialize();
         return result;
     }
 
-    NativeWindow::NativeWindow(fs::path directory)
+    NativeWindow::NativeWindow(fs::path directory, std::unique_ptr<CardRepository> repository)
         : dataDirectory_(std::move(directory)), settings_(AppSettings::Load(dataDirectory_)),
-          model_(make_self<Observable>())
+          repository_(std::move(repository)), model_(make_self<Observable>())
     {
-        repository_ = std::make_unique<CardRepository>(dataDirectory_);
         library_ = std::make_unique<CardLibraryService>(*repository_);
         files_ = std::make_unique<CardFileService>(*repository_);
     }
@@ -823,9 +822,24 @@ namespace hs2::ui
         {
             if (card.CoverFile.empty())
                 co_return;
-            auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(
-                (dataDirectory_ / Path(card.CoverFile)).wstring());
-            auto stream = co_await file.OpenReadAsync();
+            auto path = (dataDirectory_ / Path(card.CoverFile)).wstring();
+            apartment_context ui;
+            winrt::Windows::Storage::Streams::IRandomAccessStreamWithContentType stream{nullptr};
+            // 此协程由 ContainerContentChanging 发起。StorageFile 的首次激活会泵送 COM 消息，
+            // 在列表布局中同步调用会重入 XAML，触发 E_UNEXPECTED / 0xc000027b。
+            co_await resume_background();
+            try
+            {
+                auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(path);
+                stream = co_await file.OpenReadAsync();
+            }
+            catch (hresult_error const &)
+            {
+                // 缺失的封面仍回到 UI 线程释放窗口及绑定对象，保留占位图。
+            }
+            co_await ui;
+            if (!stream || closing_)
+                co_return;
             Media::Imaging::BitmapImage bitmap;
             bitmap.DecodePixelWidth(360);
             co_await bitmap.SetSourceAsync(stream);

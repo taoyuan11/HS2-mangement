@@ -11,7 +11,8 @@ namespace hs2
         void CheckSql(int code, sqlite3 *db)
         {
             if (code != SQLITE_OK && code != SQLITE_DONE && code != SQLITE_ROW)
-                throw std::runtime_error(std::string("SQLite: ") + (db ? sqlite3_errmsg(db) : "open failed"));
+                throw DatabaseError(db ? sqlite3_errmsg(db) : "open failed", db ? sqlite3_extended_errcode(db) : code,
+                                    db ? sqlite3_system_errno(db) : 0);
         }
 
         struct Statement
@@ -64,7 +65,7 @@ namespace hs2
         sqlite3 *Database{};
         mutable std::recursive_mutex Gate;
 
-        explicit Impl(fs::path path) : Path(fs::absolute(path))
+        Impl(fs::path path, bool exclusiveAccess) : Path(fs::absolute(path))
         {
             auto full = Path.wstring();
             bool remote = full.starts_with(L"\\\\?\\UNC\\");
@@ -90,6 +91,11 @@ namespace hs2
             sqlite3_busy_timeout(Database, 10000);
             try
             {
+                // 单实例恢复模式在访问 WAL 前启用独占锁，使用进程内 WAL 索引，
+                // 避免再次截断被 Windows 错误报告快照映射的 SHM 文件。
+                if (exclusiveAccess)
+                    CheckSql(sqlite3_exec(Database, "PRAGMA locking_mode=EXCLUSIVE;", nullptr, nullptr, nullptr),
+                             Database);
                 CheckSql(
                     sqlite3_exec(Database,
                                  "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS Cards(Id TEXT PRIMARY KEY, Path "
@@ -113,7 +119,8 @@ namespace hs2
         }
     };
 
-    CardRepository::CardRepository(fs::path path) : impl_(std::make_unique<Impl>(std::move(path)))
+    CardRepository::CardRepository(fs::path path, bool exclusiveAccess)
+        : impl_(std::make_unique<Impl>(std::move(path), exclusiveAccess))
     {
     }
 

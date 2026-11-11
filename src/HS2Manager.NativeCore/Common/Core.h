@@ -18,6 +18,19 @@ namespace hs2
     using Json = nlohmann::json;
     using Bytes = std::vector<std::uint8_t>;
 
+    class DatabaseError : public std::runtime_error
+    {
+    public:
+        int ExtendedCode, SystemCode;
+
+        DatabaseError(std::string message, int extendedCode, int systemCode)
+            : std::runtime_error("SQLite (" + std::to_string(extendedCode) + ", Win32 " + std::to_string(systemCode) +
+                                 "): " + message),
+              ExtendedCode(extendedCode), SystemCode(systemCode)
+        {
+        }
+    };
+
     class Cancelled : public std::runtime_error
     {
     public:
@@ -196,7 +209,7 @@ namespace hs2
     class CardRepository
     {
     public:
-        explicit CardRepository(fs::path dataPath);
+        explicit CardRepository(fs::path dataPath, bool exclusiveAccess = false);
         ~CardRepository();
         CardRepository(const CardRepository &) = delete;
         CardRepository &operator=(const CardRepository &) = delete;

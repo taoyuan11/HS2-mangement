@@ -168,7 +168,28 @@ if (!$SkipTests) {
     Invoke-BuildTool $ctest @('--test-dir', $native, '-C', $Configuration, '--output-on-failure')
 }
 if (!$SkipUi) {
-    Invoke-BuildTool $msbuild @((Join-Path $source 'HS2Manager.Native.sln'), "/p:Configuration=$Configuration", '/p:Platform=x64', "/p:NativeBuildRoot=$BuildDirectory", '/p:NativeModulesBuilt=true', ("/p:NativePackageRoot=" + $packageRoot.TrimEnd('\', '/') + '\'), "/p:WindowsTargetPlatformVersion=$($sdk.Name)", '/m:1', '/nr:false', '/nologo', '/v:minimal')
+    $uiBuildArguments = @((Join-Path $source 'HS2Manager.Native.sln'), "/p:Configuration=$Configuration", '/p:Platform=x64', "/p:NativeBuildRoot=$BuildDirectory", '/p:NativeModulesBuilt=true', ("/p:NativePackageRoot=" + $packageRoot.TrimEnd('\', '/') + '\'), "/p:WindowsTargetPlatformVersion=$($sdk.Name)", '/m:1', '/nr:false', '/nologo', '/v:minimal')
+    $uiErrorLog = Join-Path $BuildDirectory ("msbuild-errors-" + [Guid]::NewGuid().ToString('N') + '.log')
+    try {
+        try {
+            Invoke-BuildTool $msbuild ($uiBuildArguments + "/flp:ErrorsOnly;Encoding=UTF-8;LogFile=$uiErrorLog")
+        }
+        catch {
+            if (!(Test-Path -LiteralPath $uiErrorLog -PathType Leaf) -or
+                !(Select-String -LiteralPath $uiErrorLog -Pattern '\berror\s+(C2859|LNK1209)\s*:' -Quiet)) {
+                throw
+            }
+            # PCH/编译 PDB 或增量链接 PDB 不一致时，成套重建当前配置的 WinUI 产物。
+            # NativeModulesBuilt 保留已完成的 CMake 构建；只重试一次，其他失败照常抛出。
+            Write-Warning '检测到 WinUI 调试数据库缓存不一致（C2859/LNK1209），正在重建当前配置。'
+            Invoke-BuildTool $msbuild ($uiBuildArguments + '/t:Rebuild')
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $uiErrorLog -PathType Leaf) {
+            Remove-Item -LiteralPath $uiErrorLog -Force
+        }
+    }
     $executable = Join-Path $BuildDirectory "bin/$Configuration/HS2Manager.exe"
     $runtime = @{Package = (Split-Path -Parent $executable)
         VisualStudioDirectory = $installation
@@ -182,7 +203,7 @@ if (!$SkipUi) {
     & (Join-Path $source 'scripts/package/Copy-CppRuntime.ps1') @runtime
     & (Join-Path $source 'scripts/package/Test-CppPackage.ps1') -Package (Split-Path -Parent $executable) -DevelopmentOutput
     if (!$SkipTests) {
-        & (Join-Path $source 'tests/ui/Invoke-CppWinUiSmoke.ps1') -Executable $executable
+        & (Join-Path $source 'tests/ui/Invoke-CppWinUiSmoke.ps1') -Executable $executable -FixtureTool (Join-Path $native "$Configuration/hs2_ui_fixtures.exe")
     }
     if ($ResultFile) {
         $resultPath = [IO.Path]::GetFullPath($ResultFile)

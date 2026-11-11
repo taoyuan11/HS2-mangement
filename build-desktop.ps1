@@ -48,6 +48,45 @@ function Remove-DesktopBuildDirectory([string]$Path) {
     }
 }
 
+function Lock-DesktopLibrary {
+    $dataPath = [IO.Path]::GetFullPath((Join-Path $output 'Data')).ToUpperInvariant()
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try {
+        $key = ([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($dataPath)))).Replace('-', '').Substring(0, 24)
+    }
+    finally {
+        $hash.Dispose()
+    }
+    $created = $false
+    $mutex = [Threading.Mutex]::new($false, ('Local\HS2Manager.App.' + $key), [ref]$created)
+    if (!$created) {
+        $mutex.Dispose()
+        throw '请先关闭桌面版 HS2 Manager，再替换程序，避免复制正在写入的资料库。'
+    }
+    return $mutex
+}
+
+function Move-InstallationEntry([string]$Source, [string]$Destination) {
+    $sourcePath = [IO.Path]::GetFullPath($Source)
+    $destinationPath = [IO.Path]::GetFullPath($Destination)
+    foreach ($path in @($sourcePath, $destinationPath)) {
+        if ([IO.Path]::GetDirectoryName($path) -notin @($output, $staging, $backup)) {
+            throw '安装文件移动路径越界。'
+        }
+    }
+    $item = Get-Item -LiteralPath $sourcePath -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "安装文件不能是链接：$sourcePath"
+    }
+    if ($item.PSIsContainer) {
+        [IO.Directory]::Move($sourcePath, $destinationPath)
+    }
+    else {
+        [IO.File]::Move($sourcePath, $destinationPath)
+    }
+}
+
+$libraryLock = $null
 Assert-DesktopInstallation
 try {
     # 完整构建便携版本成功后，再调整已安装版本。
@@ -55,26 +94,40 @@ try {
         -OutputDirectory $staging -SkipArchive
 
     Assert-DesktopInstallation
+    $libraryLock = Lock-DesktopLibrary
     if (Test-Path -LiteralPath $output) {
-        # 所有重命名目标均为桌面下的同级目录；
-        # Directory.Move 在目标已存在时拒绝操作，避免将安装目录嵌入另一安装目录。
-        [IO.Directory]::Move($output, $backup)
+        New-Item -ItemType Directory -Path $backup | Out-Null
+        $oldEntries = [Collections.Generic.List[string]]::new()
+        $newEntries = [Collections.Generic.List[string]]::new()
         try {
-            $oldData = Join-Path $backup 'Data'
-            if (Test-Path -LiteralPath $oldData) {
-                # 新构建的数据目录仅包含自动生成的 Data/README.txt。
-                $newData = [IO.Path]::GetFullPath((Join-Path $staging 'Data'))
-                if ([IO.Path]::GetDirectoryName($newData) -ne $staging) {
-                    throw '数据目录超出临时构建目录。'
+            # 被崩溃快照映射的 SHM 会阻止重命名整个安装目录。
+            # 保留 Data 及恢复备份的原路径，只事务式替换程序文件。
+            foreach ($item in Get-ChildItem -LiteralPath $output -Force) {
+                if ($item.Name -match '^Data(?:\.|$)') {
+                    continue
                 }
-                Remove-Item -LiteralPath $newData -Recurse -Force
-                Copy-Item -LiteralPath $oldData -Destination $staging -Recurse -Force
+                Move-InstallationEntry $item.FullName (Join-Path $backup $item.Name)
+                $oldEntries.Add($item.Name)
             }
-            [IO.Directory]::Move($staging, $output)
+            foreach ($item in Get-ChildItem -LiteralPath $staging -Force) {
+                if ($item.Name -eq 'Data' -and (Test-Path -LiteralPath (Join-Path $output 'Data'))) {
+                    continue
+                }
+                Move-InstallationEntry $item.FullName (Join-Path $output $item.Name)
+                $newEntries.Add($item.Name)
+            }
         }
         catch {
-            # 替换版本确认可用前，保留完整的原安装目录。
-            [IO.Directory]::Move($backup, $output)
+            # 回滚到刚才完整的旧程序；资料库始终保留在原位置。
+            for ($index = $newEntries.Count - 1; $index -ge 0; $index--) {
+                $name = $newEntries[$index]
+                Move-InstallationEntry (Join-Path $output $name) (Join-Path $staging $name)
+            }
+            for ($index = $oldEntries.Count - 1; $index -ge 0; $index--) {
+                $name = $oldEntries[$index]
+                Move-InstallationEntry (Join-Path $backup $name) (Join-Path $output $name)
+            }
+            Remove-DesktopBuildDirectory $backup
             throw
         }
         try {
@@ -90,5 +143,8 @@ try {
     Write-Output "桌面便携目录：$output"
 }
 finally {
+    if ($libraryLock) {
+        $libraryLock.Dispose()
+    }
     Remove-DesktopBuildDirectory $staging
 }

@@ -11,6 +11,8 @@
 
 本机磁盘运行时，`Data` 在程序旁边，保存 `library.db`、`settings.json`、`Covers`、`CardBackups`、`Operations` 和 `Logs`。便携包位于 NAS 时，自动将原有资料复制到 `%LOCALAPPDATA%\HS2Manager\Portable\<安装路径标识>\Data`，保留原件；之后使用本机资料库。数据库、封面与缓存均留在本机，游戏与人物卡可以位于 NAS。实际数据位置可在“设置与连接 → 数据与维护”查看，也可用 `--data "D:\HS2ManagerData"` 指定本机目录。NAS 上的程序文件和本机资料库需要分别备份；更换电脑不会自动同步收藏与备注。
 
+异常退出后，Windows 错误报告可能继续占用 SQLite 的共享内存文件，导致下次启动出现 `SQLite (1546, Win32 1224)`。程序会保留原始数据到同级 `Data.startup-backup-<标识>`，从 DB 和 WAL 建立通过完整性检查的备份，再使用独占 WAL 索引恢复启动，保留已提交的收藏、标签和备注。恢复记录及启动错误见实际数据目录中的 `native-error.log`。使用 `build-desktop.ps1` 更新桌面版本前需先关闭程序；更新仅替换程序文件，保留原位置的 Data、WAL 和恢复备份。
+
 ## 浏览与整理
 
 - 左侧分为全部人物卡、收藏、完全重复文件、需要关注、可恢复隔离区，以及虚拟分类和真实文件夹。
@@ -136,6 +138,8 @@ C++ 版本已执行真实人物字段、无损读写、保存事务和界面流�
 ```
 
 `build.ps1` 编译独立 FBX / 物理适配层、C++ 业务模块及 WinUI 程序，运行 CTest 和窗口启动 / 关闭检查，发布自带 Windows App SDK 与 VC++ 运行库的便携目录及 ZIP，并写入 SHA-256 清单。输出位于 `artifacts/release`；已有输出不会被覆盖，可用 `-OutputDirectory` 指定新目录。`-SkipTests` 跳过自动测试，发布包的纯原生依赖审计仍然执行。无需构建或下载 Unity。
+
+`build-cpp.ps1` 默认使用增量构建。若 WinUI 的 PCH / PDB 缓存不一致导致 C2859 或 LNK1209，脚本会自动重建当前配置的 WinUI 项目并重试一次，保留已构建的 CMake 模块；重建失败或其他错误仍会终止构建。
 
 日常可双击 `start.cmd`，以 Release 配置构建并运行；首次使用先运行一次完整 `build.ps1` 准备原生适配层。源码在 NAS 时，编译产物放在 `%LOCALAPPDATA%/HS2Manager/CppBuild/<项目标识>`，资料库保留原来的 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
 

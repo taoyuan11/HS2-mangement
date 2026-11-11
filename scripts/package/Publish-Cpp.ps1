@@ -152,7 +152,7 @@ try {
         # 发布到 NAS 时也从本机副本验证暂存包。
         # 测试使用独立的 --data 目录，并等待所启动的进程结束。
         Copy-Item -LiteralPath $staging -Destination $smokeRoot -Recurse
-        & (Join-Path $source 'tests/ui/Invoke-CppWinUiSmoke.ps1') -Executable (Join-Path $smokeRoot 'HS2Manager.exe')
+        & (Join-Path $source 'tests/ui/Invoke-CppWinUiSmoke.ps1') -Executable (Join-Path $smokeRoot 'HS2Manager.exe') -FixtureTool (Join-Path $build.BuildDirectory 'modules/Release/hs2_ui_fixtures.exe')
         Remove-OwnedSmoke
     }
     $manifest = foreach ($file in Get-ChildItem -LiteralPath $staging -File -Recurse) {

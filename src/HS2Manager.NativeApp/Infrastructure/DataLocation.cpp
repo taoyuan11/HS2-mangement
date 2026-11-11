@@ -21,6 +21,14 @@ namespace hs2::ui
             return Upper(std::wstring(a)) == Upper(std::wstring(b));
         }
 
+        fs::path NormalizeDirectory(fs::path const &path)
+        {
+            auto result = fs::absolute(path).lexically_normal();
+            while (result != result.root_path() && result.filename().empty())
+                result = result.parent_path();
+            return result;
+        }
+
         std::string Key(fs::path const &path)
         {
             auto value = Utf8(fs::path(Upper(path.wstring())));
@@ -175,6 +183,97 @@ namespace hs2::ui
             auto result = sqlite3_backup_step(backup, -1), finished = sqlite3_backup_finish(backup);
             check(result, output.Value);
             check(finished, output.Value);
+
+            bool valid = false;
+            check(sqlite3_exec(
+                      output.Value, "PRAGMA integrity_check;",
+                      [](void *context, int count, char **values, char **) -> int
+                      {
+                          auto &valid = *static_cast<bool *>(context);
+                          if (count != 1 || !values[0] || std::string_view(values[0]) != "ok")
+                              return 1;
+                          valid = true;
+                          return 0;
+                      },
+                      &valid, nullptr),
+                  output.Value);
+            if (!valid)
+                throw std::runtime_error("数据库快照完整性检查失败。");
+        }
+
+        struct SnapshotLock
+        {
+            HANDLE Value = INVALID_HANDLE_VALUE;
+
+            explicit SnapshotLock(fs::path const &file)
+            {
+                // 拒绝仍有写连接的资料库，并在复制 DB/WAL 期间禁止新的写连接。
+                Value = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (Value == INVALID_HANDLE_VALUE)
+                    throw std::system_error(GetLastError(), std::system_category(), "资料库仍被占用，无法建立恢复快照");
+            }
+
+            ~SnapshotLock()
+            {
+                if (Value != INVALID_HANDLE_VALUE)
+                    CloseHandle(Value);
+            }
+        };
+
+        std::unique_ptr<CardRepository> RecoverMappedLibrary(fs::path directory, DatabaseError const &error)
+        {
+            directory = NormalizeDirectory(directory);
+            if (directory == directory.root_path() || !Ordinary(directory, true) ||
+                !Ordinary(directory / L"library.db", false) || !Ordinary(directory / L"library.db-shm", false))
+                throw error;
+            auto id = Path(NewId()).wstring();
+            auto staging = fs::path(directory.wstring() + L".recovering-" + id);
+            auto backup = fs::path(directory.wstring() + L".startup-backup-" + id);
+            auto databaseLock = std::make_unique<SnapshotLock>(directory / L"library.db");
+            std::unique_ptr<SnapshotLock> walLock;
+            if (Ordinary(directory / L"library.db-wal", false))
+                walLock = std::make_unique<SnapshotLock>(directory / L"library.db-wal");
+            if (!fs::create_directory(staging))
+                throw std::runtime_error("资料库恢复暂存目录已存在。");
+            try
+            {
+                auto snapshot = staging / L".database-snapshot";
+                fs::create_directory(snapshot);
+                fs::copy_file(directory / L"library.db", snapshot / L"library.db");
+                if (walLock)
+                    fs::copy_file(directory / L"library.db-wal", snapshot / L"library.db-wal");
+                // SHM 是可重建的索引；WAL 中可能有尚未写回 DB 的已提交收藏、标签与备注。
+                // 在隔离副本中重放 WAL，再通过 SQLite 备份 API 生成并校验完整快照。
+                auto verified = staging / L"VerifiedDatabase";
+                fs::create_directory(verified);
+                BackupDatabase(snapshot / L"library.db", verified / L"library.db");
+                fs::remove_all(snapshot);
+                for (auto const &item : fs::directory_iterator(directory))
+                {
+                    auto name = item.path().filename();
+                    if (Attributes(item.path()) & FILE_ATTRIBUTE_DIRECTORY)
+                        CopyDirectory(item.path(), staging / name);
+                    else if (Ordinary(item.path(), false))
+                        fs::copy_file(item.path(), staging / name);
+                }
+                // 残留映射也会禁止重命名原目录；保留原路径，使用 SQLite 的独占 WAL 索引。
+                fs::rename(staging, backup);
+                walLock.reset();
+                databaseLock.reset();
+                auto repository = std::make_unique<CardRepository>(directory, true);
+                WriteJson(directory / L"sqlite-locking.json", Json{{"Exclusive", true}, {"Backup", Utf8(backup)}});
+                std::ofstream(directory / L"native-error.log", std::ios::app)
+                    << UtcNow() << " Recovered mapped SQLite SHM: " << error.what() << "; original data retained at "
+                    << Utf8(backup) << '\n';
+                return repository;
+            }
+            catch (...)
+            {
+                std::error_code ignored;
+                fs::remove_all(staging, ignored);
+                throw;
+            }
         }
 
         bool Guid(std::string const &value)
@@ -244,7 +343,7 @@ namespace hs2::ui
 
     std::wstring LibraryMutexName(fs::path const &path)
     {
-        auto key = Key(fs::absolute(path).lexically_normal());
+        auto key = Key(NormalizeDirectory(path));
         return L"Local\\HS2Manager.App." + Path(key).wstring();
     }
 
@@ -351,5 +450,24 @@ namespace hs2::ui
             throw;
         }
         CloseHandle(mutex);
+    }
+
+    std::unique_ptr<CardRepository> OpenLibrary(fs::path const &directory)
+    {
+        auto locking = directory / L"sqlite-locking.json";
+        if (Ordinary(locking, false) && Json::parse(ReadFile(locking, 65536)).value("Exclusive", false))
+            return std::make_unique<CardRepository>(directory, true);
+        try
+        {
+            return std::make_unique<CardRepository>(directory);
+        }
+        catch (DatabaseError const &error)
+        {
+            // Windows 错误报告的进程快照可能在原进程退出后继续保留 SHM 映射。
+            // 仅处理已确认的映射截断错误，不对损坏、权限或实际磁盘故障自动替换资料库。
+            if (error.ExtendedCode != SQLITE_IOERR_TRUNCATE || error.SystemCode != ERROR_USER_MAPPED_FILE)
+                throw;
+            return RecoverMappedLibrary(directory, error);
+        }
     }
 } // 命名空间 hs2::ui
