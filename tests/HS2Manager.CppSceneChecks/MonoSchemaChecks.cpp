@@ -1,5 +1,61 @@
-#include "MonoSchema.h"
-#include "Core.h"
+#include "Assets/MonoSchema.h"
+#include "Common/Core.h"
 #include <iostream>
 using namespace hs2;
-int wmain(int argc,wchar_t** argv){try{if(argc<4)throw std::runtime_error("Usage: schema-checks managed-directory classdata.tpk reference-directory");auto database=std::make_shared<UnityClassDatabase>(argv[2]);NativeMonoSchema schemas(argv[1],database);auto header=database->Type(114,"2018.2.21f1").size();int count=0;for(auto name:{"PostProcessVolume","PostProcessProfile","ColorGrading","Bloom","AmbientOcclusion","Vignette","MotionBlur","ScreenSpaceReflections","DepthOfField","AutoExposure","ChromaticAberration","Grain"}){auto native=schemas.Type("Unity.Postprocessing.Runtime.dll","UnityEngine.Rendering.PostProcessing",name);Json output=Json::array();for(std::size_t i=header;i<native.size();i++)output.push_back(Json{{"Type",native[i].Type},{"Name",native[i].Name},{"Aligned",bool(native[i].Flags&0x4000)},{"Level",native[i].Level}});auto source=fs::path(argv[3])/Path(std::string(name)+"-schema.json");auto target=fs::path(argv[3])/Path(std::string(name)+"-native-schema.json");WriteJson(target,output);auto reference=Json::parse(ReadFile(source));Json expected=Json::array();std::function<void(const Json&,int)> flatten=[&](auto& node,int level){expected.push_back(Json{{"Type",node.at("Type")},{"Name",node.at("Name")},{"Aligned",node.at("IsAligned")},{"Level",level}});for(auto& child:node.at("Children"))flatten(child,level+1);};for(auto& field:reference)flatten(field,1);if(expected!=output){std::cerr<<name<<": native="<<output.size()<<" reference="<<expected.size()<<"\n";WriteJson(fs::path(argv[3])/Path(std::string(name)+"-expected-flat.json"),expected);throw std::runtime_error("Generated script schema differs from independent metadata reference.");}count+=static_cast<int>(output.size());std::cout<<name<<" "<<output.size()<<" nodes match\n";}std::cout<<"PASS "<<count<<" script field nodes\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<"\n";return 1;}}
+
+int wmain(int argc, wchar_t **argv)
+{
+    try
+    {
+        if (argc < 4)
+            throw std::runtime_error("Usage: schema-checks managed-directory classdata.tpk reference-directory");
+        auto database = std::make_shared<UnityClassDatabase>(argv[2]);
+        NativeMonoSchema schemas(argv[1], database);
+        auto header = database->Type(114, "2018.2.21f1").size();
+        int count = 0;
+        for (auto name :
+             {"PostProcessVolume", "PostProcessProfile", "ColorGrading", "Bloom", "AmbientOcclusion", "Vignette",
+              "MotionBlur", "ScreenSpaceReflections", "DepthOfField", "AutoExposure", "ChromaticAberration", "Grain"})
+        {
+            auto native =
+                schemas.Type("Unity.Postprocessing.Runtime.dll", "UnityEngine.Rendering.PostProcessing", name);
+            Json output = Json::array();
+            for (std::size_t i = header; i < native.size(); i++)
+                output.push_back(Json{{"Type", native[i].Type},
+                                      {"Name", native[i].Name},
+                                      {"Aligned", bool(native[i].Flags & 0x4000)},
+                                      {"Level", native[i].Level}});
+            auto source = fs::path(argv[3]) / Path(std::string(name) + "-schema.json");
+            auto target = fs::path(argv[3]) / Path(std::string(name) + "-native-schema.json");
+            WriteJson(target, output);
+            auto reference = Json::parse(ReadFile(source));
+            Json expected = Json::array();
+            std::function<void(const Json &, int)> flatten = [&](auto &node, int level)
+            {
+                expected.push_back(Json{{"Type", node.at("Type")},
+                                        {"Name", node.at("Name")},
+                                        {"Aligned", node.at("IsAligned")},
+                                        {"Level", level}});
+                for (auto &child : node.at("Children"))
+                    flatten(child, level + 1);
+            };
+            for (auto &field : reference)
+                flatten(field, 1);
+            if (expected != output)
+            {
+                std::cerr << name << ": native=" << output.size() << " reference=" << expected.size() << "\n";
+                WriteJson(fs::path(argv[3]) / Path(std::string(name) + "-expected-flat.json"), expected);
+                throw std::runtime_error("Generated script schema differs from independent metadata reference.");
+            }
+            count += static_cast<int>(output.size());
+            std::cout << name << " " << output.size() << " nodes match\n";
+        }
+        std::cout << "PASS " << count << " script field nodes\n";
+        return 0;
+    }
+    catch (const std::exception &error)
+    {
+        std::cerr << error.what() << "\n";
+        return 1;
+    }
+}

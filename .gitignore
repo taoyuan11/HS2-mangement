@@ -6,6 +6,6 @@ artifacts/
 *.user
 *.suo
 **/Logs/
-# Ignore locally cached outputs from the retired reference projects.
+# 忽略已停用参考项目在本机缓存的输出。
 tests/reference/
 __pycache__/

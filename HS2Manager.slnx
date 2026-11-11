@@ -1,8 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Solution>
-  <Configurations>
-    <Platform Name="x64" />
-  </Configurations>
-  <Folder Name="/src/">
-    <Project Path="src/HS2Manager.NativeApp/HS2Manager.NativeApp.vcxproj" />
-  </Folder>
+    <Configurations>
+        <Platform Name="x64"/>
+    </Configurations>
+    <Folder Name="/src/">
+        <Project Path="src/HS2Manager.NativeApp/HS2Manager.NativeApp.vcxproj"/>
+    </Folder>
 </Solution>

@@ -1,0 +1,257 @@
+#include "Lighting/NativeSkybox.h"
+#include "Common/RenderMath.h"
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <numbers>
+#include <stdexcept>
+
+namespace hs2
+{
+    namespace
+    {
+        GpuMeshData Cube()
+        {
+            const float p[]{-1, -1, -1, 1, -1, -1, -1, 1, -1, 1, 1, -1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 1};
+            const std::uint16_t i[]{0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 4, 2, 4, 6, 2,
+                                    1, 3, 5, 5, 3, 7, 0, 1, 4, 1, 5, 4, 2, 6, 3, 3, 6, 7};
+            GpuMeshData result;
+            result.Name = "skybox";
+            result.VertexCount = 8;
+            result.Channels = {{0, 0, 0, 0, 3}};
+            result.StreamOffsets = {0};
+            result.StreamStrides = {12};
+            result.VertexBytes.resize(sizeof(p));
+            std::memcpy(result.VertexBytes.data(), p, sizeof(p));
+            result.IndexBytes.resize(sizeof(i));
+            std::memcpy(result.IndexBytes.data(), i, sizeof(i));
+            result.Submeshes = {{0, 36, 0, 0}};
+            return result;
+        }
+
+        const GpuMeshData SkyCube = Cube();
+    }
+
+    NativeSkybox::NativeSkybox(GraphicsDevice &g, GpuMaterialComposer &composer,
+                               const EnvironmentDefinition &environment)
+        : graphics_(g), material_(composer.Material("environment.skybox"))
+    {
+        if (environment.DhhEnabled)
+        {
+            material_->Set("_Exposure", environment.DhhFloats[31]);
+            material_->Set("_Rotation", environment.DhhFloats[40]);
+        }
+        values_ = material_->Values;
+        auto colors = material_->ColorProperties;
+        colors.insert(material_->GammaProperties.begin(), material_->GammaProperties.end());
+        for (const auto &color : colors)
+        {
+            auto found = values_.find(color);
+            if (found != values_.end())
+                for (size_t c = 0; c < std::min<size_t>(3, found->second.size()); ++c)
+                    found->second[c] = GpuMaterialComposer::Linear(found->second[c]);
+        }
+        const auto source = std::find_if(material_->Shader->Passes.begin(), material_->Shader->Passes.end(),
+                                         [](const auto &p)
+                                         {
+                                             return p.SubShader == 0;
+                                         });
+        if (source == material_->Shader->Passes.end())
+            throw std::runtime_error("Sky material has no pass.");
+        for (auto stage : {NativeShaderStage::Vertex, NativeShaderStage::Pixel})
+            for (const auto &binding :
+                 SelectShaderVariant(*material_->Shader, *source, stage, material_->Keywords).Textures)
+            {
+                auto texture = composer.ResolveTexture(*material_, binding.Name);
+                D3D11_TEXTURE2D_DESC d{};
+                texture->Texture->GetDesc(&d);
+                if (d.Format != DXGI_FORMAT_BC1_UNORM_SRGB && d.Format != DXGI_FORMAT_BC1_UNORM &&
+                    d.Format != DXGI_FORMAT_R16G16B16A16_FLOAT && d.Format != DXGI_FORMAT_R32G32B32A32_FLOAT)
+                    throw std::runtime_error("Sky cubemap requires HDR decode metadata for this format.");
+                textures_[binding.Name] = texture;
+                values_[binding.Name + "_HDR"] = {1, 1, 0, 0};
+            }
+        std::unordered_map<std::string, float> floats;
+        for (const auto &[name, value] : material_->Values)
+            if (value.size() == 1)
+                floats[name] = value[0];
+        pass_ = std::make_unique<NativeMaterialPass>(g, *material_->Shader, *source, material_->Keywords, floats, true);
+    }
+
+    void NativeSkybox::Draw(GpuTexture &target, NativeRenderCamera camera, ID3D11DepthStencilView *depth)
+    {
+        Draw(target.Target.Get(), target.Width(), target.Height(), camera, depth);
+    }
+
+    void NativeSkybox::Draw(ID3D11RenderTargetView *target, int width, int height, NativeRenderCamera camera,
+                            ID3D11DepthStencilView *depth)
+    {
+        graphics_.VerifyThread();
+        auto view = camera.View();
+        view._41 = view._42 = view._43 = 0;
+        values_["unity_ObjectToWorld"] = MatrixValues(IdentityMatrix());
+        values_["_ProjectionParams"] = {camera.BottomOrigin ? -1.f : 1.f, camera.Near, camera.Far, 1 / camera.Far};
+        auto projection = camera.Projection(static_cast<float>(width) / height);
+        if (depth)
+            projection._33 = projection._43 = 0;
+        values_["unity_MatrixVP"] = MatrixValues(MultiplyMatrix(view, projection));
+        graphics_.Context()->ClearState();
+        SetTarget(graphics_, target, width, height, depth);
+        ShaderTextures textures;
+        for (const auto &[name, texture] : textures_)
+            textures[name] = texture.get();
+        pass_->Draw(SkyCube, 0, values_, textures);
+        graphics_.Context()->ClearState();
+    }
+
+    std::array<float, 27> NativeSkybox::GenerateAmbientProbe(int size)
+    {
+        if (size < 16 || size > 256)
+            throw std::invalid_argument("Invalid ambient probe resolution.");
+        GpuTexture target(graphics_, size, size, true, DXGI_FORMAT_R32G32B32A32_FLOAT, false);
+        std::array<double, 27> coefficients{};
+        double weightSum = 0;
+        const Vector3 directions[]{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+        for (auto direction : directions)
+        {
+            NativeRenderCamera camera;
+            camera.Position = {};
+            camera.Target = direction;
+            camera.FieldOfView = 90;
+            camera.Near = .1f;
+            camera.Far = 10;
+            camera.Up = std::abs(direction.y) > .5f ? Vector3{0, 0, 1} : Vector3{0, 1, 0};
+            Draw(target, camera);
+            auto pixels = graphics_.ReadbackFloat(target.Texture.Get());
+            auto inverse = InverseMatrix(camera.View());
+            for (int y = 0; y < size; ++y)
+                for (int x = 0; x < size; ++x)
+                {
+                    double u = 2. * (x + .5) / size - 1, v = 1 - 2. * (y + .5) / size;
+                    auto d = Unit(TransformVector({static_cast<float>(u), static_cast<float>(v), -1}, inverse));
+                    double weight = 4. / (size * size * std::pow(1 + u * u + v * v, 1.5));
+                    weightSum += weight;
+                    double basis[]{.28209479177387814,
+                                   .4886025119029199 * d.y,
+                                   .4886025119029199 * d.z,
+                                   .4886025119029199 * d.x,
+                                   1.0925484305920792 * d.x * d.y,
+                                   1.0925484305920792 * d.y * d.z,
+                                   .31539156525252005 * (3 * d.z * d.z - 1),
+                                   1.0925484305920792 * d.x * d.z,
+                                   .5462742152960396 * (d.x * d.x - d.y * d.y)};
+                    for (int channel = 0; channel < 3; ++channel)
+                    {
+                        float value = pixels[(y * size + x) * 4 + channel];
+                        if (!std::isfinite(value))
+                            throw std::runtime_error("Sky generated non-finite radiance.");
+                        for (int k = 0; k < 9; ++k)
+                            coefficients[channel * 9 + k] += value * basis[k] * weight;
+                    }
+                }
+        }
+        const double convolution[]{.28209479177387814,        .4886025119029199 * 2 / 3, .4886025119029199 * 2 / 3,
+                                   .4886025119029199 * 2 / 3, 1.0925484305920792 / 4,    1.0925484305920792 / 4,
+                                   .31539156525252005 / 4,    1.0925484305920792 / 4,    .5462742152960396 / 4};
+        std::array<float, 27> result{};
+        for (size_t i = 0; i < 27; ++i)
+            result[i] = static_cast<float>(coefficients[i] * convolution[i % 9] * (4 * std::numbers::pi / weightSum));
+        return result;
+    }
+
+    std::vector<std::uint8_t> NativeBuiltinTextures::DitherMask()
+    {
+        constexpr int order[]{0, 10, 8, 2, 5, 15, 13};
+        std::vector<std::uint8_t> values(4 * 4 * 16);
+        for (int slice = 0; slice < 8; ++slice)
+            for (int cell = 0; cell < 16; ++cell)
+            {
+                const std::uint8_t value = std::find(std::begin(order), std::begin(order) + std::min(slice, 7), cell) !=
+                                                   std::begin(order) + std::min(slice, 7)
+                                               ? 255
+                                               : 0;
+                values[slice * 16 + cell] = value;
+                values[(15 - slice) * 16 + cell] = 255 - value;
+            }
+        return values;
+    }
+
+    std::vector<std::uint8_t> NativeBuiltinTextures::RoughnessLookup()
+    {
+        std::vector<std::uint8_t> bytes(256 * 64 * 2);
+        float range = std::pow(16.f, 2.2f);
+        for (int y = 0; y < 64; ++y)
+        {
+            const float roughness = y / 63.5f;
+            const float logarithm = std::log((1 - roughness) * .968f + .03f) / std::log(2.f);
+            float power = 10 / logarithm;
+            power = power * power * .25f;
+            for (int x = 0; x < 256; ++x)
+            {
+                float value = std::pow(std::pow(x / 255.f, .25f), power) * (power + 2) / (2 * DirectX::XM_PI) / range;
+                value = std::clamp(value, 0.f, 1.f);
+                value = value <= .0031308f ? value * 12.92f
+                        : value < 1        ? 1.055f * std::pow(value, .4166666865348816f) - .055f
+                                           : value;
+                if (roughness <= .05f && x == 255)
+                    value *= roughness / .05f;
+                const auto packed = static_cast<std::uint16_t>(value * 65535 + .5f);
+                std::memcpy(bytes.data() + (y * 256 + x) * 2, &packed, 2);
+            }
+        }
+        return bytes;
+    }
+
+    std::optional<ShaderResource> NativeBuiltinTextures::TryView(const std::string &name, bool bottomOrigin)
+    {
+        graphics_.VerifyThread();
+        if (name == "unity_NHxRoughness")
+        {
+            if (!roughness_)
+            {
+                GpuTextureData data;
+                data.Name = "NHx roughness";
+                data.Width = 256;
+                data.Height = 64;
+                data.Format = 9;
+                data.Srgb = false;
+                data.Anisotropy = 0;
+                data.WrapU = data.WrapV = data.WrapW = 1;
+                data.Bytes = RoughnessLookup();
+                roughness_ = std::make_unique<GpuTexture>(graphics_, data);
+            }
+            return ShaderResource{roughness_->View.Get(), roughness_->Sampler.Get()};
+        }
+        if (name != "_DitherMaskLOD")
+            return {};
+        auto create = [&](ComPtr<ID3D11Texture3D> &texture, ComPtr<ID3D11ShaderResourceView> &view, bool flip)
+        {
+            D3D11_TEXTURE3D_DESC d{};
+            d.Width = d.Height = 4;
+            d.Depth = 16;
+            d.MipLevels = 1;
+            d.Format = DXGI_FORMAT_A8_UNORM;
+            d.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            CheckHResult(graphics_.Device()->CreateTexture3D(&d, nullptr, &texture), "Create dither volume");
+            auto mask = DitherMask();
+            if (flip)
+                for (int slice = 0; slice < 16; ++slice)
+                    for (int y = 0; y < 2; ++y)
+                        for (int x = 0; x < 4; ++x)
+                            std::swap(mask[slice * 16 + y * 4 + x], mask[slice * 16 + (3 - y) * 4 + x]);
+            graphics_.Context()->UpdateSubresource(texture.Get(), 0, nullptr, mask.data(), 4, 16);
+            CheckHResult(graphics_.Device()->CreateShaderResourceView(texture.Get(), nullptr, &view),
+                         "Create dither view");
+        };
+        if (!dither_)
+        {
+            create(dither_, ditherView_, true);
+            auto sampler = DefaultSampler(false, D3D11_FILTER_MIN_MAG_MIP_POINT);
+            sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+            CheckHResult(graphics_.Device()->CreateSamplerState(&sampler, &ditherSampler_), "Create dither sampler");
+        }
+        if (bottomOrigin && !originalDither_)
+            create(originalDither_, originalDitherView_, false);
+        return ShaderResource{bottomOrigin ? originalDitherView_.Get() : ditherView_.Get(), ditherSampler_.Get()};
+    }
+}

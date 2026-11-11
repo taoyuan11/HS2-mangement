@@ -1,0 +1,31 @@
+* text=auto
+
+*.cpp text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.in text eol=lf
+*.hlsl text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+*.psd1 text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.xaml text eol=lf
+*.xml text eol=lf
+*.props text eol=lf
+*.targets text eol=lf
+*.vcxproj text eol=lf
+*.manifest text eol=lf
+*.slnx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.cmd text eol=crlf
+*.sln text eol=crlf
+
+**/third_party/** text=auto !eol
+**/ThirdParty/** text=auto !eol
+licenses/** text=auto !eol
+tests/fixtures/** text=auto !eol
+*.png binary
+*.ico binary
+*.tpk binary

@@ -1,6 +1,6 @@
-"""Internal Blender material builder. Invoked by the native .blend converter.
-The source package is intermediate data, not a user-facing Python workflow.
-"""
+"""内部 Blender 材质构建器，由原生 .blend 转换器调用。
+源包为中间数据，不作为面向用户的 Python 操作流程。"""
+
 import json
 import re
 import sys
@@ -21,7 +21,7 @@ def package_path(folder, relative):
 def material_kind(record):
     if record.get("Kind"):
         return record["Kind"]
-    # Compatibility with older exports which did not store the renderer kind.
+    # 兼容未保存渲染器类型的旧导出文件。
     shader = record.get("SourceShader", "").lower()
     name = record.get("Name", "").lower()
     if "eyelash" in shader or "eyelash" in name:
@@ -195,14 +195,14 @@ def make_material(folder, record):
                 metallic = math_node("MULTIPLY", metallic.outputs[0], factor.outputs[0], "Hair angular metallic")
                 links.new(metallic.outputs[0], shader.inputs["Metallic"])
     elif kind == "Eye":
-        # The exported eyeball already contains the iris. A clear coat keeps it
-        # visible; transmitting through the whole mesh would erase the iris.
+        # 导出眼球已包含虹膜；
+        # 透明涂层可保留其可见性，穿透整个网格则会使虹膜消失。
         shader.inputs["Coat Weight"].default_value = 0.35
         shader.inputs["Coat Roughness"].default_value = 0.08
         shader.inputs["Coat IOR"].default_value = 1.38
     elif kind == "EyeShadow" and base:
-        # The source is a multiplicative overlay. A tinted Transparent BSDF
-        # attenuates the underlying eye instead of lighting a gray polygon.
+        # 源数据为乘法叠加层；
+        # 带颜色的透明 BSDF 衰减下层眼球，避免将灰色多边形当作受光表面。
         transparent = nodes.new("ShaderNodeBsdfTransparent")
         transparent.location = (380, 650)
         color = base.outputs["Color"]
@@ -240,7 +240,7 @@ def import_character(directory):
                 package_path(folder, record[key])
     before = set(bpy.data.objects)
     old_materials, old_images = set(bpy.data.materials), set(bpy.data.images)
-    # Blender 5 uses the native importer. Blender 4 uses the bundled FBX add-on.
+    # Blender 5 使用原生导入器，Blender 4 使用附带的 FBX 扩展。
     try:
         bpy.ops.wm.fbx_import.get_rna_type()
         native_fbx = bpy.app.version >= (5, 0, 0)
@@ -252,7 +252,11 @@ def import_character(directory):
         bpy.ops.import_scene.fbx(filepath=str(fbx), use_anim=False, use_custom_normals=True)
     imported = set(bpy.data.objects) - before
     geometry_path = folder / "model-result.json"
-    geometry = {m["Node"]: m for m in json.loads(geometry_path.read_text(encoding="utf-8-sig"))["Geometry"]} if geometry_path.is_file() else {}
+    geometry = (
+        {m["Node"]: m for m in json.loads(geometry_path.read_text(encoding="utf-8-sig"))["Geometry"]}
+        if geometry_path.is_file()
+        else {}
+    )
     imported_materials = set(bpy.data.materials) - old_materials
     collection = bpy.data.collections.new("HS2 · " + folder.name)
     bpy.context.scene.collection.children.link(collection)
@@ -264,8 +268,8 @@ def import_character(directory):
         collection.objects.link(obj)
         if obj.type != "MESH":
             continue
-        # Blender 5's native importer names shape keys after FBX shape geometry,
-        # not blend-shape channels. Restore the documented editable channel names.
+        # Blender 5 原生导入器按 FBX 形变几何而非混合形变通道命名形态键；
+        # 在此恢复约定的可编辑通道名。
         source = geometry.get(obj.name)
         if source and obj.data.shape_keys:
             for block in list(obj.data.shape_keys.key_blocks)[1:]:
@@ -287,7 +291,7 @@ def import_character(directory):
             if record.get("HairStreakMask") and len(obj.data.uv_layers) <= record.get("HairStreakUv", 1):
                 raise ValueError("挑染材质缺少所需 UV 通道：" + obj.name)
             slot.material = materials[ident]
-    # Drop only unused data created by this FBX import. Keep existing user data.
+    # 仅清理本次 FBX 导入创建的未使用数据，保留用户原有数据。
     for material in imported_materials:
         if material.users == 0:
             bpy.data.materials.remove(material)
@@ -300,17 +304,17 @@ def import_character(directory):
 
 
 def package_directory():
-    args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     if args:
         return Path(bpy.path.abspath(args[0])).resolve()
-    # Run Script supplies a synthetic __file__ based on the text-block name,
-    # even when Text.filepath contains the actual external Python file path.
-    # Resolve // paths against the current .blend via Blender's path utility.
+    # 运行脚本时，__file__ 根据文本块名称合成，即使 Text.filepath 已包含实际 Python 路径；
+    # 双斜杠路径应通过 Blender 路径工具相对当前 .blend 解析。
     text = getattr(bpy.context.space_data, "text", None)
     filename = text.filepath if text is not None else globals().get("__file__", "")
     if not filename:
-        raise ValueError("无法确定角色文件夹。请在文本编辑器中选择“文本 → 打开”，"
-                         "打开角色文件夹里的 Blender导入.py，再运行脚本。")
+        raise ValueError(
+            "无法确定角色文件夹。请在文本编辑器中选择“文本 → 打开”，" "打开角色文件夹里的 Blender导入.py，再运行脚本。"
+        )
     return Path(bpy.path.abspath(filename)).resolve().parent
 
 

@@ -11,5 +11,5 @@ param(
     [string]$BuildDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
-# The production build contains only C++ application modules and native runtimes.
-& (Join-Path $PSScriptRoot 'scripts/Publish-Cpp.ps1') @PSBoundParameters
+# 生产构建仅包含 C++ 应用模块和原生运行库。
+& (Join-Path $PSScriptRoot 'scripts/package/Publish-Cpp.ps1') @PSBoundParameters

@@ -18,7 +18,7 @@ ICO 包含 16、20、24、32、40、48、64、128、256 px 九个尺寸，均保
 修改 SVG 后，在 Windows PowerShell 中运行以下命令可重新生成 PNG 和 ICO，无需安装第三方库：
 
 ```powershell
-./scripts/Export-BrandAssets.ps1
+./scripts/assets/Export-BrandAssets.ps1
 ```
 
 导出脚本支持本原稿使用的路径、旋转与渐变。更复杂的 SVG 元素需要同步扩展脚本。请保持图标比例和留白，不添加外置阴影或拉伸。

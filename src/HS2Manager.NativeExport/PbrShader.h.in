@@ -1,2 +1,0 @@
-#pragma once
-inline constexpr char PbrShaderSource[]=R"HS2PBR(@PBR_SHADER_SOURCE@)HS2PBR";

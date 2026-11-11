@@ -1,0 +1,75 @@
+﻿param([string]$Source = (Join-Path $PSScriptRoot '../../.tools/physx-3.4'), [string]$BuildDirectory)
+$ErrorActionPreference = 'Stop'
+if (!$BuildDirectory) {
+    $BuildDirectory = Join-Path $env:LOCALAPPDATA 'HS2Manager/NativeBuild/PhysX-3.4.2'
+}
+$repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$localSource = Join-Path $BuildDirectory 'source'
+$header = Join-Path $Source 'PhysX_3.4/Include/PxPhysicsVersion.h'
+if (!(Test-Path -LiteralPath $header)) {
+    throw 'The NVIDIA PhysX 3.4 source checkout is missing.'
+}
+$version = [IO.File]::ReadAllText($header)
+if ($version -notmatch 'PX_PHYSICS_VERSION_MAJOR 3' -or $version -notmatch 'PX_PHYSICS_VERSION_MINOR 4' -or $version -notmatch 'PX_PHYSICS_VERSION_BUGFIX 2') {
+    throw 'The cloth adapter requires PhysX 3.4.2.'
+}
+New-Item -ItemType Directory -Path $localSource -Force | Out-Null
+& robocopy.exe $Source $localSource /E /XD .git /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+if ($LASTEXITCODE -ge 8) {
+    throw 'Could not copy the PhysX build sources.'
+}
+# 仅兼容新版 MSVC 对标准头文件的更名，不修改求解器公式。
+$allocator = Join-Path $localSource 'PxShared/src/foundation/include/PsAllocator.h'
+[IO.File]::WriteAllText($allocator, ([IO.File]::ReadAllText($allocator).Replace('<typeinfo.h>', '<typeinfo>')))
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+$vs = $null
+if (Test-Path -LiteralPath $vswhere) {
+    $vs = & $vswhere -latest -version '[17.0,18.0)' -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Visual Studio C++ installation discovery failed.'
+    }
+}
+if (!$vs) {
+    $candidate = Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio/2022/Community'
+    if (Test-Path -LiteralPath (Join-Path $candidate 'VC/Tools/MSVC')) {
+        $vs = $candidate
+    }
+}
+if (!$vs) {
+    throw 'Visual Studio 2022 with the desktop C++ workload is required.'
+}
+$msbuild = Join-Path $vs 'MSBuild/Current/Bin/MSBuild.exe'
+$cmake = Join-Path $vs 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'
+if (!(Test-Path -LiteralPath $msbuild)) {
+    throw 'MSBuild from the Visual Studio C++ workload is required.'
+}
+if (!(Test-Path -LiteralPath $cmake)) {
+    $cmakeCommand = Get-Command cmake.exe -ErrorAction SilentlyContinue
+    if (!$cmakeCommand) {
+        throw 'CMake is required. Install the Visual Studio C++ CMake tools or add CMake to PATH.'
+    }
+    $cmake = $cmakeCommand.Source
+}
+$previousCl = $env:_CL_
+try {
+    $env:_CL_ = '/WX- /Wv:18'
+    $log = Join-Path $BuildDirectory 'build-sdk.log'
+    # 由 MSVC 通过默认属性文件选择已安装的 Windows SDK。
+    & $msbuild (Join-Path $localSource 'PhysX_3.4/Source/compiler/vc15win64/PhysX.sln') '/t:PhysX;PhysXExtensions' /p:Configuration=release /p:Platform=x64 /p:PlatformToolset=v143 /m:4 /nr:false /v:minimal *> $log
+    if ($LASTEXITCODE -ne 0) {
+        Get-Content $log -Tail 30
+        throw 'PhysX compilation failed.'
+    }
+}
+finally {
+    $env:_CL_ = $previousCl
+}
+& $cmake -S (Join-Path $repo 'native/HS2Manager.Physics') -B (Join-Path $BuildDirectory 'bridge') -G 'Visual Studio 17 2022' -A x64 ('-DCMAKE_GENERATOR_INSTANCE=' + $vs) ('-DPHYSX_ROOT=' + $localSource)
+if ($LASTEXITCODE -ne 0) {
+    throw 'Cloth bridge configuration failed.'
+}
+& $cmake --build (Join-Path $BuildDirectory 'bridge') --config Release --parallel 4 -- /nr:false
+if ($LASTEXITCODE -ne 0) {
+    throw 'Cloth bridge compilation failed.'
+}
+Write-Output (Join-Path $BuildDirectory 'bridge/Release/HS2Manager.Physics.dll')

@@ -119,7 +119,7 @@ Blender Eevee 的 AO、暗角和间接光不与源实现等价，Unreal SkyLight
 
 - [12 项 GPU 烘焙结果](../artifacts/model-export/bake-validation-v1/material-bake-validation.json)。
 - [女性样本](../artifacts/model-export/blender-validation/final/edited-0/validation.json)、[男性样本](../artifacts/model-export/blender-validation/final/edited-1/validation.json)、[MOD 样本](../artifacts/model-export/blender-validation/final/edited-2/validation.json)。各目录内有 `before-front.png`、`after-front.png`、`before-face.png`、`after-face.png` 和打包贴图的 `character.blend`。
-- 同目录的 `packed-scene-validation.json` 和 `face-eevee.png` 记录重新打开打包场景后的 Eevee 检查，入口为 `tests/Test-BlenderPackedScene.py`。
+- 同目录的 `packed-scene-validation.json` 和 `face-eevee.png` 记录重新打开打包场景后的 Eevee 检查，入口为 `tests/export/Test-BlenderPackedScene.py`。
 - [三张重新导出记录](../artifacts/model-export/blender-export-final.log)、[Unity 源码编译](../artifacts/model-export/blender-source-checks.log)、[核心检查](../artifacts/model-export/blender-core-checks.log)、[界面检查](../artifacts/model-export/blender-ui-checks.log)。
 - 最终内核位于 `artifacts/model-export/player-blender-delivery`。导入脚本随角色包交付，不要求安装 Blender 插件。
 
@@ -129,7 +129,7 @@ Blender Eevee 的 AO、暗角和间接光不与源实现等价，Unreal SkyLight
 
 入口现优先使用活动文本的 `filepath`，通过 `bpy.path.abspath` 解析已保存场景中的 `//` 相对路径。未关联磁盘文件的文本提供中文操作提示，缺失文件显示完整查找路径，保留命令行入口与文件夹越界检查。
 
-`tests/Test-BlenderTextImport.py` 清除测试命令行的角色参数后，调用与 Alt+P 相同的 `bpy.ops.text.run_script()`，实际载入下载目录中的中文角色包：30 个网格、30 个材质、152 张贴图。未保存场景、已保存场景的相对路径、内部文本提示、命令行参数及路径边界共 8 项检查通过。本次仅验证路径入口和导入，不增加材质渲染结论。
+`tests/export/Test-BlenderTextImport.py` 清除测试命令行的角色参数后，调用与 Alt+P 相同的 `bpy.ops.text.run_script()`，实际载入下载目录中的中文角色包：30 个网格、30 个材质、152 张贴图。未保存场景、已保存场景的相对路径、内部文本提示、命令行参数及路径边界共 8 项检查通过。本次仅验证路径入口和导入，不增加材质渲染结论。
 
 证据：[原错误复现](../artifacts/model-export/blender-path-fix/reproduction.json)、[修复后检查](../artifacts/model-export/blender-path-fix/verified/validation.json)。源码和该现有角色包的脚本已更新；此前发布的 ZIP 不包含此路径修复。
 

@@ -34,7 +34,7 @@ WinUI 视口处理 DPI、窗口缩放及页面切换；隐藏停止绘制，关�
 
 ## 验收复现
 
-先通过 `scripts/Build-NativeFbx.ps1` 与 `scripts/Build-NativePhysics.ps1` 构建适配层，再以 Release 构建正式解决方案。`tests/Run-NativeCatalog.py` 对冻结基线运行四视角和 24 个动态采样；`Build-NativeCatalogReview.py` 生成逐卡观察证据，`Complete-NativeCatalogReview.py` 汇总数值和人工复核门槛。缺图、执行错误、效果缺失或待复核均不能通过。
+先通过 `scripts/build/Build-NativeFbx.ps1` 与 `scripts/build/Build-NativePhysics.ps1` 构建适配层，再以 Release 构建正式解决方案。`tests/Run-NativeCatalog.py` 对冻结基线运行四视角和 24 个动态采样；`Build-NativeCatalogReview.py` 生成逐卡观察证据，`Complete-NativeCatalogReview.py` 汇总数值和人工复核门槛。缺图、执行错误、效果缺失或待复核均不能通过。
 
 复核仅在全部参考与原生图片 SHA-256 均相同时复用先前观察；否则重新观察总览和原始分辨率局部。标准为人物及适用的面部区域 SSIM ≥ 0.99、平均通道误差 ≤ 2/255，种子 1979、30 Hz、360 帧，保留原镜头、1280×720、预热与重置规则。结论限于固定 84 张卡及其资源配置，不表示逐像素相同。
 

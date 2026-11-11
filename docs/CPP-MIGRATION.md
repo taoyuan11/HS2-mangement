@@ -40,6 +40,6 @@
 .\build-cpp.ps1 -SkipUi
 ```
 
-CMake 的普通检查不需要游戏。实际资源检查接受本机游戏路径，游戏资源只读，生成数据写入指定本机测试目录。`hs2_character_checks` 检查人物准备，`hs2_runtime_checks` 检查动态，`hs2_render_frame_checks` 检查实际 GPU 预览，`hs2_model_export_checks --real` 检查完整模型导出。固定样本比较脚本在 `tests/Run-CppFrozenCatalog.py`；Python 仅用于开发验证。
+CMake 的普通检查不需要游戏。实际资源检查接受本机游戏路径，游戏资源只读，生成数据写入指定本机测试目录。`hs2_character_checks` 检查人物准备，`hs2_runtime_checks` 检查动态，`hs2_render_frame_checks` 检查实际 GPU 预览，`hs2_model_export_checks --real` 检查完整模型导出。固定样本比较脚本在 `tests/native/Run-CppFrozenCatalog.py`；Python 仅用于开发验证。
 
 发布包中不包含人物卡、游戏 / MOD 文件、基准画面、数据库、开发测试程序、C# 源码、CLR 或 Unity 运行时。

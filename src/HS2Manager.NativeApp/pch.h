@@ -1,3 +1,3 @@
 #pragma once
-#include "NativeWindow.h"
+#include "Application/NativeWindow.h"
 #include <winrt/Microsoft.UI.Xaml.XamlTypeInfo.h>

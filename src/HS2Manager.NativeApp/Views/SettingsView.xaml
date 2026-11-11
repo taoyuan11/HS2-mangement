@@ -1,0 +1,424 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Grid
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:HS2Manager.NativeApp"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+    <Grid.Resources>
+        <Style x:Key="SettingCard" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="18"/>
+        </Style>
+        <Style x:Key="SettingLabel" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="SettingHint" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="LineHeight" Value="19"/>
+        </Style>
+        <Style x:Key="ThemeOption" TargetType="RadioButton">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Top"/>
+        </Style>
+    </Grid.Resources>
+    <Grid.RowDefinitions>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="172"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Border Background="{ThemeResource SidebarBrush}" CornerRadius="10" Padding="8,14,8,12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <StackPanel Spacing="6">
+                    <TextBlock Text="偏好设置" Style="{StaticResource SettingHint}" Margin="12,0,0,10"/>
+                    <ListView
+                        x:Name="SettingsNavigation"
+                        SelectionMode="Single"
+                        IsItemClickEnabled="False"
+                        AutomationProperties.Name="设置分类">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Padding" Value="12,14"/>
+                                <Setter Property="Margin" Value="0,2"/>
+                                <Setter Property="CornerRadius" Value="6"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListViewItem Tag="library" AutomationProperties.Name="资源库">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="" Style="{StaticResource ActionIcon}"/>
+                                <TextBlock Text="资源库" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ListViewItem>
+                        <ListViewItem Tag="appearance" AutomationProperties.Name="外观主题">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="" Style="{StaticResource ActionIcon}"/>
+                                <TextBlock Text="外观主题" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ListViewItem>
+                        <ListViewItem Tag="data" AutomationProperties.Name="数据与维护">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="" Style="{StaticResource ActionIcon}"/>
+                                <TextBlock Text="数据与维护" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ListViewItem>
+                        <ListViewItem Tag="model-export" AutomationProperties.Name="模型导出">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="" Style="{StaticResource ActionIcon}"/>
+                                <TextBlock Text="模型导出" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ListViewItem>
+                    </ListView>
+                </StackPanel>
+                <StackPanel Grid.Row="1" Margin="12,16,6,0" Spacing="4">
+                    <TextBlock Text="HS2 Manager" FontSize="12" FontWeight="SemiBold"/>
+                    <TextBlock Text="本地管理 · 便携运行" Style="{StaticResource SettingHint}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Grid Grid.Column="1" Margin="28,0,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <StackPanel Margin="0,2,0,20" Spacing="6">
+                <TextBlock x:Name="SectionTitle" Text="资源库" FontSize="22" FontWeight="SemiBold"/>
+                <TextBlock
+                    x:Name="SectionDescription"
+                    Text="连接游戏与人物卡目录，设置你的检索范围。"
+                    Style="{StaticResource SettingHint}"/>
+            </StackPanel>
+            <ScrollViewer
+                x:Name="LibraryPage"
+                Grid.Row="1"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                HorizontalScrollMode="Disabled">
+                <StackPanel Spacing="14" Padding="0,0,12,2">
+                    <Border Style="{StaticResource SettingCard}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="游戏目录" Style="{StaticResource SettingLabel}"/>
+                            <TextBlock Text="选择 HoneySelect 2 的安装位置。" Style="{StaticResource SettingHint}"/>
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox
+                                    x:Name="GamePathBox"
+                                    Height="36"
+                                    VerticalContentAlignment="Center"
+                                    PlaceholderText="选择游戏根目录"
+                                    AutomationProperties.Name="HoneySelect 2 游戏目录"/>
+                                <Button
+                                    Grid.Column="1"
+                                    Style="{StaticResource ToolbarButton}"
+                                    Content="浏览…"
+                                    x:Name="ActionSettingsView1"/>
+                            </Grid>
+                            <TextBlock Text="默认人物卡位置：UserData\chara\female" Style="{StaticResource SettingHint}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingCard}">
+                        <StackPanel Spacing="12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="额外人物卡目录" Style="{StaticResource SettingLabel}"/>
+                                    <TextBlock Text="将其他位置的人物卡加入资源库。" Style="{StaticResource SettingHint}"/>
+                                </StackPanel>
+                                <Button
+                                    Grid.Column="1"
+                                    AutomationProperties.Name="添加人物卡目录"
+                                    VerticalAlignment="Center"
+                                    Margin="12,0,0,0"
+                                    x:Name="ActionSettingsView2">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="" Style="{StaticResource ActionIcon}"/>
+                                        <TextBlock Text="添加目录" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <Grid>
+                                <ListView
+                                    x:Name="RootsList"
+                                    Height="64"
+                                    HorizontalContentAlignment="Stretch"
+                                    AutomationProperties.Name="额外人物卡目录">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock
+                                                Text="{Binding}"
+                                                FontSize="12"
+                                                TextWrapping="Wrap"
+                                                IsTextSelectionEnabled="True"
+                                                Margin="0,4"/>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                                <TextBlock
+                                    x:Name="EmptyRootsHint"
+                                    Text="还没有额外目录，点击右上方添加。"
+                                    Style="{StaticResource SettingHint}"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center"
+                                    IsHitTestVisible="False"/>
+                            </Grid>
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock
+                                    Text="移除目录只调整索引来源，不会删除原文件；已索引内容仍会保留。"
+                                    Style="{StaticResource SettingHint}"
+                                    VerticalAlignment="Center"/>
+                                <Button x:Name="RemoveRootButton" Grid.Column="1" Content="移除所选" IsEnabled="False"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingCard}">
+                        <StackPanel Spacing="8">
+                            <CheckBox x:Name="RecursiveBox" Content="递归检索人物卡（包含子目录）"/>
+                            <TextBlock
+                                Text="默认只扫描目录当前层。开启后同时扫描子目录，适用于默认目录和所有额外目录。关闭后，已索引内容仍会保留。"
+                                Style="{StaticResource SettingHint}"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer
+                x:Name="AppearancePage"
+                Grid.Row="1"
+                Visibility="Collapsed"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                HorizontalScrollMode="Disabled">
+                <StackPanel Spacing="18" Padding="0,0,12,2">
+                    <Border Style="{StaticResource SettingCard}">
+                        <StackPanel Spacing="18">
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="应用主题" Style="{StaticResource SettingLabel}"/>
+                                <TextBlock Text="选择适合你的明暗风格。保存后应用到整个界面。" Style="{StaticResource SettingHint}"/>
+                            </StackPanel>
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <RadioButton
+                                    x:Name="SystemTheme"
+                                    GroupName="AppTheme"
+                                    Tag="跟随系统"
+                                    Style="{StaticResource ThemeOption}"
+                                    AutomationProperties.Name="跟随系统">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="跟随系统" FontSize="13" FontWeight="SemiBold"/>
+                                        <Border Height="100" CornerRadius="7" BorderBrush="#7B817B" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Background="#F1F1EF" CornerRadius="6,0,0,6">
+                                                    <StackPanel Margin="10,14,5,0" Spacing="8">
+                                                        <Border Background="#7A8578" Height="5" CornerRadius="2"/>
+                                                        <Border Background="#CDD2C8" Height="22" CornerRadius="3"/>
+                                                        <Border Background="#E1E3DD" Height="22" CornerRadius="3"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <Border Grid.Column="1" Background="#252729" CornerRadius="0,6,6,0">
+                                                    <StackPanel Margin="5,14,10,0" Spacing="8">
+                                                        <Border Background="#B3BEAF" Height="5" CornerRadius="2"/>
+                                                        <Border Background="#4A574D" Height="22" CornerRadius="3"/>
+                                                        <Border Background="#363D38" Height="22" CornerRadius="3"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock Text="自动切换明暗" Style="{StaticResource SettingHint}"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton
+                                    x:Name="LightTheme"
+                                    Grid.Column="1"
+                                    GroupName="AppTheme"
+                                    Tag="浅色"
+                                    Style="{StaticResource ThemeOption}"
+                                    AutomationProperties.Name="浅色">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="浅色" FontSize="13" FontWeight="SemiBold"/>
+                                        <Border
+                                            Height="100"
+                                            CornerRadius="7"
+                                            Background="#FAFAF9"
+                                            BorderBrush="#CED2CA"
+                                            BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="25"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Background="#E5E8E1" CornerRadius="6,0,0,6"/>
+                                                <StackPanel Grid.Column="1" Margin="10,14,10,0" Spacing="8">
+                                                    <Border Background="#657660" Height="5" CornerRadius="2"/>
+                                                    <Border Background="#DEE5D9" Height="22" CornerRadius="3"/>
+                                                    <Border Background="#ECEEE8" Height="22" CornerRadius="3"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock Text="明亮、清晰" Style="{StaticResource SettingHint}"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton
+                                    x:Name="DarkTheme"
+                                    Grid.Column="2"
+                                    GroupName="AppTheme"
+                                    Tag="深色"
+                                    Style="{StaticResource ThemeOption}"
+                                    AutomationProperties.Name="深色">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="深色" FontSize="13" FontWeight="SemiBold"/>
+                                        <Border
+                                            Height="100"
+                                            CornerRadius="7"
+                                            Background="#252729"
+                                            BorderBrush="#626B64"
+                                            BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="25"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Background="#151618" CornerRadius="6,0,0,6"/>
+                                                <StackPanel Grid.Column="1" Margin="10,14,10,0" Spacing="8">
+                                                    <Border Background="#B3BEAF" Height="5" CornerRadius="2"/>
+                                                    <Border Background="#4A574D" Height="22" CornerRadius="3"/>
+                                                    <Border Background="#363D38" Height="22" CornerRadius="3"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock Text="柔和、专注" Style="{StaticResource SettingHint}"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="“跟随系统”会随 Windows 的应用颜色模式自动调整。" Style="{StaticResource SettingHint}" Margin="2,0"/>
+                </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer
+                x:Name="ModelExportPage"
+                Grid.Row="1"
+                Visibility="Collapsed"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                HorizontalScrollMode="Disabled">
+                <StackPanel Spacing="14" Padding="0,0,12,2">
+                    <Border Style="{StaticResource SettingCard}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Blender 原生模型" Style="{StaticResource SettingLabel}"/>
+                            <TextBlock
+                                Text="选择已安装或便携版的 blender.exe。导出时后台生成 .blend，自动打包贴图、材质和预览场景。"
+                                Style="{StaticResource SettingHint}"/>
+                            <TextBox
+                                x:Name="BlenderPathBox"
+                                PlaceholderText="自动检测 Blender 安装位置"
+                                AutomationProperties.Name="Blender 程序路径"
+                                TextWrapping="Wrap"/>
+                            <Button Content="选择 Blender…" HorizontalAlignment="Left" x:Name="ActionSettingsView3"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingCard}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Unreal 原生项目" Style="{StaticResource SettingLabel}"/>
+                            <TextBlock
+                                Text="选择 UnrealEditor-Cmd.exe。导出独立项目及预览关卡，生成时使用此引擎版本。"
+                                Style="{StaticResource SettingHint}"/>
+                            <TextBox
+                                x:Name="UnrealPathBox"
+                                PlaceholderText="自动检测 Unreal Engine 安装位置"
+                                AutomationProperties.Name="Unreal Editor 程序路径"
+                                TextWrapping="Wrap"/>
+                            <Button
+                                Content="选择 Unreal Editor…"
+                                HorizontalAlignment="Left"
+                                x:Name="ActionSettingsView4"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock
+                        Text="留空时自动检测。通用 FBX 导出不需要安装上述软件。原生文件的兼容版本和效果差异会写入导出报告。"
+                        Style="{StaticResource SettingHint}"
+                        TextWrapping="Wrap"/>
+                </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer
+                x:Name="DataPage"
+                Grid.Row="1"
+                Visibility="Collapsed"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled"
+                HorizontalScrollMode="Disabled">
+                <StackPanel Spacing="14" Padding="0,0,12,2">
+                    <Border Style="{StaticResource SettingCard}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="便携数据" Style="{StaticResource SettingLabel}"/>
+                            <TextBlock Text="标签、收藏、设置与缩略图都保存在本地。" Style="{StaticResource SettingHint}"/>
+                            <Border Background="{ThemeResource SidebarBrush}" CornerRadius="6" Padding="12">
+                                <TextBlock
+                                    x:Name="DataPathText"
+                                    TextWrapping="Wrap"
+                                    IsTextSelectionEnabled="True"
+                                    FontSize="12"/>
+                            </Border>
+                            <TextBlock Text="移动整个便携文件夹即可保留管理数据。人物卡原文件仍保存在各自来源目录。" Style="{StaticResource SettingHint}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Content="备份管理数据库" x:Name="ActionSettingsView5"/>
+                                <Button Content="打开日志目录" x:Name="ActionSettingsView6"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingCard}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="独立 3D 人物预览" Style="{StaticResource SettingLabel}"/>
+                            <TextBlock
+                                Text="使用原生 GPU 读取本机模型、材质和纹理。首次读取后建立新版本地缓存；旧缓存与资料库继续保留。"
+                                Style="{StaticResource SettingHint}"/>
+                            <Border Background="{ThemeResource SidebarBrush}" CornerRadius="6" Padding="12">
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="预览缓存位置" FontSize="12" FontWeight="SemiBold"/>
+                                    <TextBlock
+                                        x:Name="CachePathText"
+                                        TextWrapping="Wrap"
+                                        IsTextSelectionEnabled="True"
+                                        FontSize="12"/>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock
+                                Text="关闭管理器后可删除预览缓存以释放空间。当前预览尚未达到完整 1:1 还原，缺失资源和未支持的效果会显示具体说明。"
+                                Style="{StaticResource SettingHint}"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+    <InfoBar x:Name="ResultBar" Grid.Row="1" IsOpen="False" IsClosable="True" Margin="0,12,0,0"/>
+</Grid>

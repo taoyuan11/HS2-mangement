@@ -1,11 +1,17 @@
 cmake_minimum_required(VERSION 3.24)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  project(HS2ManagerCppToolChecks LANGUAGES C CXX)
-  enable_testing()
-  add_subdirectory(../../src/HS2Manager.NativeCore "${CMAKE_CURRENT_BINARY_DIR}/core")
+    project(HS2ManagerCppToolChecks LANGUAGES C CXX)
+    enable_testing()
+    add_subdirectory(../../src/HS2Manager.NativeCore "${CMAKE_CURRENT_BINARY_DIR}/core")
 endif()
-add_library(hs2_export_tools_checks_impl STATIC ../../src/HS2Manager.NativeExport/OwnedToolProcess.cpp ../../src/HS2Manager.NativeExport/ModelExportTools.cpp)
+add_library(
+    hs2_export_tools_checks_impl STATIC ../../src/HS2Manager.NativeExport/Tools/OwnedToolProcess.cpp
+                                        ../../src/HS2Manager.NativeExport/Tools/ModelExportTools.cpp
+)
 target_link_libraries(hs2_export_tools_checks_impl PUBLIC hs2_core shell32 advapi32)
+target_include_directories(
+    hs2_export_tools_checks_impl PUBLIC ../../src/HS2Manager.NativeExport ../../src/HS2Manager.NativeRendering
+)
 target_compile_options(hs2_export_tools_checks_impl PRIVATE /utf-8 /W4 /EHsc)
 add_executable(hs2_tool_fixture ToolFixture.cpp)
 target_link_libraries(hs2_tool_fixture PRIVATE hs2_core)

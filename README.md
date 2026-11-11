@@ -123,6 +123,8 @@ C++ 版本已执行真实人物字段、无损读写、保存事务和界面流�
 
 ## 源码构建
 
+目录职责、中文注释要求、4 空格缩进规则与统一格式化命令见 [项目结构与代码规范](docs/DEVELOPMENT.md)。
+
 正式构建需要 Windows x64、Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake，无需 .NET SDK。脚本通过 Visual Studio Installer 定位工具，还原固定版本的 C++/WinRT 与 Windows App SDK 1.8。独立布料适配层使用 PhysX 3.4.2 源码；FBX 适配层使用 Autodesk FBX SDK 2020.3.7。将按各自许可取得的 SDK 放入 `.tools/physx-3.4` 和 `.tools/fbx-native-2020.3.7`，或向 `build.ps1` / `build-desktop.ps1` 传入 `-PhysXSource` / `-FbxSdkRoot` 指定外部目录。单独运行适配层构建脚本时，分别使用 `-Source` / `-SdkRoot`。
 
 ```powershell

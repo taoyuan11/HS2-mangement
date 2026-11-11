@@ -1,6 +1,6 @@
-"""Internal UE5 material builder, invoked by the native project converter.
-Entry point: import_character(folder, destination=None).
-"""
+"""内部 UE5 材质构建器，由原生项目转换器调用。
+入口为 import_character(folder, destination=None)。"""
+
 import json
 import re
 from pathlib import Path
@@ -21,8 +21,13 @@ def material_kind(record):
     if record.get("Kind"):
         return record["Kind"]
     shader = record.get("SourceShader", "").lower()
-    for text, kind in (("eyelash", "Eyelash"), ("eyeshadow", "EyeShadow"),
-                       ("namida", "Tearline"), ("hair", "Hair"), ("eye", "Eye")):
+    for text, kind in (
+        ("eyelash", "Eyelash"),
+        ("eyeshadow", "EyeShadow"),
+        ("namida", "Tearline"),
+        ("hair", "Hair"),
+        ("eye", "Eye"),
+    ):
         if text in shader:
             return kind
     return "Skin" if "skin" in shader and record.get("Role") in ("body", "head") else "Surface"
@@ -30,9 +35,14 @@ def material_kind(record):
 
 def import_asset(filename, destination, name, options=None, factory=None):
     task = unreal.AssetImportTask()
-    for key, value in dict(filename=str(filename), destination_path=destination,
-                           destination_name=name, automated=True, replace_existing=False,
-                           save=False).items():
+    for key, value in dict(
+        filename=str(filename),
+        destination_path=destination,
+        destination_name=name,
+        automated=True,
+        replace_existing=False,
+        save=False,
+    ).items():
         task.set_editor_property(key, value)
     if options:
         task.set_editor_property("options", options)
@@ -49,23 +59,36 @@ def import_texture(folder, record, key, destination):
     relative = record.get(key)
     if not relative:
         return None
-    texture = next((a for a in import_asset(package_path(folder, relative), destination,
-                   "T_" + record["Id"] + "_" + key) if isinstance(a, unreal.Texture2D)), None)
+    texture = next(
+        (
+            a
+            for a in import_asset(package_path(folder, relative), destination, "T_" + record["Id"] + "_" + key)
+            if isinstance(a, unreal.Texture2D)
+        ),
+        None,
+    )
     if texture is None:
         raise RuntimeError("贴图导入结果为空：" + relative)
     normal = key == "Normal"
     color = key in ("BaseColor", "Emission")
     texture.set_editor_property("srgb", color)
-    texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP if normal
-                                else unreal.TextureCompressionSettings.TC_DEFAULT if color
-                                else unreal.TextureCompressionSettings.TC_MASKS)
+    texture.set_editor_property(
+        "compression_settings",
+        (
+            unreal.TextureCompressionSettings.TC_NORMALMAP
+            if normal
+            else unreal.TextureCompressionSettings.TC_DEFAULT if color else unreal.TextureCompressionSettings.TC_MASKS
+        ),
+    )
     if normal:
         texture.set_editor_property("flip_green_channel", "+Y" in record.get("NormalConvention", "OpenGL +Y"))
-    # Preserve alpha coverage in hair/lash mipmaps; normal compression must not
-    # be used for scalar maps or the alpha-bearing base color.
+    # 保留头发和睫毛各级贴图的透明度覆盖率；
+    # 标量贴图及带透明度的基础颜色不得使用法线压缩。
     if key == "BaseColor" and material_kind(record) in ("Hair", "Eyelash"):
         texture.set_editor_property("do_scale_mips_for_alpha_coverage", True)
-        texture.set_editor_property("alpha_coverage_thresholds", unreal.Vector4(0, 0, 0, record.get("AlphaCutoff", .5)))
+        texture.set_editor_property(
+            "alpha_coverage_thresholds", unreal.Vector4(0, 0, 0, record.get("AlphaCutoff", 0.5))
+        )
     return texture
 
 
@@ -76,8 +99,11 @@ class Graph:
 
     def node(self, name, description, **properties):
         node = unreal.MaterialEditingLibrary.create_material_expression(
-            self.material, getattr(unreal, "MaterialExpression" + name),
-            -1000 + (self.count % 3) * 260, (self.count // 3) * 210)
+            self.material,
+            getattr(unreal, "MaterialExpression" + name),
+            -1000 + (self.count % 3) * 260,
+            (self.count // 3) * 210,
+        )
         self.count += 1
         if node is None:
             raise RuntimeError("不能创建材质节点：" + name)
@@ -91,7 +117,9 @@ class Graph:
             raise RuntimeError("材质节点连接失败：" + input_name)
 
     def output(self, source, property_name, output=""):
-        if not unreal.MaterialEditingLibrary.connect_material_property(source, output, getattr(unreal.MaterialProperty, "MP_" + property_name)):
+        if not unreal.MaterialEditingLibrary.connect_material_property(
+            source, output, getattr(unreal.MaterialProperty, "MP_" + property_name)
+        ):
             raise RuntimeError("材质输入连接失败：" + property_name)
 
     def scalar(self, name, value):
@@ -101,48 +129,71 @@ class Graph:
 def make_material(folder, record, destination):
     ident, kind = record["Id"], material_kind(record)
     material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
-        "M_" + ident, destination + "/Materials", unreal.Material, unreal.MaterialFactoryNew())
+        "M_" + ident, destination + "/Materials", unreal.Material, unreal.MaterialFactoryNew()
+    )
     if material is None:
         raise RuntimeError("不能创建材质：" + ident)
     graph = Graph(material)
     material.set_editor_property("two_sided", record.get("DoubleSided", False) or kind in ("Hair", "Eyelash"))
     material.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
     mode = record.get("AlphaMode", "Opaque")
-    # AIT eyeballs contain baked iris/sclera. Translucency would reveal the
-    # back of the socket. Hair uses depth-writing coverage for stable sorting.
+    # AIT 眼球包含烘焙后的虹膜和巩膜，半透明会暴露眼窝背面；
+    # 头发通过写入深度的覆盖方式保证排序稳定。
     if kind == "Eye":
         mode = "Opaque"
     elif kind in ("Hair", "Eyelash"):
         mode = "Mask"
     elif kind == "Tearline":
         mode = "Blend"
-    material.set_editor_property("blend_mode", {"Opaque": unreal.BlendMode.BLEND_OPAQUE,
-        "Mask": unreal.BlendMode.BLEND_MASKED, "Blend": unreal.BlendMode.BLEND_TRANSLUCENT}[mode])
-    material.set_editor_property("opacity_mask_clip_value", record.get("AlphaCutoff", .5))
+    material.set_editor_property(
+        "blend_mode",
+        {
+            "Opaque": unreal.BlendMode.BLEND_OPAQUE,
+            "Mask": unreal.BlendMode.BLEND_MASKED,
+            "Blend": unreal.BlendMode.BLEND_TRANSLUCENT,
+        }[mode],
+    )
+    material.set_editor_property("opacity_mask_clip_value", record.get("AlphaCutoff", 0.5))
     if kind == "Hair":
         material.set_editor_property("dither_opacity_mask", True)
     if mode == "Blend" and kind != "EyeShadow":
-        material.set_editor_property("translucency_lighting_mode", unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
+        material.set_editor_property(
+            "translucency_lighting_mode", unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING
+        )
     samples = {}
     for key in ("BaseColor", "Normal", "Metallic", "Roughness", "Occlusion", "Emission", "HairStreakMask"):
         texture = import_texture(folder, record, key, destination + "/Textures")
         if texture:
-            sampler = unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL if key == "Normal" else (
-                unreal.MaterialSamplerType.SAMPLERTYPE_COLOR if key in ("BaseColor", "Emission")
-                else unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
-            samples[key] = graph.node("TextureSampleParameter2D", key, parameter_name=key,
-                                      texture=texture, sampler_type=sampler)
+            sampler = (
+                unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL
+                if key == "Normal"
+                else (
+                    unreal.MaterialSamplerType.SAMPLERTYPE_COLOR
+                    if key in ("BaseColor", "Emission")
+                    else unreal.MaterialSamplerType.SAMPLERTYPE_MASKS
+                )
+            )
+            samples[key] = graph.node(
+                "TextureSampleParameter2D", key, parameter_name=key, texture=texture, sampler_type=sampler
+            )
     if kind == "EyeShadow":
-        # The exported RGB is a multiplier (white = neutral), not albedo.
+        # 导出的 RGB 为乘数，白色表示保持原值，并非反照率。
         material.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
-        material.set_editor_property("translucency_lighting_mode", unreal.TranslucencyLightingMode.TLM_VOLUMETRIC_NON_DIRECTIONAL)
+        material.set_editor_property(
+            "translucency_lighting_mode", unreal.TranslucencyLightingMode.TLM_VOLUMETRIC_NON_DIRECTIONAL
+        )
         material.set_editor_property("blend_mode", unreal.BlendMode.BLEND_MODULATE)
         material.set_editor_property("translucency_pass", unreal.MaterialTranslucencyPass.MTP_BEFORE_DOF)
         graph.output(samples["BaseColor"], "EMISSIVE_COLOR", "RGB")
     else:
-        for key, prop, channel in (("BaseColor", "BASE_COLOR", "RGB"), ("Normal", "NORMAL", "RGB"),
-                                    ("Metallic", "METALLIC", "R"), ("Roughness", "ROUGHNESS", "R"),
-                                    ("Occlusion", "AMBIENT_OCCLUSION", "R"), ("Emission", "EMISSIVE_COLOR", "RGB")):
+        for key, prop, channel in (
+            ("BaseColor", "BASE_COLOR", "RGB"),
+            ("Normal", "NORMAL", "RGB"),
+            ("Metallic", "METALLIC", "R"),
+            ("Roughness", "ROUGHNESS", "R"),
+            ("Occlusion", "AMBIENT_OCCLUSION", "R"),
+            ("Emission", "EMISSIVE_COLOR", "RGB"),
+        ):
             if key in samples:
                 graph.output(samples[key], prop, channel)
         if "HairStreakMask" in samples:
@@ -151,7 +202,12 @@ def make_material(folder, record, destination):
             strength = graph.node("Multiply", "Hair streak strength")
             graph.link(samples["HairStreakMask"], strength, "A", "R")
             graph.link(graph.scalar("Hair streak strength", record.get("HairStreakStrength", 1.0)), strength, "B")
-            tint = graph.node("VectorParameter", "Hair streak color", parameter_name="Hair streak color", default_value=unreal.LinearColor(*record.get("HairStreakColor", (1, 1, 1, 1))))
+            tint = graph.node(
+                "VectorParameter",
+                "Hair streak color",
+                parameter_name="Hair streak color",
+                default_value=unreal.LinearColor(*record.get("HairStreakColor", (1, 1, 1, 1))),
+            )
             blend = graph.node("LinearInterpolate", "Hair streak")
             graph.link(samples["BaseColor"], blend, "A", "RGB")
             graph.link(tint, blend, "B")
@@ -161,17 +217,25 @@ def make_material(folder, record, destination):
             graph.output(samples["BaseColor"], "OPACITY_MASK" if mode == "Mask" else "OPACITY", "A")
         if kind == "Skin":
             material.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_SUBSURFACE)
-            scatter = graph.node("VectorParameter", "Skin scatter tint", parameter_name="Skin scatter tint",
-                                 default_value=unreal.LinearColor(.18, .055, .03, 1))
+            scatter = graph.node(
+                "VectorParameter",
+                "Skin scatter tint",
+                parameter_name="Skin scatter tint",
+                default_value=unreal.LinearColor(0.18, 0.055, 0.03, 1),
+            )
             graph.output(scatter, "SUBSURFACE_COLOR")
-            graph.output(graph.scalar("Skin density", .9), "OPACITY")
-            graph.output(graph.scalar("Skin specular", .35), "SPECULAR")
+            graph.output(graph.scalar("Skin density", 0.9), "OPACITY")
+            graph.output(graph.scalar("Skin specular", 0.35), "SPECULAR")
         elif kind == "Hair":
-            graph.output(graph.scalar("Hair anisotropy", .45), "ANISOTROPY")
-            # Tangent input uses the same space as Normal. With tangent-space
-            # normal maps, (0,1,0) is the exported UV V / strand direction.
-            flow = graph.node("VectorParameter", "Hair strand direction (tangent-space V)",
-                              parameter_name="Hair flow direction", default_value=unreal.LinearColor(0, 1, 0, 1))
+            graph.output(graph.scalar("Hair anisotropy", 0.45), "ANISOTROPY")
+            # 切线输入与法线使用相同空间；
+            # 使用切线空间法线贴图时，(0,1,0) 表示导出 UV 的 V 轴及发丝方向。
+            flow = graph.node(
+                "VectorParameter",
+                "Hair strand direction (tangent-space V)",
+                parameter_name="Hair flow direction",
+                default_value=unreal.LinearColor(0, 1, 0, 1),
+            )
             graph.output(flow, "TANGENT")
             if record.get("SourceShader") in ("Shader Forge/hair_07", "Shader Forge/hair_08"):
                 fresnel = graph.node("Fresnel", "Hair viewing angle", exponent=1.0, base_reflect_fraction=0.0)
@@ -179,8 +243,8 @@ def make_material(folder, record, destination):
                 graph.link(samples["Roughness"], smooth, "", "R")
                 extra = graph.node("Max", "Hair extra gloss")
                 graph.link(smooth, extra, "A")
-                graph.link(graph.scalar("Hair extra gloss", record.get("HairExtraGloss", 0) * .8), extra, "B")
-                # Original shader: saturate(1.3 - 2*(1-saturate(N.V))).
+                graph.link(graph.scalar("Hair extra gloss", record.get("HairExtraGloss", 0) * 0.8), extra, "B")
+                # 原始着色器公式：saturate(1.3 - 2*(1-saturate(N.V)))。
                 angle = graph.node("Multiply", "Hair gloss angle", const_b=-2.0)
                 graph.link(fresnel, angle, "A")
                 offset = graph.node("Add", "Hair angular gloss", const_b=1.3)
@@ -199,16 +263,18 @@ def make_material(folder, record, destination):
                 graph.link(metallic_angle, metallic_clamp, "")
                 metallic_extra = graph.node("Max", "Hair extra metallic")
                 graph.link(samples["Metallic"], metallic_extra, "A", "R")
-                graph.link(graph.scalar("Hair extra metallic", record.get("HairExtraGloss", 0) * .5), metallic_extra, "B")
+                graph.link(
+                    graph.scalar("Hair extra metallic", record.get("HairExtraGloss", 0) * 0.5), metallic_extra, "B"
+                )
                 metallic = graph.node("Multiply", "Hair angular metallic")
                 graph.link(metallic_extra, metallic, "A")
                 graph.link(metallic_clamp, metallic, "B")
                 graph.output(metallic, "METALLIC")
         elif kind == "Eye":
-            graph.output(graph.scalar("Eye specular", .65), "SPECULAR")
+            graph.output(graph.scalar("Eye specular", 0.65), "SPECULAR")
         elif kind == "Tearline":
-            graph.output(graph.scalar("Tear roughness", .08), "ROUGHNESS")
-            graph.output(graph.scalar("Tear specular", .5), "SPECULAR")
+            graph.output(graph.scalar("Tear roughness", 0.08), "ROUGHNESS")
+            graph.output(graph.scalar("Tear specular", 0.5), "SPECULAR")
     unreal.MaterialEditingLibrary.set_material_usage(material, unreal.MaterialUsage.MATUSAGE_SKELETAL_MESH)
     unreal.MaterialEditingLibrary.layout_material_expressions(material)
     unreal.MaterialEditingLibrary.recompile_material(material)
@@ -231,7 +297,9 @@ def import_character(directory, destination=None):
                 package_path(folder, record[key])
         if not record.get("BaseColor"):
             raise ValueError("材质缺少 BaseColor：" + record["Id"])
-    base = destination or "/Game/HS2Characters/" + (re.sub(r"[^A-Za-z0-9_]", "_", folder.name).strip("_") or "Character")
+    base = destination or "/Game/HS2Characters/" + (
+        re.sub(r"[^A-Za-z0-9_]", "_", folder.name).strip("_") or "Character"
+    )
     if not re.fullmatch(r"/Game/[A-Za-z0-9_/]+", base) or "//" in base or base.endswith("/"):
         raise ValueError("UE 目标目录必须位于 /Game 下，使用字母、数字、下划线和斜杠。")
     target, number = base, 2
@@ -239,18 +307,29 @@ def import_character(directory, destination=None):
         target, number = base + "_" + str(number), number + 1
     unreal.EditorAssetLibrary.make_directory(target)
     options = unreal.FbxImportUI()
-    for key, value in dict(automated_import_should_detect_type=False, import_mesh=True,
-                           import_as_skeletal=True, import_materials=False, import_textures=False,
-                           import_animations=False, create_physics_asset=False,
-                           mesh_type_to_import=unreal.FBXImportType.FBXIT_SKELETAL_MESH).items():
+    for key, value in dict(
+        automated_import_should_detect_type=False,
+        import_mesh=True,
+        import_as_skeletal=True,
+        import_materials=False,
+        import_textures=False,
+        import_animations=False,
+        create_physics_asset=False,
+        mesh_type_to_import=unreal.FBXImportType.FBXIT_SKELETAL_MESH,
+    ).items():
         options.set_editor_property(key, value)
     mesh_options = options.get_editor_property("skeletal_mesh_import_data")
-    for key, value in dict(import_morph_targets=True, morph_threshold_position=0.00001, import_uniform_scale=1.0, convert_scene=True,
-                           convert_scene_unit=True, use_t0_as_ref_pose=False,
-                           normal_import_method=unreal.FBXNormalImportMethod.FBXNIM_IMPORT_NORMALS_AND_TANGENTS).items():
+    for key, value in dict(
+        import_morph_targets=True,
+        morph_threshold_position=0.00001,
+        import_uniform_scale=1.0,
+        convert_scene=True,
+        convert_scene_unit=True,
+        use_t0_as_ref_pose=False,
+        normal_import_method=unreal.FBXNormalImportMethod.FBXNIM_IMPORT_NORMALS_AND_TANGENTS,
+    ).items():
         mesh_options.set_editor_property(key, value)
-    # Explicit legacy factory: UE 5.5+ may otherwise select Interchange and
-    # ignore FbxImportUI, changing skeleton, scale and material slot naming.
+    # 显式使用旧版导入工厂，避免 UE 5.5 及以上自动选择 Interchange 并忽略 FbxImportUI，从而改变骨架、比例或材质槽名称。
     assets = import_asset(fbx, target, "SK_Character", options, unreal.FbxFactory())
     meshes = [a for a in assets if isinstance(a, unreal.SkeletalMesh)]
     if not meshes:
@@ -267,8 +346,11 @@ def import_character(directory, destination=None):
             slot.set_editor_property("material_interface", materials[ident])
             slots[index] = slot
         mesh.set_editor_property("materials", slots)
-    imported_ids = {str(slot.get_editor_property("imported_material_slot_name"))
-                    for mesh in meshes for slot in mesh.get_editor_property("materials")}
+    imported_ids = {
+        str(slot.get_editor_property("imported_material_slot_name"))
+        for mesh in meshes
+        for slot in mesh.get_editor_property("materials")
+    }
     missing_ids = set(ids) - imported_ids
     if missing_ids:
         raise RuntimeError("UE 丢失材质槽，请用新版 HS2 Manager 重新导出 FBX：" + ", ".join(sorted(missing_ids)))

@@ -1,42 +1,42 @@
 [
-  {
-    "id": "Microsoft.Windows.CppWinRT",
-    "version": "3.0.260818.1",
-    "sha512": "bdHBBDZd46Pq1eNYHcrSe+Q74gMrs+1bIfd+lLHZOISaMpdULyKw9EsbkFQfmCLq3TZfkSuQpJkGX+I8S6QndQ=="
-  },
-  {
-    "id": "Microsoft.WindowsAppSDK.Base",
-    "version": "1.8.251216001",
-    "sha512": "zzCRDsJNk6MlzZexe17+h+EDCtF5NfOaKodmkX6tsCB63ETlu4/Mp60fI20lsv+7G5ShF7BZlsvVBcevCbD6uw=="
-  },
-  {
-    "id": "Microsoft.WindowsAppSDK.Foundation",
-    "version": "1.8.260803002",
-    "sha512": "k42gfJvompU7ojvo0C/w8p+GgNlqe32vBkV35LtSWuhS8gY0XHDMrEchzqwV/mhzLHZhEl1XSGxNEJCtzOSJmw=="
-  },
-  {
-    "id": "Microsoft.WindowsAppSDK.InteractiveExperiences",
-    "version": "1.8.260708001",
-    "sha512": "+OF0UmXNF8U2qoGbm5kfjGvlgrwdLTJCqhwO7YD6Lp6/+Atjp7ZAHgivktSUCk8RC/q5piBpcdo2Mgy5DKIwrg=="
-  },
-  {
-    "id": "Microsoft.WindowsAppSDK.DWrite",
-    "version": "1.8.25122902",
-    "sha512": "5oKIKDYnc8ENNRCKb8D8jbNB0b2GLtq9rzVlnWUFpSvulW51zzsIdOZ8NW0H5WXI/cmJt4pquHOYyV3HVPaWUw=="
-  },
-  {
-    "id": "Microsoft.Web.WebView2",
-    "version": "1.0.3179.45",
-    "sha512": "AqvMjM6eGVbfvi4k/dTOYlqz4f8BOcm6mr7SZDOxnxZw9RNrpxwq+R8pjd5QeynZ3MZfCQ5d2bXrzsIZvk6A6Q=="
-  },
-  {
-    "id": "Microsoft.WindowsAppSDK.WinUI",
-    "version": "1.8.260803003",
-    "sha512": "jTObrTdSDbgh8jwUrLqAtsvULsWodDJ5Hk+YdgmXkA7Z+Un2QbfHo8Wh5P29qJwmMqy3Jah8XILZiBbSwGP7lw=="
-  },
-  {
-    "id": "Microsoft.WindowsAppSDK.Runtime",
-    "version": "1.8.260921001",
-    "sha512": "1wyTKgg/4hfbDyFduAOajqK8e9+wuCgA9IcqBBBtwpNaJCOjHPIu04kFkYkqemiuNAPShAyDiRUtNV+FMsdHMA=="
-  }
+    {
+        "id": "Microsoft.Windows.CppWinRT",
+        "version": "3.0.260818.1",
+        "sha512": "bdHBBDZd46Pq1eNYHcrSe+Q74gMrs+1bIfd+lLHZOISaMpdULyKw9EsbkFQfmCLq3TZfkSuQpJkGX+I8S6QndQ=="
+    },
+    {
+        "id": "Microsoft.WindowsAppSDK.Base",
+        "version": "1.8.251216001",
+        "sha512": "zzCRDsJNk6MlzZexe17+h+EDCtF5NfOaKodmkX6tsCB63ETlu4/Mp60fI20lsv+7G5ShF7BZlsvVBcevCbD6uw=="
+    },
+    {
+        "id": "Microsoft.WindowsAppSDK.Foundation",
+        "version": "1.8.260803002",
+        "sha512": "k42gfJvompU7ojvo0C/w8p+GgNlqe32vBkV35LtSWuhS8gY0XHDMrEchzqwV/mhzLHZhEl1XSGxNEJCtzOSJmw=="
+    },
+    {
+        "id": "Microsoft.WindowsAppSDK.InteractiveExperiences",
+        "version": "1.8.260708001",
+        "sha512": "+OF0UmXNF8U2qoGbm5kfjGvlgrwdLTJCqhwO7YD6Lp6/+Atjp7ZAHgivktSUCk8RC/q5piBpcdo2Mgy5DKIwrg=="
+    },
+    {
+        "id": "Microsoft.WindowsAppSDK.DWrite",
+        "version": "1.8.25122902",
+        "sha512": "5oKIKDYnc8ENNRCKb8D8jbNB0b2GLtq9rzVlnWUFpSvulW51zzsIdOZ8NW0H5WXI/cmJt4pquHOYyV3HVPaWUw=="
+    },
+    {
+        "id": "Microsoft.Web.WebView2",
+        "version": "1.0.3179.45",
+        "sha512": "AqvMjM6eGVbfvi4k/dTOYlqz4f8BOcm6mr7SZDOxnxZw9RNrpxwq+R8pjd5QeynZ3MZfCQ5d2bXrzsIZvk6A6Q=="
+    },
+    {
+        "id": "Microsoft.WindowsAppSDK.WinUI",
+        "version": "1.8.260803003",
+        "sha512": "jTObrTdSDbgh8jwUrLqAtsvULsWodDJ5Hk+YdgmXkA7Z+Un2QbfHo8Wh5P29qJwmMqy3Jah8XILZiBbSwGP7lw=="
+    },
+    {
+        "id": "Microsoft.WindowsAppSDK.Runtime",
+        "version": "1.8.260921001",
+        "sha512": "1wyTKgg/4hfbDyFduAOajqK8e9+wuCgA9IcqBBBtwpNaJCOjHPIu04kFkYkqemiuNAPShAyDiRUtNV+FMsdHMA=="
+    }
 ]

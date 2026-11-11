@@ -1,0 +1,492 @@
+#include "Runtime/NativeDynamics.h"
+#include "Animation/SimulationMath.h"
+
+namespace hs2
+{
+    using namespace sim;
+
+    void NativeDynamicCollider::Constrain(Vector3 &position, float particleRadius, bool jobSphere) const
+    {
+        float radius = Radius * std::abs(Node->LossyScale().x);
+        float segment = static_cast<float>(static_cast<double>(Height) * .5f - Radius);
+        auto closest = jobSphere && segment <= 0 ? Node->TransformVector(Center) : Node->TransformPoint(Center);
+        if (segment > 0)
+        {
+            auto axis = Axis == 0 ? Vector3{1, 0, 0} : Axis == 1 ? Vector3{0, 1, 0} : Vector3{0, 0, 1};
+            auto start = Node->TransformPoint(Center - axis * segment),
+                 end = Node->TransformPoint(Center + axis * segment), line = end - start;
+            closest = start +
+                      line * std::clamp(Dot(position - start, line) / std::max(1e-12f, LengthSquared(line)), 0.f, 1.f);
+        }
+        auto offset = position - closest;
+        float distance = Length(offset),
+              limit = Bound == 0 ? radius + particleRadius : std::max(0.f, radius - particleRadius);
+        if (distance > 0 && (Bound == 0 ? distance < limit : distance > limit))
+            position = closest + offset * (limit / distance);
+    }
+
+    NativeBoneChain::NativeBoneChain(NativeSceneNode &host, NativeSceneNode &root, Parameter settings,
+                                     std::vector<NativeDynamicCollider> colliders,
+                                     std::optional<std::vector<NativeSceneRenderer *>> visibility,
+                                     const std::unordered_map<NativeSceneNode *, Matrix4x4> *transforms,
+                                     const std::unordered_map<NativeSceneNode *, Quaternion> *rotations)
+        : host_(&host), root_(&root), settings_(std::move(settings)), colliders_(std::move(colliders)),
+          visibility_(std::move(visibility)), setupTransforms_(transforms), setupRotations_(rotations)
+    {
+        for (auto &p : settings_.Get("m_Exclusions").Children)
+            exclusions_.insert(p.Text);
+        for (auto &p : settings_.Get("m_notRolls").Children)
+            notRolls_.insert(p.Text);
+        gravity_ = Vector(settings_.Get("m_Gravity"));
+        force_ = Vector(settings_.Get("m_Force"));
+        localGravity_ = Rotate(Inverse(SetupRotation(root_)), gravity_);
+        previousHost_ = host_->Position();
+        Add(root_, -1, 0);
+        for (auto &p : particles_)
+        {
+            float t = totalLength_ > 0 ? p.Distance / totalLength_ : 0;
+            p.Damping = Value("Damping", t);
+            p.Elasticity = Value("Elasticity", t);
+            p.Stiffness = Value("Stiffness", t);
+            p.Inert = Value("Inert", t);
+            p.Radius = Value("Radius", t, false);
+        }
+        setupTransforms_ = nullptr;
+        setupRotations_ = nullptr;
+    }
+
+    float NativeBoneChain::Value(const std::string &name, float t, bool clamp) const
+    {
+        float value = settings_.Float("m_" + name);
+        auto &data = settings_.Get("m_" + name + "Distrib");
+        if (!data.Get("m_Curve").Children.empty())
+        {
+            std::vector<CurveKey> keys;
+            for (auto &k : data.Get("m_Curve").Children)
+                keys.push_back({k.Float("time"), k.Float("value"), k.Float("inSlope"), k.Float("outSlope"),
+                                k.Float("inWeight", 1.f / 3), k.Float("outWeight", 1.f / 3),
+                                static_cast<int>(k.Int("weightedMode"))});
+            AnimationCurve curve(std::move(keys));
+            auto wrap = [](int v)
+            {
+                return v == 4 ? CurveWrap::Loop : v == 5 ? CurveWrap::PingPong : CurveWrap::Clamp;
+            };
+            curve.Pre = wrap(static_cast<int>(data.Int("m_PreInfinity", 2)));
+            curve.Post = wrap(static_cast<int>(data.Int("m_PostInfinity", 2)));
+            value *= curve.Evaluate(t);
+        }
+        return clamp ? std::clamp(value, 0.f, 1.f) : std::max(0.f, value);
+    }
+
+    Matrix4x4 NativeBoneChain::SetupMatrix(NativeSceneNode *node) const
+    {
+        return setupTransforms_ && setupTransforms_->contains(node) ? setupTransforms_->at(node) : node->WorldMatrix();
+    }
+
+    Quaternion NativeBoneChain::SetupRotation(NativeSceneNode *node) const
+    {
+        return setupRotations_ && setupRotations_->contains(node) ? setupRotations_->at(node) : node->Rotation();
+    }
+
+    Vector3 NativeBoneChain::SetupPosition(NativeSceneNode *node) const
+    {
+        return hs2::TransformPoint({}, SetupMatrix(node));
+    }
+
+    void NativeBoneChain::Add(NativeSceneNode *bone, int parent, float distance)
+    {
+        Require(particles_.size() < 20000, "Dynamic bone hierarchy exceeds limit.");
+        Particle p;
+        p.Bone = bone;
+        p.Parent = parent;
+        if (bone)
+        {
+            p.Position = bone->Position();
+            p.RestPosition = bone->LocalPosition();
+            p.RestRotation = bone->LocalRotation();
+        }
+        else
+        {
+            auto *node = particles_[parent].Bone;
+            float length = settings_.Float("m_EndLength");
+            p.End = length > 0
+                        ? (node->Parent() ? hs2::TransformPoint(SetupPosition(node) * 2 - SetupPosition(node->Parent()),
+                                                                InverseMatrix(SetupMatrix(node))) *
+                                                length
+                                          : Vector3{length, 0, 0})
+                        : hs2::TransformVector(Rotate(SetupRotation(host_), Vector(settings_.Get("m_EndOffset"))),
+                                               InverseMatrix(SetupMatrix(node)));
+            p.Position = node->TransformPoint(p.End);
+        }
+        p.Previous = p.Position;
+        p.SetupPosition = bone ? SetupPosition(bone) : hs2::TransformPoint(p.End, SetupMatrix(particles_[parent].Bone));
+        if (parent >= 0)
+            distance += Length(particles_[parent].SetupPosition - p.SetupPosition);
+        p.Distance = distance;
+        totalLength_ = std::max(totalLength_, distance);
+        int index = static_cast<int>(particles_.size());
+        particles_.push_back(p);
+        if (!bone)
+            return;
+        bool end = settings_.Float("m_EndLength") > 0 || LengthSquared(Vector(settings_.Get("m_EndOffset"))) != 0;
+        NativeSceneNode *bypass = nullptr;
+        for (auto *child : bone->Children())
+        {
+            bool excluded = exclusions_.contains(child->Name);
+            if (!excluded && notRolls_.contains(child->Name))
+            {
+                bypass = child;
+                excluded = true;
+            }
+            if (!excluded)
+                Add(child, index, distance);
+            else if (end)
+                Add(nullptr, index, distance);
+        }
+        if (bypass)
+            for (auto *child : bypass->Children())
+                if (!exclusions_.contains(child->Name) && !notRolls_.contains(child->Name))
+                    Add(child, index, distance);
+        if (bone->Children().empty() && end)
+            Add(nullptr, index, distance);
+    }
+
+    void NativeBoneChain::Restore()
+    {
+        if (visibility_ && !visible_)
+            return;
+        for (auto &p : particles_)
+            if (p.Bone)
+            {
+                p.Bone->LocalPosition(p.RestPosition);
+                p.Bone->LocalRotation(p.RestRotation);
+            }
+    }
+
+    void NativeBoneChain::Reset()
+    {
+        for (auto &p : particles_)
+            p.Previous = p.Position = p.Bone ? p.Bone->Position() : particles_[p.Parent].Bone->TransformPoint(p.End);
+        previousHost_ = host_->Position();
+    }
+
+    void NativeBoneChain::RefreshBoundOrientation()
+    {
+        localGravity_ = Rotate(Inverse(root_->Rotation()), gravity_);
+        for (auto &p : particles_)
+            if (!p.Bone)
+            {
+                auto *node = particles_[p.Parent].Bone;
+                float length = settings_.Float("m_EndLength");
+                p.End =
+                    length > 0
+                        ? (node->Parent()
+                               ? node->InverseTransformPoint(node->Position() * 2 - node->Parent()->Position()) * length
+                               : Vector3{length, 0, 0})
+                        : node->InverseTransformPoint(host_->TransformDirection(Vector(settings_.Get("m_EndOffset"))) +
+                                                      node->Position());
+            }
+        Reset();
+    }
+
+    void NativeBoneChain::RefreshGravityOrientation()
+    {
+        localGravity_ = root_->InverseTransformDirection(gravity_);
+    }
+
+    void NativeBoneChain::UpdateVisibility()
+    {
+        if (!visibility_)
+            return;
+        bool next = std::any_of(visibility_->begin(), visibility_->end(),
+                                [](auto *r)
+                                {
+                                    return r && r->LastRenderedVisibility.value_or(r->Visible());
+                                });
+        if (next && !visible_)
+        {
+            Reset();
+            justEnabled_ = true;
+        }
+        visible_ = next;
+    }
+
+    void NativeBoneChain::Step()
+    {
+        if (!host_->ActiveInHierarchy() || !visible_)
+            return;
+        if (justEnabled_)
+        {
+            justEnabled_ = false;
+            return;
+        }
+        float scale = std::abs(host_->LossyScale().x);
+        auto movement = host_->Position() - previousHost_;
+        previousHost_ = host_->Position();
+        auto acceleration =
+            (gravity_ - Unit(gravity_) * std::max(0.f, Dot(root_->TransformDirection(localGravity_), Unit(gravity_))) +
+             force_) *
+            scale;
+        for (auto &p : particles_)
+        {
+            if (p.Bone)
+            {
+                p.Matrix = p.Bone->WorldMatrix();
+                p.Local = p.Bone->LocalPosition();
+            }
+            else
+                p.Local = p.End;
+            if (p.Parent < 0)
+            {
+                p.Previous = p.Position;
+                p.Position = p.Bone->Position();
+                continue;
+            }
+            auto &parent = particles_[p.Parent];
+            p.Length = p.Bone ? Length(parent.Bone->Position() - p.Bone->Position())
+                              : Length(parent.Bone->TransformVector(p.End));
+            auto velocity = p.Position - p.Previous, inherited = movement * p.Inert;
+            p.Previous = p.Position + inherited;
+            p.Position += velocity * (1 - p.Damping) + acceleration + inherited;
+        }
+        for (size_t i = 1; i < particles_.size(); ++i)
+        {
+            auto &p = particles_[i];
+            auto &parent = particles_[p.Parent];
+            auto target = hs2::TransformPoint(p.Local, Translation(parent.Matrix, parent.Position));
+            p.Position += (target - p.Position) * p.Elasticity;
+            auto displacement = target - p.Position;
+            float deviation = Length(displacement),
+                  maximum = static_cast<float>(p.Length * (1 - static_cast<double>(p.Stiffness)) * 2);
+            if (p.Stiffness > 0 && deviation > maximum)
+                p.Position += displacement * static_cast<float>((static_cast<double>(deviation) - maximum) / deviation);
+            for (auto &collider : colliders_)
+                collider.Constrain(p.Position, p.Radius * scale, true);
+            auto direction = parent.Position - p.Position;
+            float length = Length(direction);
+            if (length > 0)
+                p.Position += direction * static_cast<float>((static_cast<double>(length) - p.Length) / length);
+        }
+        for (size_t i = 1; i < particles_.size(); ++i)
+        {
+            auto &p = particles_[i];
+            auto &parent = particles_[p.Parent];
+            if (parent.Bone->Children().size() <= 1)
+            {
+                auto from = parent.Bone->TransformDirection(p.Bone ? p.Bone->LocalPosition() : p.End),
+                     to = p.Position - parent.Position;
+                parent.Bone->Rotation(Mul(FromTo(from, to), parent.Bone->Rotation()));
+            }
+            if (p.Bone)
+                p.Bone->Position(p.Position);
+        }
+    }
+
+    NativeBodyDynamics::NativeBodyDynamics(const Parameter &config, const Parameter &body,
+                                           const std::unordered_map<std::string, NativeSceneNode *> &bones,
+                                           const std::vector<NativeDynamicCollider> &available,
+                                           const std::optional<ColliderSupportDefinition> &support)
+    {
+        root_ = bones.at(config.String("Root"));
+        previousRoot_ = root_->Position();
+        auto &pattern = At(config.Get("Patterns"), static_cast<size_t>(config.Int("PtnNo")));
+        bool bust = config.String("Comment").starts_with("Mune");
+        float size = static_cast<float>(At(body.Get("shapeValueBody"), 1).Number), soft = body.Float("bustSoftness"),
+              softness = std::clamp(size * body.Float("effectiveBustSoftness", soft) + .01f, 0.f, 1.f);
+        gravity_ = bust ? Vector3{0, Lerp(0, -.05f, body.Float("bustWeight")) * size * soft * .5f, 0}
+                        : Vector(pattern.Get("Gravity"));
+        force_ = Vector(config.Get("Force"));
+        rate_ = config.Float("UpdateRate", 60);
+        reflect_ = config.Float("ReflectSpeed", 1);
+        maxSteps_ = std::max(1, static_cast<int>(config.Int("HeavyLoopMaxCount", 3)));
+        std::set<std::string> names;
+        for (auto &p : config.Get("Colliders").Children)
+            names.insert(p.Text);
+        for (auto &c : available)
+            if (names.contains(c.Node->Name) ||
+                (bust && support && support->Breast && c.Node->Name.starts_with("HS2_Colliders_") &&
+                 (support->Floor || c.Node->Name != "HS2_Colliders_cf_J_Root")))
+                colliders_.push_back(c);
+        for (size_t i = 0; i < config.Get("Bones").Children.size(); ++i)
+        {
+            Node node;
+            node.Data = At(pattern.Get("Params"), i);
+            node.Bone = bones.at(At(config.Get("Bones"), i).Text);
+            node.Reference = bones.contains(node.Data.String("RefTransform"))
+                                 ? bones.at(node.Data.String("RefTransform"))
+                                 : node.Bone;
+            node.InitialScale = node.Reference->LocalScale();
+            node.Radius = bust && support && (i == 2 || i == 3) ? (support->Breast ? size * (i == 2 ? 1.f : .8f) : 0)
+                                                                : node.Data.Float("CollisionRadius");
+            nodes_.push_back(std::move(node));
+        }
+        Node end;
+        end.Local = Vector(pattern.Get("EndOffset"));
+        for (std::string key : {"Damping", "Elasticity", "Stiffness", "Inert"})
+        {
+            Parameter p;
+            p.Name = key;
+            p.Number = pattern.Float("EndOffset" + key);
+            end.Data.Children.push_back(p);
+        }
+        Parameter length;
+        length.Name = "NextBoneLength";
+        length.Number = 1;
+        end.Data.Children.push_back(length);
+        nodes_.push_back(end);
+        auto interpolate = [&](float a, float b, float c)
+        {
+            return softness < .5f ? Lerp(a, b, softness * 2) : Lerp(b, c, (softness - .5f) * 2);
+        };
+        for (auto &node : nodes_)
+        {
+            node.Damping = bust ? interpolate(.2f, .1f, .1f) : std::clamp(node.Data.Float("Damping"), 0.f, 1.f);
+            node.Elasticity = bust ? interpolate(.2f, .15f, .05f) : std::clamp(node.Data.Float("Elasticity"), 0.f, 1.f);
+            node.Stiffness = bust ? interpolate(1, .1f, .01f) : std::clamp(node.Data.Float("Stiffness"), 0.f, 1.f);
+            node.Inert = std::clamp(node.Data.Float("Inert"), 0.f, 1.f);
+            node.NextLength = std::max(0.f, node.Data.Float("NextBoneLength", 1));
+        }
+        Restore();
+        for (size_t i = 1; i + 1 < nodes_.size(); ++i)
+            nodes_[i].Local = nodes_[i - 1].Reference->InverseTransformPoint(nodes_[i].Reference->Position());
+        Reset();
+    }
+
+    void NativeBodyDynamics::Restore()
+    {
+        for (auto &node : nodes_)
+            if (node.Bone)
+            {
+                node.Bone->LocalPosition(node.Reference->LocalPosition());
+                node.Bone->LocalRotation(node.Reference->LocalRotation());
+                node.Bone->LocalScale(node.Reference->LocalScale());
+            }
+    }
+
+    void NativeBodyDynamics::Reset()
+    {
+        for (size_t i = 0; i < nodes_.size(); ++i)
+        {
+            auto &node = nodes_[i];
+            node.Previous = node.Position =
+                node.Bone ? node.Bone->Position() : nodes_[i - 1].Bone->TransformPoint(node.Local);
+        }
+        previousRoot_ = root_->Position();
+        accumulator_ = 0;
+    }
+
+    void NativeBodyDynamics::Step(float delta)
+    {
+        Restore();
+        float scale = std::abs(root_->LossyScale().x);
+        auto movement = root_->Position() - previousRoot_;
+        previousRoot_ = root_->Position();
+        int steps = 1;
+        if (rate_ > 0)
+        {
+            accumulator_ += delta;
+            steps = 0;
+            while (accumulator_ >= 1 / rate_)
+            {
+                accumulator_ -= 1 / rate_;
+                if (++steps >= maxSteps_)
+                {
+                    accumulator_ = 0;
+                    break;
+                }
+            }
+        }
+        for (int step = 0; step < std::max(1, steps); ++step)
+        {
+            for (size_t i = 0; i < nodes_.size(); ++i)
+            {
+                auto &node = nodes_[i];
+                if (!i)
+                {
+                    node.Previous = node.Position;
+                    node.Position = node.Bone->Position();
+                    continue;
+                }
+                auto inherited = movement * node.Inert;
+                if (steps == 0)
+                {
+                    node.Previous += inherited;
+                    node.Position += inherited;
+                }
+                else
+                {
+                    auto velocity = (node.Position - node.Previous) * reflect_;
+                    node.Previous = node.Position + inherited;
+                    node.Position += velocity * (1 - node.Damping) + (gravity_ + force_) * scale + inherited;
+                }
+            }
+            for (size_t i = 1; i < nodes_.size(); ++i)
+            {
+                auto &node = nodes_[i];
+                auto &parent = nodes_[i - 1];
+                float length =
+                    node.Bone ? Length(parent.Bone->Position() - node.Bone->Position()) : Length(node.Local) * scale;
+                auto target = hs2::TransformPoint(node.Local, Translation(parent.Bone->WorldMatrix(), parent.Position));
+                if (steps > 0)
+                    node.Position += (target - node.Position) * node.Elasticity;
+                auto offset = target - node.Position;
+                float magnitude = Length(offset), maximum = length * (1 - node.Stiffness) * 2;
+                if (node.Stiffness > 0 && magnitude > maximum)
+                    node.Position += offset * ((magnitude - maximum) / magnitude);
+                if (steps > 0)
+                    for (auto &collider : colliders_)
+                        collider.Constrain(node.Position, node.Radius * scale);
+                auto separation = parent.Position - node.Position;
+                float distance = Length(separation);
+                if (distance > 0)
+                {
+                    float correction = (distance - length) / distance, low = node.Data.Float("KeepLengthLimitMin"),
+                          high = node.Data.Float("KeepLengthLimitMax");
+                    if (correction <= low)
+                        node.Position += separation * (correction - low);
+                    else if (correction >= high)
+                        node.Position += separation * (correction - high);
+                }
+                if (node.Bone && node.Data.Float("IsMoveLimit") != 0)
+                {
+                    auto constraint = Translation(node.Bone->WorldMatrix(), target);
+                    auto local = hs2::TransformPoint(node.Position, InverseMatrix(constraint)),
+                         low = Vector(node.Data.Get("MoveLimitMin")), high = Vector(node.Data.Get("MoveLimitMax"));
+                    local = {std::clamp(local.x, low.x, high.x), std::clamp(local.y, low.y, high.y),
+                             std::clamp(local.z, low.z, high.z)};
+                    node.Position = hs2::TransformPoint(local, constraint);
+                }
+            }
+            movement = {};
+        }
+        auto inverseLerp = [](float a, float b, float value)
+        {
+            return a == b ? 0.f : std::clamp((value - a) / (b - a), 0.f, 1.f);
+        };
+        for (size_t i = 1; i < nodes_.size(); ++i)
+        {
+            auto &node = nodes_[i];
+            auto &parent = nodes_[i - 1];
+            if (parent.Data.Float("IsRotationCalc") != 0)
+            {
+                auto direction = parent.Bone->TransformDirection(node.Local),
+                     simulated = node.Position - parent.Position;
+                if (LengthSquared(node.Local) > 0)
+                    simulated -= direction * (1 - parent.NextLength);
+                parent.Bone->Rotation(Mul(FromTo(direction, simulated), parent.Bone->Rotation()));
+            }
+            if (!node.Bone)
+                continue;
+            if (node.Data.Float("IsCrush") != 0)
+            {
+                float z = node.Bone->InverseTransformPoint(node.Position).z;
+                float crush =
+                    z <= 0 ? node.Data.Float("CrushAddXYMin") *
+                                 (1 - inverseLerp(node.Data.Float("CrushMoveAreaMin"), 0, z))
+                           : node.Data.Float("CrushAddXYMax") * inverseLerp(0, node.Data.Float("CrushMoveAreaMax"), z);
+                node.Bone->LocalScale(node.InitialScale + Vector3{crush, crush, 0});
+            }
+            node.Bone->Position(node.Position);
+        }
+    }
+}

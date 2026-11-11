@@ -1,4 +1,5 @@
-"""Internal UE native asset/scene exporter, run only in an isolated owned project."""
+"""内部 UE 原生资源与场景导出器，仅在独立的受控项目中运行。"""
+
 import json
 import math
 import re
@@ -29,13 +30,26 @@ def custom_input(name):
 
 
 def scene_texture(folder, relative, name):
-    texture = next((a for a in importer.import_asset(importer.package_path(folder, relative), ROOT + "/Environment", name)
-                    if isinstance(a, (unreal.Texture2D, unreal.TextureCube))), None)
+    texture = next(
+        (
+            a
+            for a in importer.import_asset(importer.package_path(folder, relative), ROOT + "/Environment", name)
+            if isinstance(a, (unreal.Texture2D, unreal.TextureCube))
+        ),
+        None,
+    )
     if texture is None:
         raise RuntimeError("不能导入环境贴图：" + relative)
     texture.set_editor_property("srgb", False)
     texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_HDR)
-    texture.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS if name == "PreviewLUT" else unreal.TextureMipGenSettings.TMGS_FROM_TEXTURE_GROUP)
+    texture.set_editor_property(
+        "mip_gen_settings",
+        (
+            unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS
+            if name == "PreviewLUT"
+            else unreal.TextureMipGenSettings.TMGS_FROM_TEXTURE_GROUP
+        ),
+    )
     if isinstance(texture, unreal.Texture2D):
         texture.set_editor_property("address_x", unreal.TextureAddress.TA_CLAMP)
         texture.set_editor_property("address_y", unreal.TextureAddress.TA_CLAMP)
@@ -44,11 +58,15 @@ def scene_texture(folder, relative, name):
 
 
 def post_material(folder, data):
-    material = unreal.AssetToolsHelpers.get_asset_tools().create_asset("M_PreviewColor", ROOT + "/Environment", unreal.Material, unreal.MaterialFactoryNew())
+    material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+        "M_PreviewColor", ROOT + "/Environment", unreal.Material, unreal.MaterialFactoryNew()
+    )
     material.set_editor_property("material_domain", unreal.MaterialDomain.MD_POST_PROCESS)
     material.set_editor_property("blendable_location", unreal.BlendableLocation.BL_REPLACING_TONEMAPPER)
     graph = importer.Graph(material)
-    source = graph.node("SceneTexture", "Scene linear color", scene_texture_id=unreal.SceneTextureId.PPI_POST_PROCESS_INPUT0)
+    source = graph.node(
+        "SceneTexture", "Scene linear color", scene_texture_id=unreal.SceneTextureId.PPI_POST_PROCESS_INPUT0
+    )
     inputs = [custom_input("SceneColor")]
     code = "float3 c=max(SceneColor.rgb,0); return lerp(c*12.92,1.055*pow(c,1.0/2.4)-0.055,step(0.0031308,c));"
     lut = None
@@ -71,11 +89,22 @@ float2 a=float2((p.r*{n-1}.0+0.5+lo*{n}.0)/{n*n}.0,1-(p.g*{n-1}.0+0.5)/{n}.0);
 float2 b=float2((p.r*{n-1}.0+0.5+hi*{n}.0)/{n*n}.0,a.y);
 float3 result=lerp(Texture2DSampleLevel(PreviewLut,PreviewLutSampler,a,0).rgb,Texture2DSampleLevel(PreviewLut,PreviewLutSampler,b,0).rgb,z-lo);
 """ + decode
-    transform = graph.node("Custom", "Evaluated Unity preview color LUT", code=code,
-                           output_type=unreal.CustomMaterialOutputType.CMOT_FLOAT3, inputs=inputs)
+    transform = graph.node(
+        "Custom",
+        "Evaluated Unity preview color LUT",
+        code=code,
+        output_type=unreal.CustomMaterialOutputType.CMOT_FLOAT3,
+        inputs=inputs,
+    )
     graph.link(source, transform, "SceneColor", "Color")
     if lut:
-        texture = graph.node("TextureObjectParameter", "Preview LUT", parameter_name="PreviewLUT", texture=lut, sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+        texture = graph.node(
+            "TextureObjectParameter",
+            "Preview LUT",
+            parameter_name="PreviewLUT",
+            texture=lut,
+            sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR,
+        )
         graph.link(texture, transform, "PreviewLut")
     graph.output(transform, "EMISSIVE_COLOR")
     unreal.MaterialEditingLibrary.recompile_material(material)
@@ -84,21 +113,39 @@ float3 result=lerp(Texture2DSampleLevel(PreviewLut,PreviewLutSampler,a,0).rgb,Te
 
 
 def background_material(data, cube):
-    material = unreal.AssetToolsHelpers.get_asset_tools().create_asset("M_PreviewBackground", ROOT + "/Environment", unreal.Material, unreal.MaterialFactoryNew())
+    material = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+        "M_PreviewBackground", ROOT + "/Environment", unreal.Material, unreal.MaterialFactoryNew()
+    )
     material.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
     material.set_editor_property("two_sided", True)
     material.set_editor_property("is_sky", True)
     graph = importer.Graph(material)
     if data["SkyBackground"] and cube:
         ray = graph.node("CameraVectorWS", "Camera to sky")
-        transform = graph.node("Custom", "Environment orientation", code="return float3(Direction.x,Direction.y,-Direction.z);",
-                               output_type=unreal.CustomMaterialOutputType.CMOT_FLOAT3, inputs=[custom_input("Direction")])
+        transform = graph.node(
+            "Custom",
+            "Environment orientation",
+            code="return float3(Direction.x,Direction.y,-Direction.z);",
+            output_type=unreal.CustomMaterialOutputType.CMOT_FLOAT3,
+            inputs=[custom_input("Direction")],
+        )
         graph.link(ray, transform, "Direction")
-        sample = graph.node("TextureSampleParameterCube", "Visible sky", parameter_name="Sky", texture=cube, sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+        sample = graph.node(
+            "TextureSampleParameterCube",
+            "Visible sky",
+            parameter_name="Sky",
+            texture=cube,
+            sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR,
+        )
         graph.link(transform, sample, "UVs")
         graph.output(sample, "EMISSIVE_COLOR", "RGB")
     else:
-        node = graph.node("VectorParameter", "Preview background", parameter_name="Background", default_value=color(data["Background"]))
+        node = graph.node(
+            "VectorParameter",
+            "Preview background",
+            parameter_name="Background",
+            default_value=color(data["Background"]),
+        )
         graph.output(node, "EMISSIVE_COLOR")
     unreal.MaterialEditingLibrary.recompile_material(material)
     return material
@@ -115,7 +162,9 @@ def setup_scene(folder, data, imported):
         actor.set_folder_path("Character")
         actor.get_component_by_class(unreal.SkeletalMeshComponent).set_skeletal_mesh_asset(mesh)
     for source in data["Lights"]:
-        actor_class = {0: unreal.SpotLight, 1: unreal.DirectionalLight, 2: unreal.PointLight, 3: unreal.RectLight}.get(source["Type"], unreal.DirectionalLight)
+        actor_class = {0: unreal.SpotLight, 1: unreal.DirectionalLight, 2: unreal.PointLight, 3: unreal.RectLight}.get(
+            source["Type"], unreal.DirectionalLight
+        )
         light = actors.spawn_actor_from_class(actor_class, position(source["Position"]))
         light.set_actor_label(source["Name"])
         light.set_folder_path("Preview/Lights")
@@ -131,7 +180,9 @@ def setup_scene(folder, data, imported):
         if source["Type"] == 0:
             component.set_editor_property("outer_cone_angle", source["SpotAngle"] * 0.5)
     sky_cube = scene_texture(folder, data["EnvironmentTexture"], "PreviewSky") if data["EnvironmentTexture"] else None
-    reflection = scene_texture(folder, data["ReflectionTexture"], "PreviewReflection") if data["ReflectionTexture"] else sky_cube
+    reflection = (
+        scene_texture(folder, data["ReflectionTexture"], "PreviewReflection") if data["ReflectionTexture"] else sky_cube
+    )
     if reflection:
         if not isinstance(reflection, unreal.TextureCube):
             raise RuntimeError("环境贴图没有导入为 TextureCube。")
@@ -185,7 +236,10 @@ def setup_scene(folder, data, imported):
     setting("ambient_occlusion_intensity", data["Post"]["AoIntensity"] if data["Post"]["AmbientOcclusion"] else 0)
     setting("ambient_occlusion_radius", data["Post"]["AoRadius"] * 10)
     setting("vignette_intensity", data["Post"]["VignetteIntensity"] if data["Post"]["Vignette"] else 0)
-    settings.set_editor_property("weighted_blendables", unreal.WeightedBlendables(array=[unreal.WeightedBlendable(weight=1, object=post_material(folder, data))]))
+    settings.set_editor_property(
+        "weighted_blendables",
+        unreal.WeightedBlendables(array=[unreal.WeightedBlendable(weight=1, object=post_material(folder, data))]),
+    )
     post_actor.set_editor_property("settings", settings)
     unreal.EditorLevelLibrary.set_level_viewport_camera_info(position(view["Position"]), rotation)
     if not level.save_current_level():
@@ -219,13 +273,26 @@ def verify(output, expected):
         if unreal.load_asset(path) is None:
             raise RuntimeError("不能加载原生资产：" + path)
         package = path.split(".")[0]
-        dependencies = registry.get_dependencies(package, unreal.AssetRegistryDependencyOptions(include_soft_package_references=True, include_hard_package_references=True))
+        dependencies = registry.get_dependencies(
+            package,
+            unreal.AssetRegistryDependencyOptions(
+                include_soft_package_references=True, include_hard_package_references=True
+            ),
+        )
         for dependency in dependencies:
             dependency = str(dependency)
             if dependency.startswith("/Game/") and not unreal.EditorAssetLibrary.does_asset_exist(dependency):
                 raise RuntimeError("原生资产依赖缺失：" + dependency)
-    return {"Passed": True, "ToolVersion": unreal.SystemLibrary.get_engine_version(), "Meshes": len(manifest["Meshes"]),
-            "Materials": len(materials), "MorphTargets": len(morphs), "Assets": len(assets), "Warnings": manifest["Warnings"], "Reopened": True}
+    return {
+        "Passed": True,
+        "ToolVersion": unreal.SystemLibrary.get_engine_version(),
+        "Meshes": len(manifest["Meshes"]),
+        "Materials": len(materials),
+        "MorphTargets": len(morphs),
+        "Assets": len(assets),
+        "Warnings": manifest["Warnings"],
+        "Reopened": True,
+    }
 
 
 def main(request):
@@ -246,7 +313,9 @@ def main(request):
     if not unreal.EditorAssetLibrary.save_directory(ROOT, only_if_is_dirty=False, recursive=True):
         raise RuntimeError("原生资产保存失败。")
     warnings = list(data["Warnings"])
-    geometry = json.loads(importer.package_path(folder, "model-result.json").read_text(encoding="utf-8-sig"))["Geometry"]
+    geometry = json.loads(importer.package_path(folder, "model-result.json").read_text(encoding="utf-8-sig"))[
+        "Geometry"
+    ]
     expected_morphs = {name.replace(".", "_") for mesh in geometry for name in mesh["BlendShapeNames"]}
     morphs = {m.get_name() for mesh in result["meshes"] for m in mesh.get_editor_property("morph_targets")}
     missing = expected_morphs - morphs
@@ -258,15 +327,21 @@ def main(request):
         for name, distance in zip(mesh["BlendShapeNames"], values):
             key = name.replace(".", "_")
             displacements[key] = max(displacements.get(key, 0), distance)
-    # UE omits channels without positional deltas. Never whitelist by expression name.
+    # UE 会忽略没有位置差量的通道，不得按表情名称设置白名单。
     lost = {name for name in missing if displacements[name] > 1e-7}
     if lost:
         raise RuntimeError("Unreal 导入丢失形变通道：" + ", ".join(sorted(lost)))
     if missing:
         warnings.append("Unreal 省略无位移的默认形变通道：" + ", ".join(sorted(missing)))
     warnings.append("Unreal SkyLight 的漫反射和镜面环境响应采用统一环境源；反射强度与源预览可能存在差异。")
-    manifest = {"Meshes": [m.get_path_name() for m in result["meshes"]], "MorphTargets": sorted(morphs), "Scene": ROOT + "/Preview", "Warnings": warnings,
-                "Camera": data["View"], "ToolVersion": unreal.SystemLibrary.get_engine_version()}
+    manifest = {
+        "Meshes": [m.get_path_name() for m in result["meshes"]],
+        "MorphTargets": sorted(morphs),
+        "Scene": ROOT + "/Preview",
+        "Warnings": warnings,
+        "Camera": data["View"],
+        "ToolVersion": unreal.SystemLibrary.get_engine_version(),
+    }
     (output / "native-assets.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     project = output / "HS2Character.uproject"
     project_data = json.loads(project.read_text(encoding="utf-8-sig"))
@@ -274,7 +349,12 @@ def main(request):
     if version:
         project_data["EngineAssociation"] = version.group(1)
     project.write_text(json.dumps(project_data, indent=2), encoding="utf-8")
-    return {"Passed": True, "ToolVersion": unreal.SystemLibrary.get_engine_version(), "Warnings": warnings, "Reopened": False}
+    return {
+        "Passed": True,
+        "ToolVersion": unreal.SystemLibrary.get_engine_version(),
+        "Warnings": warnings,
+        "Reopened": False,
+    }
 
 
 if __name__ == "__main__":
@@ -282,7 +362,11 @@ if __name__ == "__main__":
     try:
         report = main(request)
     except Exception:
-        report = {"Passed": False, "ToolVersion": unreal.SystemLibrary.get_engine_version(), "Error": traceback.format_exc()}
+        report = {
+            "Passed": False,
+            "ToolVersion": unreal.SystemLibrary.get_engine_version(),
+            "Error": traceback.format_exc(),
+        }
         Path(request["Result"]).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         raise
     Path(request["Result"]).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

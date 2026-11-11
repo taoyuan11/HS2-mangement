@@ -1,76 +1,108 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
-    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
-  </ItemGroup>
-  <PropertyGroup Label="Globals">
-    <ProjectGuid>{69CF2133-589B-4DAF-BB0F-4E3BA64D4AA9}</ProjectGuid>
-    <RootNamespace>HS2Manager.NativeApp</RootNamespace>
-    <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)'==''">10.0.26100.0</WindowsTargetPlatformVersion>
-    <WindowsTargetPlatformMinVersion>10.0.19041.0</WindowsTargetPlatformMinVersion>
-    <AppContainerApplication>false</AppContainerApplication>
-    <WindowsPackageType>None</WindowsPackageType>
-    <AppxPackage>false</AppxPackage>
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <WindowsAppSDKDeploymentManagerInitialize>false</WindowsAppSDKDeploymentManagerInitialize>
-    <CppWinRTGenerateWindowsMetadata>false</CppWinRTGenerateWindowsMetadata>
-    <CppWinRTOptimized>true</CppWinRTOptimized>
-    <CppWinRTUsePrefixes>true</CppWinRTUsePrefixes>
-    <NativePackageRoot Condition="'$(NativePackageRoot)'==''">$(USERPROFILE)\.nuget\packages\</NativePackageRoot>
-    <NativeBuildRoot Condition="'$(NativeBuildRoot)'==''">$(LOCALAPPDATA)\HS2Manager\CppMigration</NativeBuildRoot>
-  </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v143</PlatformToolset>
-    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
-    <UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <Import Project="NativePackages.props" />
-  <PropertyGroup>
-    <TargetName>HS2Manager</TargetName>
-    <OutDir Condition="'$(NativeBuildRoot)'!=''">$(NativeBuildRoot)\bin\$(Configuration)\</OutDir>
-    <IntDir Condition="'$(NativeBuildRoot)'!=''">$(NativeBuildRoot)\obj\$(Configuration)\</IntDir>
-  </PropertyGroup>
-  <ItemDefinitionGroup>
-    <ClCompile>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalOptions>/utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <WarningLevel>Level4</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <ConformanceMode>true</ConformanceMode>
-      <ExceptionHandling>Sync</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\HS2Manager.NativeCore;$(ProjectDir)..\HS2Manager.NativeScene;$(ProjectDir)..\HS2Manager.NativeRendering;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-    <Link><SubSystem>Windows</SubSystem><AdditionalDependencies>$(NativeBuildRoot)\modules\src\HS2Manager.NativeExport\$(Configuration)\hs2_model_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeExport\$(Configuration)\hs2_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_core.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_card_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_core_components.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeScene\$(Configuration)\hs2_scene.lib;$(NativeBuildRoot)\modules\$(Configuration)\hs2_character.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeRendering\$(Configuration)\hs2_rendering.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeScene\$(Configuration)\hs2_archive.lib;windowsapp.lib;runtimeobject.lib;shcore.lib;shell32.lib;comctl32.lib;dwmapi.lib;bcrypt.lib;winsqlite3.lib;ole32.lib;xmllite.lib;shlwapi.lib;mpr.lib;d3d11.lib;dxgi.lib;d3dcompiler.lib;windowscodecs.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
-    <Manifest><AdditionalManifestFiles>app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles></Manifest>
-  </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="pch.cpp"><PrecompiledHeader>Create</PrecompiledHeader><PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile></ClCompile>
-    <ClCompile Include="DataLocation.cpp;NativePreviewWorker.cpp" />
-    <ClCompile Include="Main.cpp;NativeWindow.cpp;NativeActions.cpp;NativeEditor.cpp;NativePreview.cpp;NativeCardExport.cpp;NativeEditorAssets.cpp;NativeEditorBackups.cpp;NativeModelExport.cpp"><PrecompiledHeader>Use</PrecompiledHeader><PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile><ForcedIncludeFiles>pch.h</ForcedIncludeFiles></ClCompile>
-    <ClInclude Include="*.h" />
-    <ResourceCompile Include="NativeApp.rc" />
-    <None Include="*.xaml" />
-    <Manifest Include="app.manifest" />
-  </ItemGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <Import Project="NativePackages.targets" />
-  <Target Name="BuildNativeModules" BeforeTargets="ClCompile" Condition="'$(NativeModulesBuilt)'!='true'">
-    <Exec Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; -S &quot;$(ProjectDir)..\..&quot; -B &quot;$(NativeBuildRoot)\modules&quot; -G &quot;Visual Studio 17 2022&quot; -A x64 -DBUILD_TESTING=ON" />
-    <Exec Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; --build &quot;$(NativeBuildRoot)\modules&quot; --config $(Configuration) --target hs2_core hs2_archive hs2_character hs2_rendering hs2_card_export hs2_core_components hs2_model_export -- /m:1 /nr:false /v:minimal" />
-  </Target>
-  <Target Name="CopyNativeUiResources" AfterTargets="Build">
-    <ItemGroup><_UiFiles Include="$(ProjectDir)*.xaml" /><_Brand Include="$(ProjectDir)Assets\Brand\*.png;$(ProjectDir)Assets\Brand\*.ico" /></ItemGroup>
-    <Copy SourceFiles="@(_UiFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_Brand)" DestinationFolder="$(OutDir)Assets\Brand" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(ProjectDir)..\HS2Manager.NativeScene\Resources\classdata.tpk" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-    <MakeDir Directories="$(IntDir)PriInput" />
-    <Copy SourceFiles="$(OutDir)Microsoft.UI.Xaml.Controls.pri" DestinationFolder="$(IntDir)PriInput" SkipUnchangedFiles="true" />
-    <Exec Command="&quot;$(WindowsSdkDir)bin\$(WindowsTargetPlatformVersion)\x64\makepri.exe&quot; new /pr &quot;$(IntDir)PriInput&quot; /cf &quot;$(ProjectDir)priconfig.xml&quot; /of &quot;$(OutDir)resources.pri&quot; /in HS2Manager /o" StandardOutputImportance="Low" />
-  </Target>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+    <ItemGroup Label="ProjectConfigurations">
+        <ProjectConfiguration Include="Debug|x64">
+            <Configuration>Debug</Configuration>
+            <Platform>x64</Platform>
+        </ProjectConfiguration>
+        <ProjectConfiguration Include="Release|x64">
+            <Configuration>Release</Configuration>
+            <Platform>x64</Platform>
+        </ProjectConfiguration>
+    </ItemGroup>
+    <PropertyGroup Label="Globals">
+        <ProjectGuid>{69CF2133-589B-4DAF-BB0F-4E3BA64D4AA9}</ProjectGuid>
+        <RootNamespace>HS2Manager.NativeApp</RootNamespace>
+        <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)'==''">10.0.26100.0</WindowsTargetPlatformVersion>
+        <WindowsTargetPlatformMinVersion>10.0.19041.0</WindowsTargetPlatformMinVersion>
+        <AppContainerApplication>false</AppContainerApplication>
+        <WindowsPackageType>None</WindowsPackageType>
+        <AppxPackage>false</AppxPackage>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+        <WindowsAppSDKDeploymentManagerInitialize>false</WindowsAppSDKDeploymentManagerInitialize>
+        <CppWinRTGenerateWindowsMetadata>false</CppWinRTGenerateWindowsMetadata>
+        <CppWinRTOptimized>true</CppWinRTOptimized>
+        <CppWinRTUsePrefixes>true</CppWinRTUsePrefixes>
+        <NativePackageRoot Condition="'$(NativePackageRoot)'==''">$(USERPROFILE)\.nuget\packages\</NativePackageRoot>
+        <NativeBuildRoot Condition="'$(NativeBuildRoot)'==''">$(LOCALAPPDATA)\HS2Manager\CppMigration</NativeBuildRoot>
+    </PropertyGroup>
+    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+    <PropertyGroup Label="Configuration">
+        <ConfigurationType>Application</ConfigurationType>
+        <PlatformToolset>v143</PlatformToolset>
+        <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+        <UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries>
+        <CharacterSet>Unicode</CharacterSet>
+    </PropertyGroup>
+    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
+    <Import Project="NativePackages.props"/>
+    <PropertyGroup>
+        <TargetName>HS2Manager</TargetName>
+        <OutDir Condition="'$(NativeBuildRoot)'!=''">$(NativeBuildRoot)\bin\$(Configuration)\</OutDir>
+        <IntDir Condition="'$(NativeBuildRoot)'!=''">$(NativeBuildRoot)\obj\$(Configuration)\</IntDir>
+    </PropertyGroup>
+    <ItemDefinitionGroup>
+        <ClCompile>
+            <LanguageStandard>stdcpp20</LanguageStandard>
+            <AdditionalOptions>/utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
+            <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+            <WarningLevel>Level4</WarningLevel>
+            <SDLCheck>true</SDLCheck>
+            <ConformanceMode>true</ConformanceMode>
+            <ExceptionHandling>Sync</ExceptionHandling>
+            <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\HS2Manager.NativeCore;$(ProjectDir)..\HS2Manager.NativeScene;$(ProjectDir)..\HS2Manager.NativeRendering;$(ProjectDir)..\HS2Manager.NativeExport;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+        </ClCompile>
+        <Link>
+            <SubSystem>Windows</SubSystem>
+            <AdditionalDependencies>$(NativeBuildRoot)\modules\src\HS2Manager.NativeExport\$(Configuration)\hs2_model_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeExport\$(Configuration)\hs2_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_core.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_card_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_core_components.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeScene\$(Configuration)\hs2_scene.lib;$(NativeBuildRoot)\modules\$(Configuration)\hs2_character.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeRendering\$(Configuration)\hs2_rendering.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeScene\$(Configuration)\hs2_archive.lib;windowsapp.lib;runtimeobject.lib;shcore.lib;shell32.lib;comctl32.lib;dwmapi.lib;bcrypt.lib;winsqlite3.lib;ole32.lib;xmllite.lib;shlwapi.lib;mpr.lib;d3d11.lib;dxgi.lib;d3dcompiler.lib;windowscodecs.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+        </Link>
+        <Manifest>
+            <AdditionalManifestFiles>app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
+        </Manifest>
+    </ItemDefinitionGroup>
+    <ItemGroup>
+        <ClCompile Include="pch.cpp">
+            <PrecompiledHeader>Create</PrecompiledHeader>
+            <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+        </ClCompile>
+        <ClCompile Include="Infrastructure/DataLocation.cpp;Preview/NativePreviewWorker.cpp"/>
+        <ClCompile
+            Include="Application/Main.cpp;Application/NativeWindow.cpp;Application/NativeActions.cpp;Editor/NativeEditor.cpp;Preview/NativePreview.cpp;Export/NativeCardExport.cpp;Editor/NativeEditorAssets.cpp;Editor/NativeEditorBackups.cpp;Export/NativeModelExport.cpp">
+            <PrecompiledHeader>Use</PrecompiledHeader>
+            <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+            <ForcedIncludeFiles>pch.h</ForcedIncludeFiles>
+        </ClCompile>
+        <ClInclude Include="**\*.h"/>
+        <ResourceCompile Include="NativeApp.rc"/>
+        <None Include="Views\*.xaml"/>
+        <Manifest Include="app.manifest"/>
+    </ItemGroup>
+    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
+    <Import Project="NativePackages.targets"/>
+    <Target Name="BuildNativeModules" BeforeTargets="ClCompile" Condition="'$(NativeModulesBuilt)'!='true'">
+        <Exec
+            Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; -S &quot;$(ProjectDir)..\..&quot; -B &quot;$(NativeBuildRoot)\modules&quot; -G &quot;Visual Studio 17 2022&quot; -A x64 -DBUILD_TESTING=ON"/>
+        <Exec
+            Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; --build &quot;$(NativeBuildRoot)\modules&quot; --config $(Configuration) --target hs2_core hs2_archive hs2_character hs2_rendering hs2_card_export hs2_core_components hs2_model_export -- /m:1 /nr:false /v:minimal"/>
+    </Target>
+    <Target Name="CopyNativeUiResources" AfterTargets="Build">
+        <ItemGroup>
+            <_UiFiles Include="$(ProjectDir)Views\*.xaml"/>
+            <_Brand Include="$(ProjectDir)Assets\Brand\*.png;$(ProjectDir)Assets\Brand\*.ico"/>
+        </ItemGroup>
+        <Copy SourceFiles="@(_UiFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true"/>
+        <Copy SourceFiles="@(_Brand)" DestinationFolder="$(OutDir)Assets\Brand" SkipUnchangedFiles="true"/>
+        <Copy
+            SourceFiles="$(ProjectDir)..\HS2Manager.NativeScene\Resources\classdata.tpk"
+            DestinationFolder="$(OutDir)"
+            SkipUnchangedFiles="true"/>
+        <MakeDir Directories="$(IntDir)PriInput"/>
+        <Copy
+            SourceFiles="$(OutDir)Microsoft.UI.Xaml.Controls.pri"
+            DestinationFolder="$(IntDir)PriInput"
+            SkipUnchangedFiles="true"/>
+        <Exec
+            Command="&quot;$(WindowsSdkDir)bin\$(WindowsTargetPlatformVersion)\x64\makepri.exe&quot; new /pr &quot;$(IntDir)PriInput&quot; /cf &quot;$(ProjectDir)priconfig.xml&quot; /of &quot;$(OutDir)resources.pri&quot; /in HS2Manager /o"
+            StandardOutputImportance="Low"/>
+    </Target>
 </Project>

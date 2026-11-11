@@ -1,4 +1,5 @@
-"""Internal native exporter. Request/result files belong to one owned process run."""
+"""内部原生导出器，请求和结果文件仅属于一次受控进程运行。"""
+
 import json
 import math
 import sys
@@ -47,7 +48,9 @@ def setup_world(scene, data, folder):
             links.new(env.outputs["Color"], node.inputs["Color"])
         return node
 
-    environment = background("HS2 ambient illumination", data["AmbientIntensity"], data["AmbientSky"], data["EnvironmentTexture"])
+    environment = background(
+        "HS2 ambient illumination", data["AmbientIntensity"], data["AmbientSky"], data["EnvironmentTexture"]
+    )
     if not data["EnvironmentTexture"] and data["AmbientMode"] == 1:
         separate = nodes.new("ShaderNodeSeparateXYZ")
         links.new(coordinates.outputs["Normal"], separate.inputs[0])
@@ -62,8 +65,15 @@ def setup_world(scene, data, folder):
         ramp.color_ramp.elements.new(0.5).color = data["AmbientEquator"]
         links.new(remap.outputs[0], ramp.inputs[0])
         links.new(ramp.outputs[0], environment.inputs["Color"])
-    reflection = background("HS2 reflections", data["ReflectionIntensity"], data["AmbientSky"], data["ReflectionTexture"] or data["EnvironmentTexture"])
-    backdrop = background("HS2 visible background", 1, data["Background"], data["EnvironmentTexture"] if data["SkyBackground"] else "")
+    reflection = background(
+        "HS2 reflections",
+        data["ReflectionIntensity"],
+        data["AmbientSky"],
+        data["ReflectionTexture"] or data["EnvironmentTexture"],
+    )
+    backdrop = background(
+        "HS2 visible background", 1, data["Background"], data["EnvironmentTexture"] if data["SkyBackground"] else ""
+    )
     rays = nodes.new("ShaderNodeLightPath")
     gloss = nodes.new("ShaderNodeMixShader")
     links.new(rays.outputs["Is Glossy Ray"], gloss.inputs[0])
@@ -127,14 +137,18 @@ def setup_compositor(scene, data, folder):
         return node.outputs[0]
 
     def srgb(value, inverse=False):
-        # Match Unity's full precision piecewise sRGB conversion.
+        # 匹配 Unity 全精度的分段 sRGB 转换。
         if inverse:
             low = math_node("DIVIDE", value, 12.92)
             high = math_node("POWER", math_node("DIVIDE", math_node("ADD", value, 0.055), 1.055), 2.4)
             select = math_node("GREATER_THAN", value, 0.04045)
         else:
             low = math_node("MULTIPLY", value, 12.92)
-            high = math_node("SUBTRACT", math_node("MULTIPLY", math_node("POWER", math_node("MAXIMUM", value, 0), 1 / 2.4), 1.055), 0.055)
+            high = math_node(
+                "SUBTRACT",
+                math_node("MULTIPLY", math_node("POWER", math_node("MAXIMUM", value, 0), 1 / 2.4), 1.055),
+                0.055,
+            )
             select = math_node("GREATER_THAN", value, 0.0031308)
         return math_node("ADD", low, math_node("MULTIPLY", select, math_node("SUBTRACT", high, low)))
 
@@ -152,7 +166,7 @@ def setup_compositor(scene, data, folder):
         links.new(color, glare.inputs["Image"])
         color = glare.outputs["Image"]
     if data["LutTexture"]:
-        # Map the evaluated Unity LUT directly, including tone mapping and blended profiles.
+        # 直接映射已求值的 Unity LUT，包含色调映射与混合后的配置。
         channels = separate(color)
         xyz = []
         for channel in channels[:3]:
@@ -160,7 +174,9 @@ def setup_compositor(scene, data, folder):
                 channel = math_node("MULTIPLY", channel, 2 ** post["Exposure"])
                 channel = math_node("MAXIMUM", channel, 0)
                 channel = math_node("ADD", math_node("MULTIPLY", channel, 5.555556), 0.047996)
-                channel = math_node("ADD", math_node("MULTIPLY", math_node("LOGARITHM", channel, 10), 0.244161), 0.386036)
+                channel = math_node(
+                    "ADD", math_node("MULTIPLY", math_node("LOGARITHM", channel, 10), 0.244161), 0.386036
+                )
             else:
                 channel = srgb(channel)
             xyz.append(math_node("MINIMUM", math_node("MAXIMUM", channel, 0), 1))
@@ -174,7 +190,15 @@ def setup_compositor(scene, data, folder):
         lut.image = image(folder, data["LutTexture"])
         sampled = []
         for shift in (lower, upper):
-            x = math_node("DIVIDE", math_node("ADD", math_node("ADD", math_node("MULTIPLY", shift, size), math_node("MULTIPLY", xyz[0], size - 1)), 0.5), size * size)
+            x = math_node(
+                "DIVIDE",
+                math_node(
+                    "ADD",
+                    math_node("ADD", math_node("MULTIPLY", shift, size), math_node("MULTIPLY", xyz[0], size - 1)),
+                    0.5,
+                ),
+                size * size,
+            )
             y = math_node("DIVIDE", math_node("ADD", math_node("MULTIPLY", xyz[1], size - 1), 0.5), size)
             uv = combine(x, y, 1)
             lookup = nodes.new("CompositorNodeMapUV")
@@ -192,7 +216,7 @@ def setup_compositor(scene, data, folder):
     links.new(color, output.inputs["Image"])
     for i, node in enumerate(nodes):
         node.location = ((i % 10) * 200, -(i // 10) * 200)
-    # Source LUT already includes the source tone curve; Standard applies only display sRGB.
+    # 源 LUT 已包含原始色调曲线，Standard 只应用显示用的 sRGB 转换。
     scene.view_settings.view_transform = "Standard"
     scene.view_settings.look = "None"
     scene.view_settings.exposure = 0
@@ -249,8 +273,8 @@ def setup_scene(data, folder):
         scene.eevee.gtao_distance = data["Post"]["AoRadius"] * 0.1
         scene.eevee.gtao_factor = data["Post"]["AoIntensity"]
     setup_world(scene, data, folder)
-    # Eevee needs an irradiance volume for diffuse illumination from the world.
-    # Bake only the environment: direct lights remain evaluated dynamically.
+    # Eevee 需要辐照体积提供世界环境的漫反射照明；
+    # 只烘焙环境，直射灯光仍动态求值。
     if bpy.app.version >= (4, 2, 0):
         probe_data = bpy.data.lightprobes.new("HS2 Environment Irradiance", "VOLUME")
         probe_data.resolution_x = probe_data.resolution_y = probe_data.resolution_z = 3
@@ -300,6 +324,7 @@ def check_scene(expected):
     data = json.loads(scene["HS2_ExportScene"])
     expected_geometry = json.loads(scene["HS2_ExportGeometry"])
     from mathutils.kdtree import KDTree
+
     max_error = 0.0
     shapes = 0
     depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -316,7 +341,7 @@ def check_scene(expected):
             tree.balance()
             reference = source["ReferencePositions"]
             for i in range(0, len(reference), 3):
-                # Diagnostic samples are Unity's left-handed Y-up meters.
+                # 诊断样本采用 Unity 左手坐标系，以 Y 轴向上、米为单位。
                 p = Vector((-reference[i], -reference[i + 2], reference[i + 1]))
                 max_error = max(max_error, tree.find(p)[2])
         finally:
@@ -329,17 +354,25 @@ def check_scene(expected):
             raise RuntimeError("形变通道名称不匹配：" + obj.name)
         if any(abs(block.value) > 1e-6 for block in list(blocks)[1:]):
             raise RuntimeError("默认表情被重复叠加：" + obj.name)
-    if max_error > .002:
+    if max_error > 0.002:
         raise RuntimeError("原生参考形态偏差超过 2 毫米：" + str(max_error * 1000))
     warnings = list(data["Warnings"])
     if data["Post"]["Vignette"]:
         warnings.append("Blender 预览未迁移源暗角；调色 LUT 已应用。")
     if data["Post"]["AmbientOcclusion"] and not hasattr(scene.eevee, "use_gtao"):
         warnings.append("Blender Eevee 使用自身遮蔽实现，源屏幕空间 AO 半径与强度未逐项等价迁移。")
-    return {"Passed": True, "ToolVersion": bpy.app.version_string, "Meshes": len(meshes),
-            "Bones": sum(len(o.data.bones) for o in rigs), "Materials": len(materials),
-            "PackedImages": len(images), "BlendShapes": shapes, "MaximumReferenceErrorMm": max_error * 1000,
-            "Warnings": warnings, "Reopened": True}
+    return {
+        "Passed": True,
+        "ToolVersion": bpy.app.version_string,
+        "Meshes": len(meshes),
+        "Bones": sum(len(o.data.bones) for o in rigs),
+        "Materials": len(materials),
+        "PackedImages": len(images),
+        "BlendShapes": shapes,
+        "MaximumReferenceErrorMm": max_error * 1000,
+        "Warnings": warnings,
+        "Reopened": True,
+    }
 
 
 def main(request):
@@ -359,7 +392,9 @@ def main(request):
             del collection["HS2_Package"]
         data = json.loads(importer.package_path(folder, "scene.json").read_text(encoding="utf-8-sig"))
         setup_scene(data, folder)
-        bpy.context.scene["HS2_ExportGeometry"] = json.dumps(json.loads(importer.package_path(folder, "model-result.json").read_text(encoding="utf-8-sig"))["Geometry"])
+        bpy.context.scene["HS2_ExportGeometry"] = json.dumps(
+            json.loads(importer.package_path(folder, "model-result.json").read_text(encoding="utf-8-sig"))["Geometry"]
+        )
         bpy.ops.file.pack_all()
         for img in bpy.data.images:
             if img.source == "FILE" and img.packed_file:
@@ -370,7 +405,11 @@ def main(request):
         return report
     if request["Mode"] == "verify":
         bpy.ops.wm.open_mainfile(filepath=str(output / "character.blend"))
-        tree = bpy.context.scene.compositing_node_group if hasattr(bpy.context.scene, "compositing_node_group") else bpy.context.scene.node_tree
+        tree = (
+            bpy.context.scene.compositing_node_group
+            if hasattr(bpy.context.scene, "compositing_node_group")
+            else bpy.context.scene.node_tree
+        )
         for node in tree.nodes:
             if node.type == "R_LAYERS":
                 node.scene = bpy.context.scene

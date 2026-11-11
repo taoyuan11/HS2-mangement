@@ -100,7 +100,7 @@ MOD 清单同时保存归档资源目录和条目长度，人物 CSV 清单和�
 .\tests\Invoke-UnityCharacter.ps1 -PlayerDirectory artifacts\unity-preview\loading-performance-release -Definition artifacts\preview-performance\release\stock-female.json -PrimeDefinition artifacts\preview-performance\release\stock-male.json -OutputPath artifacts\preview-performance\new-visual\stock-female
 
 # Python 环境需要 numpy、Pillow、scikit-image；本机位于 .tools/image-compare。
-.\.tools\image-compare\Scripts\python.exe tests\Compare-PreviewPerformance.py --before artifacts\preview-performance\before --after artifacts\preview-performance\release --reference artifacts\preview-performance\before-visual --actual artifacts\preview-performance\release-visual --output artifacts\preview-performance\release-comparison.json
+.\.tools\image-compare\Scripts\python.exe tests\performance\Compare-PreviewPerformance.py --before artifacts\preview-performance\before --after artifacts\preview-performance\release --reference artifacts\preview-performance\before-visual --actual artifacts\preview-performance\release-visual --output artifacts\preview-performance\release-comparison.json
 
 .\build.ps1 -UnityPlayerDirectory artifacts\unity-preview\loading-performance-release -PreviewTest
 .\tests\Test-SourceLaunch.ps1

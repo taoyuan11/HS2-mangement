@@ -36,7 +36,7 @@ function Assert-DesktopInstallation {
 
 function Remove-DesktopBuildDirectory([string]$Path) {
     $resolved = [IO.Path]::GetFullPath($Path)
-    # Only remove this invocation's generated directories under the real desktop.
+    # 仅清理本次调用在实际桌面目录下生成的目录。
     if ([IO.Path]::GetDirectoryName($resolved) -ne $desktop -or $resolved -notin @($staging, $backup)) {
         throw '临时构建目录超出指定桌面目录。'
     }
@@ -50,33 +50,39 @@ function Remove-DesktopBuildDirectory([string]$Path) {
 
 Assert-DesktopInstallation
 try {
-    # Finish the complete portable build before touching the installed version.
+    # 完整构建便携版本成功后，再调整已安装版本。
     & (Join-Path $PSScriptRoot 'build.ps1') @PSBoundParameters `
         -OutputDirectory $staging -SkipArchive
 
     Assert-DesktopInstallation
     if (Test-Path -LiteralPath $output) {
-        # All rename targets are siblings on the desktop; Directory.Move refuses
-        # an existing destination instead of nesting one installation in another.
+        # 所有重命名目标均为桌面下的同级目录；
+        # Directory.Move 在目标已存在时拒绝操作，避免将安装目录嵌入另一安装目录。
         [IO.Directory]::Move($output, $backup)
         try {
             $oldData = Join-Path $backup 'Data'
             if (Test-Path -LiteralPath $oldData) {
-                # The new build contains only a generated Data/README.txt.
+                # 新构建的数据目录仅包含自动生成的 Data/README.txt。
                 $newData = [IO.Path]::GetFullPath((Join-Path $staging 'Data'))
-                if ([IO.Path]::GetDirectoryName($newData) -ne $staging) { throw '数据目录超出临时构建目录。' }
+                if ([IO.Path]::GetDirectoryName($newData) -ne $staging) {
+                    throw '数据目录超出临时构建目录。'
+                }
                 Remove-Item -LiteralPath $newData -Recurse -Force
                 Copy-Item -LiteralPath $oldData -Destination $staging -Recurse -Force
             }
             [IO.Directory]::Move($staging, $output)
         }
         catch {
-            # Keep the complete original installation until the replacement works.
+            # 替换版本确认可用前，保留完整的原安装目录。
             [IO.Directory]::Move($backup, $output)
             throw
         }
-        try { Remove-DesktopBuildDirectory $backup }
-        catch { Write-Warning "新版本已发布，旧版本清理失败，保留在：$backup。$($_.Exception.Message)" }
+        try {
+            Remove-DesktopBuildDirectory $backup
+        }
+        catch {
+            Write-Warning "新版本已发布，旧版本清理失败，保留在：$backup。$($_.Exception.Message)"
+        }
     }
     else {
         [IO.Directory]::Move($staging, $output)

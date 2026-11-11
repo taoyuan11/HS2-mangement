@@ -6,7 +6,7 @@ if errorlevel 1 goto directory_error
 
 set "MSBUILDDISABLENODEREUSE=1"
 echo Building and starting HS2 Manager (C++ / WinUI 3)...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Start-CppSource.ps1" %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\development\Start-CppSource.ps1" %*
 set "HS2_EXIT_CODE=%ERRORLEVEL%"
 popd
 if not "%HS2_EXIT_CODE%"=="0" (

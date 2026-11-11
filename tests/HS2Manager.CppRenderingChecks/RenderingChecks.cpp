@@ -1,15 +1,15 @@
-#include "GraphicsDevice.h"
-#include "GpuResources.h"
-#include "ShaderMetadata.h"
-#include "NativeMaterialPass.h"
-#include "NativeGpuMeshDeformer.h"
-#include "NativeAntialiasing.h"
-#include "NativePostSettings.h"
-#include "NativePostProcessor.h"
-#include "NativeScreenEffects.h"
-#include "NativeMotion.h"
-#include "NativeFramePipeline.h"
-#include "../HS2Manager.NativeScene/AssetReader.h"
+#include "Device/GraphicsDevice.h"
+#include "Device/GpuResources.h"
+#include "Shaders/ShaderMetadata.h"
+#include "Materials/NativeMaterialPass.h"
+#include "Geometry/NativeGpuMeshDeformer.h"
+#include "PostProcessing/NativeAntialiasing.h"
+#include "PostProcessing/NativePostSettings.h"
+#include "PostProcessing/NativePostProcessor.h"
+#include "PostProcessing/NativeScreenEffects.h"
+#include "PostProcessing/NativeMotion.h"
+#include "Pipeline/NativeFramePipeline.h"
+#include "Assets/AssetReader.h"
 #include <d3dcompiler.h>
 #include <cstring>
 #include <future>
@@ -17,75 +17,498 @@
 #include <stdexcept>
 
 using namespace hs2;
-namespace {
-void Require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
-template<class F>void Reject(F f,const char* message){bool rejected=false;try{f();}catch(const std::exception&){rejected=true;}Require(rejected,message);}
-Parameter Text(std::string name,std::string text){Parameter p;p.Name=std::move(name);p.Text=std::move(text);return p;}
-Parameter Number(std::string name,double n){Parameter p;p.Name=std::move(name);p.Number=n;p.Integer=static_cast<std::int64_t>(n);return p;}
-Parameter Tree(std::string name,std::vector<Parameter> children){Parameter p;p.Name=std::move(name);p.Children=std::move(children);return p;}
-std::vector<std::uint8_t> Compile(const char* source,const char* entry,const char* target){ComPtr<ID3DBlob> blob,error;auto result=D3DCompile(source,std::strlen(source),"native-rendering-check",nullptr,nullptr,entry,target,D3DCOMPILE_ENABLE_STRICTNESS,0,&blob,&error);if(FAILED(result))throw std::runtime_error(error?static_cast<const char*>(error->GetBufferPointer()):"Compile failed");auto* bytes=static_cast<std::uint8_t*>(blob->GetBufferPointer());return {bytes,bytes+blob->GetBufferSize()};}
-void TextureChecks(){
-    GpuTextureData rgb;rgb.Name="RGB24";rgb.Width=2;rgb.Height=1;rgb.Format=3;rgb.Bytes={1,2,3,11,22,33};rgb.Srgb=false;
-    auto layout=TextureLayout(rgb);Require(layout.Format==DXGI_FORMAT_R8G8B8A8_UNORM&&layout.Levels.size()==1,"RGB upload format");Require(layout.Levels[0].Bytes==std::vector<std::uint8_t>({1,2,3,255,11,22,33,255}),"RGB upload expands alpha without changing channels");
-    auto truncated=rgb;truncated.Bytes.pop_back();Reject([&]{TextureLayout(truncated);},"Truncated texture accepted");
-    auto trailing=rgb;trailing.Bytes.push_back(9);Reject([&]{TextureLayout(trailing);},"Unknown trailing texture bytes accepted");
-    GpuTextureData bc;bc.Name="BC1 chain";bc.Width=4;bc.Height=4;bc.MipCount=0;bc.Format=10;bc.Bytes.resize(24);bc.Bytes[16]=91;
-    auto implicit=TextureLayout(bc);Require(implicit.Levels.size()==3&&implicit.Levels[2].Bytes[0]==91,"Implicit BC chain lost mip data");
-    bc.MipCount=1;bc.Bytes.resize(32);std::fill(bc.Bytes.begin()+8,bc.Bytes.end(),0);Require(TextureLayout(bc).Levels.size()==1,"BC alignment padding rejected");bc.Bytes.back()=1;Reject([&]{TextureLayout(bc);},"Nonzero BC padding accepted");
-    Require(EffectiveAnisotropy(1,2)==9&&EffectiveAnisotropy(8,0)==0,"Anisotropy quality behavior changed");
-}
-void PostChecks(){
-    NativeSeededRandom random(1979);const double oracle[]{.6059400502619986,.4927695703193404,.06525584453030296,.9617208200328614,.6963121498452091,.0026442194369827488};for(double expected:oracle)Require(random.NextDouble()==expected,"Seeded dithering differs from independent System.Random oracle");
-    EnvironmentDefinition environment;auto overrideValue=[](std::string name,Parameter value){return Tree(std::move(name),{Number("overrideState",1),std::move(value)});};
-    PostProfile first;first.Weight=.5f;first.Priority=2;first.Effects={Tree("Bloom",{Number("active",1),overrideValue("enabled",Number("value",1)),overrideValue("intensity",Number("value",8)),overrideValue("threshold",Number("value",3))})};
-    PostProfile second;second.Weight=.5f;second.Priority=1;second.Effects={Tree("Bloom",{Number("active",1),overrideValue("intensity",Number("value",4))})};environment.Profiles={first,second};NativePostSettings settings(environment);Require(settings.Enabled("Bloom")&&settings.Scalar("Bloom","intensity")==5&&settings.Scalar("Bloom","threshold")==2,"Post volume priority/weight/discrete override mismatch");Require(settings.GradingCurves().at("masterCurve")[127]==127.f/128&&settings.GradingCurves().at("hueVsHueCurve")[30]==.5f,"Default grading curves changed");settings.ValidateCoverage();
-    environment.DhhEnabled=true;environment.DhhFloats[45]=1;environment.DhhBools[6]=true;NativePostSettings animated(environment);Require(animated.Enabled("MotionBlur"),"DHH motion blur not enabled");animated.UseStaticReference();Require(!animated.Enabled("MotionBlur"),"Static reference retained motion blur");
-}
-void ConstantsChecks(){
-    ShaderBuffer b{"fixture",0,64,{{"array",0,3,2,false,0},{"enabled",32,1,1,false,2},{"integer",36,1,1,false,1}}};
-    auto packed=PackShaderBuffer(b,{{"array",{1,2,3,9,4,5,6,9}},{"enabled",{-1}},{"integer",{-7}}});
-    float element=0;std::memcpy(&element,packed.data()+16,4);Require(element==4,"Constant array stride differs from HLSL");
-    std::int32_t enabled=0,integer=0;std::memcpy(&enabled,packed.data()+32,4);std::memcpy(&integer,packed.data()+36,4);Require(enabled==1&&integer==-7,"Integer/bool shader packing");
-    Reject([&]{PackShaderBuffer(b,{});},"Missing constants silently zero filled");
-    b.Constants[0].Offset=60;Reject([&]{PackShaderBuffer(b,{{"array",{1,2,3,4,5,6}},{"enabled",{1}},{"integer",{1}}});},"Out-of-bounds shader constant accepted");
-    std::vector<std::uint8_t> invalid(32);Reject([&]{ValidateShaderBytecode(invalid);},"Invalid DXBC accepted");
-}
-void GpuChecks(){
-    GraphicsDevice graphics(true);auto pixels=graphics.ClearAndReadback(7,3,{0.25f,0.5f,1.f,1.f});Require(pixels.size()==84,"BGRA readback length");
-    for(size_t i=0;i<pixels.size();i+=4)Require(pixels[i]==255&&pixels[i+1]==128&&pixels[i+2]==64&&pixels[i+3]==255,"BGRA readback row or channel ordering");
-    auto other=std::async(std::launch::async,[&]{bool rejected=false;try{graphics.VerifyThread();}catch(...){rejected=true;}return rejected;});Require(other.get(),"Cross-thread graphics access accepted");
-    const char* code="RWTexture2D<float4> outputImage:register(u0); cbuffer Constants:register(b0){float4 color;} [numthreads(4,4,1)] void CS(uint3 id:SV_DispatchThreadID){uint w,h;outputImage.GetDimensions(w,h);if(id.x<w&&id.y<h)outputImage[id.xy]=color;}";
-    NativeComputeKernel kernel;kernel.Name="known compute";kernel.Program={0,NativeShaderStage::Compute,Compile(code,"CS","cs_5_0")};kernel.GroupSize={4,4,1};
-    Require(ValidateShaderBytecode(kernel.Program.Bytecode)==NativeShaderStage::Compute,"Compiled DXBC stage detection");
-    kernel.Metadata=Tree("kernel",{Tree("cbs",{Tree("binding",{Text("name","Constants"),Number("bindPoint",0)})}),Tree("outBuffers",{Tree("output",{Text("name","outputImage"),Number("bindPoint",0)})})});
-    kernel.ConstantBuffers=Tree("constantBuffers",{Tree("buffer",{Text("name","Constants"),Number("byteSize",16),Tree("params",{Tree("parameter",{Text("name","color"),Number("offset",0),Number("rowCount",1),Number("colCount",4),Number("arraySize",1),Number("type",0)})})})});
-    NativeComputePass pass(graphics,kernel);GpuComputeImage output(graphics,7,5,DXGI_FORMAT_R32G32B32A32_FLOAT);
-    pass.Dispatch(7,5,1,{{"color",{.125f,.25f,.5f,1.f}}},{},{{"outputImage",output.Output.Get()}});
-    auto data=graphics.ReadbackFloat(output.Texture.Get());Require(data.size()==140,"Compute readback length");for(size_t i=0;i<data.size();i+=4)Require(data[i]==.125f&&data[i+1]==.25f&&data[i+2]==.5f&&data[i+3]==1.f,"Compute bindings/group rounding/output mismatch");
-    GpuTexture target(graphics,4,4,true,DXGI_FORMAT_B8G8R8A8_UNORM,false);const float clear[]{.1f,.2f,.3f,1};graphics.Context()->ClearRenderTargetView(target.Target.Get(),clear);Require(graphics.Readback(target.Texture.Get()).size()==64,"Render-target resource construction");
-    GpuDepthSurface depth(graphics,4,4);GpuVolume volume(graphics,2,2,2);Require(depth.Depth&&depth.ReadOnlyDepth&&volume.Output,"Depth/volume resource construction");
-    GpuTexture encoded(graphics,4,4,true,DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,false);const float gray[]{.25f,.25f,.25f,1};graphics.Context()->ClearRenderTargetView(encoded.Target.Get(),gray);graphics.Context()->ClearState();graphics.Context()->CopyResource(target.Texture.Get(),encoded.Texture.Get());auto encodedBytes=graphics.Readback(encoded.Texture.Get()),presentBytes=graphics.Readback(target.Texture.Get());Require(encodedBytes==presentBytes&&encodedBytes[0]>=136&&encodedBytes[0]<=138,"sRGB output transfer to UNORM composition changed encoded pixels");
-    GpuCopyPass copier(graphics);GpuTexture copyTarget(graphics,4,4,true,DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,false);copier.Copy(encoded,copyTarget);Require(graphics.Readback(copyTarget.Texture.Get())==encodedBytes,"sRGB sample/target transfer did not round-trip");
-    NativeGpuAssetStore emptyStore({},std::filesystem::path{},{});CharacterDefinition emptyDefinition;GpuMaterialComposer imageComposer(graphics,emptyStore,emptyDefinition);graphics.Context()->ClearRenderTargetView(target.Target.Get(),gray);auto linearImage=imageComposer.ReadImage(target);Require(linearImage[0]==64&&linearImage[1]==64&&linearImage[2]==64,"PBR data texture readback incorrectly applied sRGB transfer");
-    GpuTexture mipmapped(graphics,8,8,true,DXGI_FORMAT_B8G8R8A8_UNORM,true);graphics.Context()->ClearRenderTargetView(mipmapped.Target.Get(),gray);mipmapped.GenerateMips(graphics);auto topLevel=imageComposer.ReadImage(mipmapped);Require(topLevel.size()==8*8*4&&topLevel[0]==64,"Mipmapped composition readback did not preserve mip zero");
-    auto mesh=std::make_shared<GpuMeshData>();mesh->Name="weighted triangle";mesh->VertexCount=3;mesh->Channels={{0,0,0,0,3},{1,0,12,0,3},{2,0,24,0,4},{12,0,40,0,4},{13,0,56,0,4}};mesh->StreamOffsets={0};mesh->StreamStrides={72};mesh->VertexBytes.resize(216);
-    for(int i=0;i<3;++i){float v[18]{float(i),0,0,0,1,0,1,0,0,-1,1,0,0,0,0,0,0,0};std::memcpy(mesh->VertexBytes.data()+i*72,v,72);}mesh->IndexBytes={0,0,1,0,2,0};mesh->Submeshes={{0,3,0,0}};mesh->BindPoses={IdentityMatrix()};mesh->BlendShapes={{"smile",1,{{100,{1},{{0,1,0}},{{0,0,1}},{{0,1,0}}}}}};
-    NativeSceneNode node("renderer"),bone("bone");bone.LocalPosition({5,0,0});NativeSceneRenderer renderer;renderer.Node=&node;renderer.Mesh=mesh;renderer.Source.Skinned=true;renderer.Bones={&bone};renderer.BlendWeights={50};
-    NativeGpuMeshDeformer deformer(graphics);auto stream=deformer.Deform(renderer);Require(stream.PreviousBuffer==nullptr,"First GPU deformation has invalid history");auto vertices=deformer.Readback(stream);
-    Require(vertices.Positions[1].x==6&&vertices.Positions[1].y==.5f&&vertices.Normals[1].z==.5f&&vertices.Tangents[1].w==-1,"GPU blend-shape/skin output differs from independent expectation");
-    renderer.BlendWeights={100};auto next=deformer.Deform(renderer);Require(next.PreviousBuffer==stream.Buffer&&next.Buffer!=stream.Buffer,"Deformation history does not ping-pong");vertices=deformer.Readback(next);Require(vertices.Positions[1].y==1,"GPU deformation did not refresh weights");
-}
-void RealShaders(const std::filesystem::path& bundle,const std::filesystem::path& tpk){UnityClassDatabase database(tpk);NativeGpuAssetReader reader(bundle,&database);size_t shaders=0,programs=0;for(const auto& info:reader.AssetIndex()){if(info.ClassId==48){auto shader=ReadShader(reader,info.PathId);Require(!shader.Programs.empty(),"Real shader has no GPU programs");++shaders;programs+=shader.Programs.size();}else if(info.ClassId==72){auto shader=ReadComputeShader(reader,info.PathId);Require(!shader.Kernels.empty(),"Real compute shader has no kernels");++shaders;programs+=shader.Kernels.size();}}Require(shaders>0,"Real shader fixture has no shader resources");std::cout<<"Real shader assets="<<shaders<<" programs="<<programs<<'\n';}
-void RealPost(const std::filesystem::path& game,const std::filesystem::path& tpk){
-    auto database=std::make_shared<UnityClassDatabase>(tpk);NativeGpuAssetStore store({},game,database);GraphicsDevice graphics;CharacterDefinition definition;auto parameter=[](std::string name,double n){return Tree(std::move(name),{Number("overrideState",1),Number("value",n)});};auto effect=[&](std::string name,std::vector<Parameter> fields){fields.insert(fields.begin(),Number("active",1));fields.push_back(parameter("enabled",1));return Tree(std::move(name),std::move(fields));};PostProfile profile;profile.Effects={effect("ColorGrading",{parameter("gradingMode",1),parameter("tonemapper",2)}),effect("Bloom",{parameter("intensity",3)}),effect("ChromaticAberration",{parameter("intensity",.2)}),effect("Vignette",{parameter("intensity",.2)}),effect("AmbientOcclusion",{parameter("mode",1),parameter("intensity",1)}),effect("MotionBlur",{}),effect("ScreenSpaceReflections",{})};definition.Environment.Profiles={profile};GpuMaterialComposer composer(graphics,store,definition);NativePostProcessor post(graphics,store,composer,definition.Environment);
-    GpuTexture hdr(graphics,128,128,true,DXGI_FORMAT_R16G16B16A16_FLOAT,false),output(graphics,128,128,true,DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,false);const float clear[]{2,.5f,.125f,1};graphics.Context()->ClearRenderTargetView(hdr.Target.Get(),clear);post.Draw(hdr,output,true);auto pixels=graphics.Readback(output.Texture.Get());auto center=(64*128+64)*4;Require(pixels[center+2]>pixels[center+1]&&pixels[center+1]>pixels[center]&&pixels[center+3]==255,"Installed HDR post stack did not preserve channel ordering/opacity");Require(post.GradingLut()!=nullptr,"HDR grading LUT was not generated");std::cout<<"Installed post centre BGRA="<<int(pixels[center])<<","<<int(pixels[center+1])<<","<<int(pixels[center+2])<<","<<int(pixels[center+3])<<std::endl;
-    NativeAmbientOcclusion ao(graphics,store,composer,post.Settings());NativeMotionBlur blur(graphics,store,composer,post.Settings());NativeScreenSpaceReflections ssr(graphics,store,composer,post.Settings());GpuDepthSurface depth(graphics,128,128);graphics.Context()->ClearDepthStencilView(depth.Depth.Get(),D3D11_CLEAR_DEPTH|D3D11_CLEAR_STENCIL,.5f,0);NativeRenderCamera camera;camera.BottomOrigin=true;ao.Draw(depth,hdr,camera);GpuTexture velocity(graphics,128,128,true,DXGI_FORMAT_R16G16_FLOAT,false),blurred(graphics,128,128,true,DXGI_FORMAT_R16G16B16A16_FLOAT,false),reflections(graphics,128,128,true,DXGI_FORMAT_R16G16B16A16_FLOAT,false);const float zero[]{0,0,0,0};graphics.Context()->ClearRenderTargetView(velocity.Target.Get(),zero);graphics.Context()->ClearRenderTargetView(reflections.Target.Get(),zero);blur.Draw(hdr,blurred,velocity,depth,camera);blur.Draw(hdr,blurred,velocity,depth,camera);std::array<std::unique_ptr<GpuTexture>,3> buffers;constexpr DXGI_FORMAT formats[]{DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,DXGI_FORMAT_R10G10B10A2_UNORM};std::vector<const GpuTexture*> views;for(size_t i=0;i<3;++i){buffers[i]=std::make_unique<GpuTexture>(graphics,128,128,true,formats[i],false);graphics.Context()->ClearRenderTargetView(buffers[i]->Target.Get(),zero);views.push_back(buffers[i].get());}ssr.Draw(hdr,depth,camera,views,reflections,velocity);ssr.Draw(hdr,depth,camera,views,reflections,velocity);auto floats=graphics.ReadbackFloat(hdr.Texture.Get());for(float value:floats)Require(std::isfinite(value),"Installed screen effects generated non-finite pixels");std::cout<<"Installed AO/motion blur/SSR kernels passed\n";
-    auto dhpost=game/"DHH_Data/ModData/dhpost",hairBundle=game/"abdata/chara/hair_shader_mat.unity3d";store.AddPath(dhpost);store.AddPath(hairBundle);NativeCharacterScene scene;scene.Definition=std::make_shared<CharacterDefinition>(definition);scene.Definition->Selections={{"environment.skybox",{dhpost,"hdri5"}},{"environment.reflection",{dhpost,"cube5"}}};
-    SceneLight light;light.Name="Key";light.Parameters=Tree("light",{Number("m_Type",1),Number("m_Intensity",1),Tree("m_Color",{Number("r",1),Number("g",1),Number("b",1),Number("a",1)}),Tree("m_CullingMask",{Number("m_Bits",4294967295.)}),Tree("m_Shadows",{Number("m_Type",1),Number("m_Strength",.7),Number("m_Bias",.05),Number("m_NormalBias",.4),Number("m_NearPlane",.2)})});scene.Definition->Environment.Lights={light};
-    auto mesh=std::make_shared<GpuMeshData>();mesh->Name="installed material triangle";mesh->VertexCount=3;mesh->Channels={{0,0,0,0,3},{1,0,12,0,3},{2,0,24,0,4},{4,0,40,0,2}};mesh->StreamOffsets={0};mesh->StreamStrides={48};const float vertices[]{-.35f,-.35f,0,0,0,-1,1,0,0,-1,0,0, .35f,-.35f,0,0,0,-1,1,0,0,-1,1,0, 0,.35f,0,0,0,-1,1,0,0,-1,.5f,1};mesh->VertexBytes.resize(sizeof(vertices));std::memcpy(mesh->VertexBytes.data(),vertices,sizeof(vertices));mesh->IndexBytes={0,0,2,0,1,0};mesh->Submeshes={{0,3,0,0}};
-    for(int i=0;i<2;++i){auto node=std::make_unique<NativeSceneNode>(i==0?"opaque-test":"transparent-test");node->LocalPosition({i==0?-.4f:.4f,0,0});node->SetParent(scene.Root.get());auto renderer=std::make_shared<NativeSceneRenderer>();renderer->Node=node.get();renderer->Mesh=mesh;auto material=std::make_shared<GpuMaterialData>(*store.Material(store.Reader(hairBundle)->Find(i==0?"hair_cutout":"hair_dithering",21)));material->Queue=i==0?2000:3000;renderer->Materials={material};scene.Nodes.push_back(std::move(node));scene.Renderers.push_back(std::move(renderer));}
-    camera.Position={0,0,-3};camera.Target={0,0,0};camera.FieldOfView=40;NativeFramePipeline pipeline(graphics,scene,store);for(int i=0;i<3;++i){const auto& rendered=pipeline.Draw(camera,160,160,i/30.f);auto bytes=graphics.Readback(rendered.Texture.Get());Require(bytes.size()==160*160*4,"Full frame output dimensions changed");}Require(scene.Renderers[0]->LastRenderedVisibility==true&&scene.Renderers[1]->LastRenderedVisibility==true,"Full frame visibility did not include test geometry");pipeline.SetInteractive(true);pipeline.Draw(camera,129,97,.1f);pipeline.SetInteractive(false);std::cout<<"Installed forward/deferred/shadow/sky/full frame pipeline passed\n";
-}
-}
-int wmain(int argc,wchar_t** argv){try{TextureChecks();ConstantsChecks();PostChecks();GpuChecks();if(argc==3)RealShaders(argv[1],argv[2]);else if(argc==4&&std::wstring_view(argv[1])==L"--post-game")RealPost(argv[2],argv[3]);std::cout<<"PASS: texture layouts, shader packing, DXBC validation, post profiles, seeded dithering, WARP sRGB transfer, compute bindings, GPU skin/blend shapes and resource lifetime\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
 
+namespace
+{
+    void Require(bool value, const char *message)
+    {
+        if (!value)
+            throw std::runtime_error(message);
+    }
+
+    template <class F> void Reject(F f, const char *message)
+    {
+        bool rejected = false;
+        try
+        {
+            f();
+        }
+        catch (const std::exception &)
+        {
+            rejected = true;
+        }
+        Require(rejected, message);
+    }
+
+    Parameter Text(std::string name, std::string text)
+    {
+        Parameter p;
+        p.Name = std::move(name);
+        p.Text = std::move(text);
+        return p;
+    }
+
+    Parameter Number(std::string name, double n)
+    {
+        Parameter p;
+        p.Name = std::move(name);
+        p.Number = n;
+        p.Integer = static_cast<std::int64_t>(n);
+        return p;
+    }
+
+    Parameter Tree(std::string name, std::vector<Parameter> children)
+    {
+        Parameter p;
+        p.Name = std::move(name);
+        p.Children = std::move(children);
+        return p;
+    }
+
+    std::vector<std::uint8_t> Compile(const char *source, const char *entry, const char *target)
+    {
+        ComPtr<ID3DBlob> blob, error;
+        auto result = D3DCompile(source, std::strlen(source), "native-rendering-check", nullptr, nullptr, entry, target,
+                                 D3DCOMPILE_ENABLE_STRICTNESS, 0, &blob, &error);
+        if (FAILED(result))
+            throw std::runtime_error(error ? static_cast<const char *>(error->GetBufferPointer()) : "Compile failed");
+        auto *bytes = static_cast<std::uint8_t *>(blob->GetBufferPointer());
+        return {bytes, bytes + blob->GetBufferSize()};
+    }
+
+    void TextureChecks()
+    {
+        GpuTextureData rgb;
+        rgb.Name = "RGB24";
+        rgb.Width = 2;
+        rgb.Height = 1;
+        rgb.Format = 3;
+        rgb.Bytes = {1, 2, 3, 11, 22, 33};
+        rgb.Srgb = false;
+        auto layout = TextureLayout(rgb);
+        Require(layout.Format == DXGI_FORMAT_R8G8B8A8_UNORM && layout.Levels.size() == 1, "RGB upload format");
+        Require(layout.Levels[0].Bytes == std::vector<std::uint8_t>({1, 2, 3, 255, 11, 22, 33, 255}),
+                "RGB upload expands alpha without changing channels");
+        auto truncated = rgb;
+        truncated.Bytes.pop_back();
+        Reject(
+            [&]
+            {
+                TextureLayout(truncated);
+            },
+            "Truncated texture accepted");
+        auto trailing = rgb;
+        trailing.Bytes.push_back(9);
+        Reject(
+            [&]
+            {
+                TextureLayout(trailing);
+            },
+            "Unknown trailing texture bytes accepted");
+        GpuTextureData bc;
+        bc.Name = "BC1 chain";
+        bc.Width = 4;
+        bc.Height = 4;
+        bc.MipCount = 0;
+        bc.Format = 10;
+        bc.Bytes.resize(24);
+        bc.Bytes[16] = 91;
+        auto implicit = TextureLayout(bc);
+        Require(implicit.Levels.size() == 3 && implicit.Levels[2].Bytes[0] == 91, "Implicit BC chain lost mip data");
+        bc.MipCount = 1;
+        bc.Bytes.resize(32);
+        std::fill(bc.Bytes.begin() + 8, bc.Bytes.end(), 0);
+        Require(TextureLayout(bc).Levels.size() == 1, "BC alignment padding rejected");
+        bc.Bytes.back() = 1;
+        Reject(
+            [&]
+            {
+                TextureLayout(bc);
+            },
+            "Nonzero BC padding accepted");
+        Require(EffectiveAnisotropy(1, 2) == 9 && EffectiveAnisotropy(8, 0) == 0,
+                "Anisotropy quality behavior changed");
+    }
+
+    void PostChecks()
+    {
+        NativeSeededRandom random(1979);
+        const double oracle[]{.6059400502619986, .4927695703193404, .06525584453030296,
+                              .9617208200328614, .6963121498452091, .0026442194369827488};
+        for (double expected : oracle)
+            Require(random.NextDouble() == expected, "Seeded dithering differs from independent System.Random oracle");
+        EnvironmentDefinition environment;
+        auto overrideValue = [](std::string name, Parameter value)
+        {
+            return Tree(std::move(name), {Number("overrideState", 1), std::move(value)});
+        };
+        PostProfile first;
+        first.Weight = .5f;
+        first.Priority = 2;
+        first.Effects = {Tree("Bloom", {Number("active", 1), overrideValue("enabled", Number("value", 1)),
+                                        overrideValue("intensity", Number("value", 8)),
+                                        overrideValue("threshold", Number("value", 3))})};
+        PostProfile second;
+        second.Weight = .5f;
+        second.Priority = 1;
+        second.Effects = {Tree("Bloom", {Number("active", 1), overrideValue("intensity", Number("value", 4))})};
+        environment.Profiles = {first, second};
+        NativePostSettings settings(environment);
+        Require(settings.Enabled("Bloom") && settings.Scalar("Bloom", "intensity") == 5 &&
+                    settings.Scalar("Bloom", "threshold") == 2,
+                "Post volume priority/weight/discrete override mismatch");
+        Require(settings.GradingCurves().at("masterCurve")[127] == 127.f / 128 &&
+                    settings.GradingCurves().at("hueVsHueCurve")[30] == .5f,
+                "Default grading curves changed");
+        settings.ValidateCoverage();
+        environment.DhhEnabled = true;
+        environment.DhhFloats[45] = 1;
+        environment.DhhBools[6] = true;
+        NativePostSettings animated(environment);
+        Require(animated.Enabled("MotionBlur"), "DHH motion blur not enabled");
+        animated.UseStaticReference();
+        Require(!animated.Enabled("MotionBlur"), "Static reference retained motion blur");
+    }
+
+    void ConstantsChecks()
+    {
+        ShaderBuffer b{
+            "fixture",
+            0,
+            64,
+            {{"array", 0, 3, 2, false, 0}, {"enabled", 32, 1, 1, false, 2}, {"integer", 36, 1, 1, false, 1}}};
+        auto packed = PackShaderBuffer(b, {{"array", {1, 2, 3, 9, 4, 5, 6, 9}}, {"enabled", {-1}}, {"integer", {-7}}});
+        float element = 0;
+        std::memcpy(&element, packed.data() + 16, 4);
+        Require(element == 4, "Constant array stride differs from HLSL");
+        std::int32_t enabled = 0, integer = 0;
+        std::memcpy(&enabled, packed.data() + 32, 4);
+        std::memcpy(&integer, packed.data() + 36, 4);
+        Require(enabled == 1 && integer == -7, "Integer/bool shader packing");
+        Reject(
+            [&]
+            {
+                PackShaderBuffer(b, {});
+            },
+            "Missing constants silently zero filled");
+        b.Constants[0].Offset = 60;
+        Reject(
+            [&]
+            {
+                PackShaderBuffer(b, {{"array", {1, 2, 3, 4, 5, 6}}, {"enabled", {1}}, {"integer", {1}}});
+            },
+            "Out-of-bounds shader constant accepted");
+        std::vector<std::uint8_t> invalid(32);
+        Reject(
+            [&]
+            {
+                ValidateShaderBytecode(invalid);
+            },
+            "Invalid DXBC accepted");
+    }
+
+    void GpuChecks()
+    {
+        GraphicsDevice graphics(true);
+        auto pixels = graphics.ClearAndReadback(7, 3, {0.25f, 0.5f, 1.f, 1.f});
+        Require(pixels.size() == 84, "BGRA readback length");
+        for (size_t i = 0; i < pixels.size(); i += 4)
+            Require(pixels[i] == 255 && pixels[i + 1] == 128 && pixels[i + 2] == 64 && pixels[i + 3] == 255,
+                    "BGRA readback row or channel ordering");
+        auto other = std::async(std::launch::async,
+                                [&]
+                                {
+                                    bool rejected = false;
+                                    try
+                                    {
+                                        graphics.VerifyThread();
+                                    }
+                                    catch (...)
+                                    {
+                                        rejected = true;
+                                    }
+                                    return rejected;
+                                });
+        Require(other.get(), "Cross-thread graphics access accepted");
+        const char *code = "RWTexture2D<float4> outputImage:register(u0); cbuffer Constants:register(b0){float4 "
+                           "color;} [numthreads(4,4,1)] void CS(uint3 id:SV_DispatchThreadID){uint "
+                           "w,h;outputImage.GetDimensions(w,h);if(id.x<w&&id.y<h)outputImage[id.xy]=color;}";
+        NativeComputeKernel kernel;
+        kernel.Name = "known compute";
+        kernel.Program = {0, NativeShaderStage::Compute, Compile(code, "CS", "cs_5_0")};
+        kernel.GroupSize = {4, 4, 1};
+        Require(ValidateShaderBytecode(kernel.Program.Bytecode) == NativeShaderStage::Compute,
+                "Compiled DXBC stage detection");
+        kernel.Metadata = Tree(
+            "kernel", {Tree("cbs", {Tree("binding", {Text("name", "Constants"), Number("bindPoint", 0)})}),
+                       Tree("outBuffers", {Tree("output", {Text("name", "outputImage"), Number("bindPoint", 0)})})});
+        kernel.ConstantBuffers =
+            Tree("constantBuffers",
+                 {Tree("buffer", {Text("name", "Constants"), Number("byteSize", 16),
+                                  Tree("params", {Tree("parameter", {Text("name", "color"), Number("offset", 0),
+                                                                     Number("rowCount", 1), Number("colCount", 4),
+                                                                     Number("arraySize", 1), Number("type", 0)})})})});
+        NativeComputePass pass(graphics, kernel);
+        GpuComputeImage output(graphics, 7, 5, DXGI_FORMAT_R32G32B32A32_FLOAT);
+        pass.Dispatch(7, 5, 1, {{"color", {.125f, .25f, .5f, 1.f}}}, {}, {{"outputImage", output.Output.Get()}});
+        auto data = graphics.ReadbackFloat(output.Texture.Get());
+        Require(data.size() == 140, "Compute readback length");
+        for (size_t i = 0; i < data.size(); i += 4)
+            Require(data[i] == .125f && data[i + 1] == .25f && data[i + 2] == .5f && data[i + 3] == 1.f,
+                    "Compute bindings/group rounding/output mismatch");
+        GpuTexture target(graphics, 4, 4, true, DXGI_FORMAT_B8G8R8A8_UNORM, false);
+        const float clear[]{.1f, .2f, .3f, 1};
+        graphics.Context()->ClearRenderTargetView(target.Target.Get(), clear);
+        Require(graphics.Readback(target.Texture.Get()).size() == 64, "Render-target resource construction");
+        GpuDepthSurface depth(graphics, 4, 4);
+        GpuVolume volume(graphics, 2, 2, 2);
+        Require(depth.Depth && depth.ReadOnlyDepth && volume.Output, "Depth/volume resource construction");
+        GpuTexture encoded(graphics, 4, 4, true, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, false);
+        const float gray[]{.25f, .25f, .25f, 1};
+        graphics.Context()->ClearRenderTargetView(encoded.Target.Get(), gray);
+        graphics.Context()->ClearState();
+        graphics.Context()->CopyResource(target.Texture.Get(), encoded.Texture.Get());
+        auto encodedBytes = graphics.Readback(encoded.Texture.Get()),
+             presentBytes = graphics.Readback(target.Texture.Get());
+        Require(encodedBytes == presentBytes && encodedBytes[0] >= 136 && encodedBytes[0] <= 138,
+                "sRGB output transfer to UNORM composition changed encoded pixels");
+        GpuCopyPass copier(graphics);
+        GpuTexture copyTarget(graphics, 4, 4, true, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, false);
+        copier.Copy(encoded, copyTarget);
+        Require(graphics.Readback(copyTarget.Texture.Get()) == encodedBytes,
+                "sRGB sample/target transfer did not round-trip");
+        NativeGpuAssetStore emptyStore({}, std::filesystem::path{}, {});
+        CharacterDefinition emptyDefinition;
+        GpuMaterialComposer imageComposer(graphics, emptyStore, emptyDefinition);
+        graphics.Context()->ClearRenderTargetView(target.Target.Get(), gray);
+        auto linearImage = imageComposer.ReadImage(target);
+        Require(linearImage[0] == 64 && linearImage[1] == 64 && linearImage[2] == 64,
+                "PBR data texture readback incorrectly applied sRGB transfer");
+        GpuTexture mipmapped(graphics, 8, 8, true, DXGI_FORMAT_B8G8R8A8_UNORM, true);
+        graphics.Context()->ClearRenderTargetView(mipmapped.Target.Get(), gray);
+        mipmapped.GenerateMips(graphics);
+        auto topLevel = imageComposer.ReadImage(mipmapped);
+        Require(topLevel.size() == 8 * 8 * 4 && topLevel[0] == 64,
+                "Mipmapped composition readback did not preserve mip zero");
+        auto mesh = std::make_shared<GpuMeshData>();
+        mesh->Name = "weighted triangle";
+        mesh->VertexCount = 3;
+        mesh->Channels = {{0, 0, 0, 0, 3}, {1, 0, 12, 0, 3}, {2, 0, 24, 0, 4}, {12, 0, 40, 0, 4}, {13, 0, 56, 0, 4}};
+        mesh->StreamOffsets = {0};
+        mesh->StreamStrides = {72};
+        mesh->VertexBytes.resize(216);
+        for (int i = 0; i < 3; ++i)
+        {
+            float v[18]{float(i), 0, 0, 0, 1, 0, 1, 0, 0, -1, 1, 0, 0, 0, 0, 0, 0, 0};
+            std::memcpy(mesh->VertexBytes.data() + i * 72, v, 72);
+        }
+        mesh->IndexBytes = {0, 0, 1, 0, 2, 0};
+        mesh->Submeshes = {{0, 3, 0, 0}};
+        mesh->BindPoses = {IdentityMatrix()};
+        mesh->BlendShapes = {{"smile", 1, {{100, {1}, {{0, 1, 0}}, {{0, 0, 1}}, {{0, 1, 0}}}}}};
+        NativeSceneNode node("renderer"), bone("bone");
+        bone.LocalPosition({5, 0, 0});
+        NativeSceneRenderer renderer;
+        renderer.Node = &node;
+        renderer.Mesh = mesh;
+        renderer.Source.Skinned = true;
+        renderer.Bones = {&bone};
+        renderer.BlendWeights = {50};
+        NativeGpuMeshDeformer deformer(graphics);
+        auto stream = deformer.Deform(renderer);
+        Require(stream.PreviousBuffer == nullptr, "First GPU deformation has invalid history");
+        auto vertices = deformer.Readback(stream);
+        Require(vertices.Positions[1].x == 6 && vertices.Positions[1].y == .5f && vertices.Normals[1].z == .5f &&
+                    vertices.Tangents[1].w == -1,
+                "GPU blend-shape/skin output differs from independent expectation");
+        renderer.BlendWeights = {100};
+        auto next = deformer.Deform(renderer);
+        Require(next.PreviousBuffer == stream.Buffer && next.Buffer != stream.Buffer,
+                "Deformation history does not ping-pong");
+        vertices = deformer.Readback(next);
+        Require(vertices.Positions[1].y == 1, "GPU deformation did not refresh weights");
+    }
+
+    void RealShaders(const std::filesystem::path &bundle, const std::filesystem::path &tpk)
+    {
+        UnityClassDatabase database(tpk);
+        NativeGpuAssetReader reader(bundle, &database);
+        size_t shaders = 0, programs = 0;
+        for (const auto &info : reader.AssetIndex())
+        {
+            if (info.ClassId == 48)
+            {
+                auto shader = ReadShader(reader, info.PathId);
+                Require(!shader.Programs.empty(), "Real shader has no GPU programs");
+                ++shaders;
+                programs += shader.Programs.size();
+            }
+            else if (info.ClassId == 72)
+            {
+                auto shader = ReadComputeShader(reader, info.PathId);
+                Require(!shader.Kernels.empty(), "Real compute shader has no kernels");
+                ++shaders;
+                programs += shader.Kernels.size();
+            }
+        }
+        Require(shaders > 0, "Real shader fixture has no shader resources");
+        std::cout << "Real shader assets=" << shaders << " programs=" << programs << '\n';
+    }
+
+    void RealPost(const std::filesystem::path &game, const std::filesystem::path &tpk)
+    {
+        auto database = std::make_shared<UnityClassDatabase>(tpk);
+        NativeGpuAssetStore store({}, game, database);
+        GraphicsDevice graphics;
+        CharacterDefinition definition;
+        auto parameter = [](std::string name, double n)
+        {
+            return Tree(std::move(name), {Number("overrideState", 1), Number("value", n)});
+        };
+        auto effect = [&](std::string name, std::vector<Parameter> fields)
+        {
+            fields.insert(fields.begin(), Number("active", 1));
+            fields.push_back(parameter("enabled", 1));
+            return Tree(std::move(name), std::move(fields));
+        };
+        PostProfile profile;
+        profile.Effects = {effect("ColorGrading", {parameter("gradingMode", 1), parameter("tonemapper", 2)}),
+                           effect("Bloom", {parameter("intensity", 3)}),
+                           effect("ChromaticAberration", {parameter("intensity", .2)}),
+                           effect("Vignette", {parameter("intensity", .2)}),
+                           effect("AmbientOcclusion", {parameter("mode", 1), parameter("intensity", 1)}),
+                           effect("MotionBlur", {}),
+                           effect("ScreenSpaceReflections", {})};
+        definition.Environment.Profiles = {profile};
+        GpuMaterialComposer composer(graphics, store, definition);
+        NativePostProcessor post(graphics, store, composer, definition.Environment);
+        GpuTexture hdr(graphics, 128, 128, true, DXGI_FORMAT_R16G16B16A16_FLOAT, false),
+            output(graphics, 128, 128, true, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, false);
+        const float clear[]{2, .5f, .125f, 1};
+        graphics.Context()->ClearRenderTargetView(hdr.Target.Get(), clear);
+        post.Draw(hdr, output, true);
+        auto pixels = graphics.Readback(output.Texture.Get());
+        auto center = (64 * 128 + 64) * 4;
+        Require(pixels[center + 2] > pixels[center + 1] && pixels[center + 1] > pixels[center] &&
+                    pixels[center + 3] == 255,
+                "Installed HDR post stack did not preserve channel ordering/opacity");
+        Require(post.GradingLut() != nullptr, "HDR grading LUT was not generated");
+        std::cout << "Installed post centre BGRA=" << int(pixels[center]) << "," << int(pixels[center + 1]) << ","
+                  << int(pixels[center + 2]) << "," << int(pixels[center + 3]) << std::endl;
+        NativeAmbientOcclusion ao(graphics, store, composer, post.Settings());
+        NativeMotionBlur blur(graphics, store, composer, post.Settings());
+        NativeScreenSpaceReflections ssr(graphics, store, composer, post.Settings());
+        GpuDepthSurface depth(graphics, 128, 128);
+        graphics.Context()->ClearDepthStencilView(depth.Depth.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, .5f, 0);
+        NativeRenderCamera camera;
+        camera.BottomOrigin = true;
+        ao.Draw(depth, hdr, camera);
+        GpuTexture velocity(graphics, 128, 128, true, DXGI_FORMAT_R16G16_FLOAT, false),
+            blurred(graphics, 128, 128, true, DXGI_FORMAT_R16G16B16A16_FLOAT, false),
+            reflections(graphics, 128, 128, true, DXGI_FORMAT_R16G16B16A16_FLOAT, false);
+        const float zero[]{0, 0, 0, 0};
+        graphics.Context()->ClearRenderTargetView(velocity.Target.Get(), zero);
+        graphics.Context()->ClearRenderTargetView(reflections.Target.Get(), zero);
+        blur.Draw(hdr, blurred, velocity, depth, camera);
+        blur.Draw(hdr, blurred, velocity, depth, camera);
+        std::array<std::unique_ptr<GpuTexture>, 3> buffers;
+        constexpr DXGI_FORMAT formats[]{DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                                        DXGI_FORMAT_R10G10B10A2_UNORM};
+        std::vector<const GpuTexture *> views;
+        for (size_t i = 0; i < 3; ++i)
+        {
+            buffers[i] = std::make_unique<GpuTexture>(graphics, 128, 128, true, formats[i], false);
+            graphics.Context()->ClearRenderTargetView(buffers[i]->Target.Get(), zero);
+            views.push_back(buffers[i].get());
+        }
+        ssr.Draw(hdr, depth, camera, views, reflections, velocity);
+        ssr.Draw(hdr, depth, camera, views, reflections, velocity);
+        auto floats = graphics.ReadbackFloat(hdr.Texture.Get());
+        for (float value : floats)
+            Require(std::isfinite(value), "Installed screen effects generated non-finite pixels");
+        std::cout << "Installed AO/motion blur/SSR kernels passed\n";
+        auto dhpost = game / "DHH_Data/ModData/dhpost", hairBundle = game / "abdata/chara/hair_shader_mat.unity3d";
+        store.AddPath(dhpost);
+        store.AddPath(hairBundle);
+        NativeCharacterScene scene;
+        scene.Definition = std::make_shared<CharacterDefinition>(definition);
+        scene.Definition->Selections = {{"environment.skybox", {dhpost, "hdri5"}},
+                                        {"environment.reflection", {dhpost, "cube5"}}};
+        SceneLight light;
+        light.Name = "Key";
+        light.Parameters =
+            Tree("light", {Number("m_Type", 1), Number("m_Intensity", 1),
+                           Tree("m_Color", {Number("r", 1), Number("g", 1), Number("b", 1), Number("a", 1)}),
+                           Tree("m_CullingMask", {Number("m_Bits", 4294967295.)}),
+                           Tree("m_Shadows", {Number("m_Type", 1), Number("m_Strength", .7), Number("m_Bias", .05),
+                                              Number("m_NormalBias", .4), Number("m_NearPlane", .2)})});
+        scene.Definition->Environment.Lights = {light};
+        auto mesh = std::make_shared<GpuMeshData>();
+        mesh->Name = "installed material triangle";
+        mesh->VertexCount = 3;
+        mesh->Channels = {{0, 0, 0, 0, 3}, {1, 0, 12, 0, 3}, {2, 0, 24, 0, 4}, {4, 0, 40, 0, 2}};
+        mesh->StreamOffsets = {0};
+        mesh->StreamStrides = {48};
+        const float vertices[]{-.35f, -.35f, 0, 0,  0, -1, 1, 0,    0, -1, 0, 0,  .35f, -.35f, 0, 0,  0,   -1,
+                               1,     0,     0, -1, 1, 0,  0, .35f, 0, 0,  0, -1, 1,    0,     0, -1, .5f, 1};
+        mesh->VertexBytes.resize(sizeof(vertices));
+        std::memcpy(mesh->VertexBytes.data(), vertices, sizeof(vertices));
+        mesh->IndexBytes = {0, 0, 2, 0, 1, 0};
+        mesh->Submeshes = {{0, 3, 0, 0}};
+        for (int i = 0; i < 2; ++i)
+        {
+            auto node = std::make_unique<NativeSceneNode>(i == 0 ? "opaque-test" : "transparent-test");
+            node->LocalPosition({i == 0 ? -.4f : .4f, 0, 0});
+            node->SetParent(scene.Root.get());
+            auto renderer = std::make_shared<NativeSceneRenderer>();
+            renderer->Node = node.get();
+            renderer->Mesh = mesh;
+            auto material = std::make_shared<GpuMaterialData>(
+                *store.Material(store.Reader(hairBundle)->Find(i == 0 ? "hair_cutout" : "hair_dithering", 21)));
+            material->Queue = i == 0 ? 2000 : 3000;
+            renderer->Materials = {material};
+            scene.Nodes.push_back(std::move(node));
+            scene.Renderers.push_back(std::move(renderer));
+        }
+        camera.Position = {0, 0, -3};
+        camera.Target = {0, 0, 0};
+        camera.FieldOfView = 40;
+        NativeFramePipeline pipeline(graphics, scene, store);
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto &rendered = pipeline.Draw(camera, 160, 160, i / 30.f);
+            auto bytes = graphics.Readback(rendered.Texture.Get());
+            Require(bytes.size() == 160 * 160 * 4, "Full frame output dimensions changed");
+        }
+        Require(scene.Renderers[0]->LastRenderedVisibility == true &&
+                    scene.Renderers[1]->LastRenderedVisibility == true,
+                "Full frame visibility did not include test geometry");
+        pipeline.SetInteractive(true);
+        pipeline.Draw(camera, 129, 97, .1f);
+        pipeline.SetInteractive(false);
+        std::cout << "Installed forward/deferred/shadow/sky/full frame pipeline passed\n";
+    }
+}
+
+int wmain(int argc, wchar_t **argv)
+{
+    try
+    {
+        TextureChecks();
+        ConstantsChecks();
+        PostChecks();
+        GpuChecks();
+        if (argc == 3)
+            RealShaders(argv[1], argv[2]);
+        else if (argc == 4 && std::wstring_view(argv[1]) == L"--post-game")
+            RealPost(argv[2], argv[3]);
+        std::cout << "PASS: texture layouts, shader packing, DXBC validation, post profiles, seeded dithering, WARP "
+                     "sRGB transfer, compute bindings, GPU skin/blend shapes and resource lifetime\n";
+        return 0;
+    }
+    catch (const std::exception &error)
+    {
+        std::cerr << error.what() << '\n';
+        return 1;
+    }
+}

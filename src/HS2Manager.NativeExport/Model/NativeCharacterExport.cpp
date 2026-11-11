@@ -1,0 +1,526 @@
+#include "Model/ModelExportInternal.h"
+#include "Fbx/FbxScene.h"
+#include "Baking/NativePbrBake.h"
+#include "Materials/GpuCharacterAppearance.h"
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <set>
+
+namespace hs2
+{
+    namespace
+    {
+        Vector3 Add(Vector3 a, Vector3 b)
+        {
+            return {a.x + b.x, a.y + b.y, a.z + b.z};
+        }
+
+        Vector3 Sub(Vector3 a, Vector3 b)
+        {
+            return {a.x - b.x, a.y - b.y, a.z - b.z};
+        }
+
+        Vector3 Scale(Vector3 a, float b)
+        {
+            return {a.x * b, a.y * b, a.z * b};
+        }
+
+        float Length(Vector3 a)
+        {
+            return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+        }
+
+        Vector3 Unit(Vector3 a)
+        {
+            auto n = Length(a);
+            if (!std::isfinite(n) || n <= 1e-5f)
+                return {};
+            return Scale(a, 1 / n);
+        }
+
+        Vector3 Cross(Vector3 a, Vector3 b)
+        {
+            return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+        }
+
+        float Dot(Vector3 a, Vector3 b)
+        {
+            return a.x * b.x + a.y * b.y + a.z * b.z;
+        }
+
+        Vector3 Xyz(Vector4 a)
+        {
+            return {a.x, a.y, a.z};
+        }
+
+        std::array<float, 3> V(Vector3 a)
+        {
+            return {a.x, a.y, a.z};
+        }
+
+        std::vector<float> Flat(const std::vector<Vector3> &values)
+        {
+            std::vector<float> result;
+            result.reserve(values.size() * 3);
+            for (auto value : values)
+                result.insert(result.end(), {value.x, value.y, value.z});
+            return result;
+        }
+
+        std::string Humanoid(std::string name)
+        {
+            if (name.starts_with("cm_"))
+                name = "cf_" + name.substr(3);
+            const std::map<std::string, std::string> centre{{"Hips", "Hips"},     {"Spine01", "Spine"},
+                                                            {"Spine02", "Chest"}, {"Spine03", "UpperChest"},
+                                                            {"Neck", "Neck"},     {"Head", "Head"}};
+            for (auto &[key, value] : centre)
+                if (name == "cf_J_" + key)
+                    return value;
+            const std::map<std::string, std::string> limbs{
+                {"Shoulder", "Shoulder"}, {"ArmUp00", "UpperArm"}, {"ArmLow01", "LowerArm"},
+                {"Hand", "Hand"},         {"LegUp00", "UpperLeg"}, {"LegLow01", "LowerLeg"},
+                {"Foot01", "Foot"},       {"Toes01", "Toes"},      {"Eye01", "Eye"}};
+            for (auto side : {std::string("L"), std::string("R")})
+            {
+                auto prefix = side == "L" ? "Left" : "Right";
+                for (auto &[key, value] : limbs)
+                    if (name == "cf_J_" + key + "_" + side)
+                        return prefix + value;
+                for (auto finger : {"Thumb", "Index", "Middle", "Ring", "Little"})
+                    for (int i = 1; i <= 3; ++i)
+                        if (name == "cf_J_Hand_" + std::string(finger) + "0" + std::to_string(i) + "_" + side)
+                            return std::string(prefix) + finger +
+                                   std::array{"Proximal", "Intermediate", "Distal"}[i - 1];
+            }
+            return {};
+        }
+
+        std::string Unreal(const std::string &humanoid)
+        {
+            const std::map<std::string, std::string> centre{{"Hips", "pelvis"},    {"Spine", "spine_01"},
+                                                            {"Chest", "spine_02"}, {"UpperChest", "spine_03"},
+                                                            {"Neck", "neck_01"},   {"Head", "head"}};
+            if (auto i = centre.find(humanoid); i != centre.end())
+                return i->second;
+            bool left = humanoid.starts_with("Left"), right = humanoid.starts_with("Right");
+            if (!left && !right)
+                return {};
+            auto part = humanoid.substr(left ? 4 : 5);
+            auto side = left ? "_l" : "_r";
+            const std::map<std::string, std::string> limbs{
+                {"Shoulder", "clavicle"}, {"UpperArm", "upperarm"}, {"LowerArm", "lowerarm"},
+                {"Hand", "hand"},         {"UpperLeg", "thigh"},    {"LowerLeg", "calf"},
+                {"Foot", "foot"},         {"Toes", "ball"},         {"Eye", "eye"}};
+            if (auto i = limbs.find(part); i != limbs.end())
+                return i->second + side;
+            for (auto finger : {"Thumb", "Index", "Middle", "Ring", "Little"})
+                for (int i = 0; i < 3; ++i)
+                    if (part == std::string(finger) + std::array{"Proximal", "Intermediate", "Distal"}[i])
+                    {
+                        std::string f = finger;
+                        std::transform(f.begin(), f.end(), f.begin(),
+                                       [](char c)
+                                       {
+                                           return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                                       });
+                        return (f == "little" ? "pinky" : f) + std::string("_0") + std::to_string(i + 1) + side;
+                    }
+            return {};
+        }
+
+        Json Summary(const NativeFbxSummary &s)
+        {
+            return {{"Nodes", s.Nodes},        {"Meshes", s.Meshes},
+                    {"Vertices", s.Vertices},  {"Polygons", s.Polygons},
+                    {"Bones", s.Bones},        {"Clusters", s.Clusters},
+                    {"Channels", s.Channels},  {"ShapeFrames", s.ShapeFrames},
+                    {"Materials", s.Materials}};
+        }
+
+        void TextFile(const fs::path &path, const std::string &text)
+        {
+            WriteAtomic(path, std::span(reinterpret_cast<const std::uint8_t *>(text.data()), text.size()));
+        }
+    }
+
+    Json ExportNativeCharacter(GraphicsDevice &graphics, NativeCharacterScene &source, NativeGpuAssetStore &assets,
+                               const fs::path &bridge, const fs::path &directory, std::int64_t revision,
+                               Progress progress, std::stop_token cancellation)
+    {
+        graphics.VerifyThread();
+        CheckCancelled(cancellation);
+        fs::create_directories(directory);
+        FbxScene target(bridge);
+        GpuMaterialComposer composer(graphics, assets, *source.Definition);
+        GpuCharacterAppearance appearance(source, composer);
+        NativePbrMaterialExporter materials(graphics, composer, directory);
+        std::unordered_map<NativeSceneNode *, int> bones;
+        std::unordered_map<NativeSceneNode *, std::string> boneNames;
+        std::set<std::string> names;
+        Json maps = Json::array(), geometry = Json::array();
+        Json result = {{"SchemaVersion", 2},
+                       {"EditRevision", revision},
+                       {"Target", "GenericFbx"},
+                       {"ToolVersion", "Autodesk FBX SDK 2020.3.7 / native C++ D3D11"},
+                       {"EntryPoint", "character.fbx"},
+                       {"Meshes", 0},
+                       {"Vertices", 0},
+                       {"Triangles", 0},
+                       {"Bones", 0},
+                       {"BlendShapes", 0},
+                       {"Materials", 0},
+                       {"Geometry", Json::array()},
+                       {"Warnings", Json::array()},
+                       {"Issues", Json::array()}};
+        auto unique = [&](std::string name)
+        {
+            for (auto &c : name)
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
+                    c = '_';
+            if (name.empty())
+                name = "Node";
+            auto value = name;
+            for (int i = 2; !names.insert(value).second; ++i)
+                value = name + "_" + std::to_string(i);
+            return value;
+        };
+        std::function<std::string(NativeSceneNode *)> nodePath = [&](NativeSceneNode *node) -> std::string
+        {
+            if (node == source.Root.get())
+                return {};
+            auto *parent = node->Parent();
+            if (!parent)
+                throw std::runtime_error("Detached export bone.");
+            auto children = parent->Children();
+            auto i = std::find(children.begin(), children.end(), node) - children.begin();
+            return nodePath(parent) + "/" + node->Name + "[" + std::to_string(i) + "]";
+        };
+        std::function<int(NativeSceneNode *)> bone = [&](NativeSceneNode *node) -> int
+        {
+            if (!node)
+                throw std::runtime_error("Export skin references a null bone.");
+            if (auto it = bones.find(node); it != bones.end())
+                return it->second;
+            CheckCancelled(cancellation);
+            bool root = node == source.Root.get();
+            auto *parent = node->Parent();
+            if (!root && !parent)
+                throw std::runtime_error("Detached export bone.");
+            int parentIndex = root ? -1 : bone(parent);
+            auto offset =
+                root ? Vector3{} : parent->InverseTransformDirection(Sub(node->Position(), parent->Position()));
+            auto rotation = root ? Quaternion{0, 0, 0, 1} : node->LocalRotation();
+            auto name = unique(root ? "CharacterRoot" : node->Name);
+            int index = target.Bone(name, parentIndex, V(offset), {rotation.x, rotation.y, rotation.z, rotation.w});
+            std::string humanoid;
+            auto it = source.Bones.find(node->Name);
+            if (it != source.Bones.end() && it->second == node)
+                humanoid = Humanoid(node->Name);
+            bones[node] = index;
+            boneNames[node] = name;
+            maps.push_back({{"Name", name},
+                            {"OriginalName", node->Name},
+                            {"Path", nodePath(node)},
+                            {"Parent", root ? "" : boneNames.at(parent)},
+                            {"UnityHumanoid", humanoid},
+                            {"Unreal", Unreal(humanoid)}});
+            return index;
+        };
+        bone(source.Root.get());
+        for (auto &[_, node] : source.Bones)
+            bone(node);
+        for (auto &part : source.Parts)
+            if (part->Root->ActiveInHierarchy())
+            {
+                std::set<std::string> authored;
+                for (auto &entry : part->Definition->Bones)
+                    authored.insert(entry.Name);
+                if (part->Definition->Role == "hair" || part->Definition->Role == "accessory")
+                    for (auto *node : part->Nodes)
+                        if (authored.contains(node->Name))
+                            bone(node);
+                for (auto &component : part->Definition->Components)
+                    if (component.Type == "BonesFramework")
+                        for (auto &entry : component.Data.Children)
+                            for (auto *branch : part->Nodes)
+                                if (branch->Name == entry.Text)
+                                    for (auto *node : branch->Traverse())
+                                        bone(node);
+            }
+        std::vector<NativeSceneRenderer *> renderers;
+        for (auto &r : source.Renderers)
+            if (r->Visible() && r->HasGeometry() && !r->Mesh->Submeshes.empty())
+                renderers.push_back(r.get());
+        if (renderers.empty())
+            throw std::runtime_error("The scene has no visible export geometry.");
+        int shapeFrames = 0, materialNumber = 0;
+        for (auto *renderer : renderers)
+        {
+            CheckCancelled(cancellation);
+            if (progress)
+                progress({static_cast<int>(geometry.size()), static_cast<int>(renderers.size()),
+                          "Geometry · " + renderer->Node->Name});
+            auto &mesh = *renderer->Mesh;
+            auto channel = [&](int semantic)
+            {
+                return std::any_of(mesh.Channels.begin(), mesh.Channels.end(),
+                                   [&](auto &c)
+                                   {
+                                       return c.Semantic == semantic;
+                                   });
+            };
+            bool weighted = renderer->Source.Skinned && !renderer->Bones.empty() && channel(12) && channel(13);
+            for (auto *b : renderer->Bones)
+                if (b)
+                    bone(b);
+            if (!weighted)
+                bone(renderer->Node);
+            auto bakeInverse =
+                NativeSceneNode::InverseRigidMatrix(renderer->Node->Position(), renderer->Node->Rotation());
+            auto matrices = renderer->Source.Skinned ? renderer->SkinMatrices(bakeInverse) : std::vector<Matrix4x4>{};
+            auto neutral = DeformMesh(mesh, std::vector<float>(mesh.BlendShapes.size()), matrices);
+            auto posed = DeformMesh(mesh, renderer->BlendWeights, matrices);
+            auto transform = MultiplyMatrix(renderer->Node->WorldMatrix(), source.Root->InverseWorldMatrix());
+            auto inverse = InverseMatrix(transform);
+            Matrix4x4 normalMatrix;
+            DirectX::XMStoreFloat4x4(&normalMatrix, DirectX::XMMatrixTranspose(DirectX::XMLoadFloat4x4(&inverse)));
+            bool mirrored =
+                DirectX::XMVectorGetX(DirectX::XMMatrixDeterminant(DirectX::XMLoadFloat4x4(&transform))) < 0;
+            auto points = [&](const std::vector<Vector3> &values)
+            {
+                std::vector<Vector3> result;
+                result.reserve(values.size());
+                for (auto p : values)
+                    result.push_back(TransformPoint(p, transform));
+                return Flat(result);
+            };
+            auto normals = [&](const std::vector<Vector3> &values)
+            {
+                std::vector<Vector3> result;
+                result.reserve(values.size());
+                for (auto p : values)
+                    result.push_back(Unit(TransformVector(p, normalMatrix)));
+                return Flat(result);
+            };
+            std::vector<Vector3> ns, ts, bs;
+            ns.reserve(mesh.VertexCount);
+            ts.reserve(mesh.VertexCount);
+            bs.reserve(mesh.VertexCount);
+            for (int i = 0; i < mesh.VertexCount; ++i)
+            {
+                auto n = Unit(TransformVector(posed.Normals.at(i), normalMatrix));
+                auto t = Unit(TransformVector(Xyz(posed.Tangents.at(i)), transform));
+                t = Unit(Sub(t, Scale(n, Dot(n, t))));
+                ns.push_back(n);
+                ts.push_back(t);
+                bs.push_back(Scale(Cross(n, t), posed.Tangents[i].w * (mirrored ? -1.f : 1.f)));
+            }
+            auto nodeName = "Mesh_" + std::to_string(geometry.size() + 1) + "_" + unique(renderer->Node->Name);
+            int output = target.Mesh(nodeName, points(posed.Positions), Flat(ns), Flat(ts), Flat(bs));
+            for (auto &c : mesh.Channels)
+                if (c.Semantic >= 4 && c.Semantic <= 11)
+                {
+                    std::vector<float> uv;
+                    uv.reserve(mesh.VertexCount * 2);
+                    for (int v = 0; v < mesh.VertexCount; ++v)
+                    {
+                        uv.push_back(mesh.Read(c.Semantic, v, 0));
+                        uv.push_back(mesh.Read(c.Semantic, v, 1));
+                    }
+                    target.Uv(output, c.Semantic - 4, uv);
+                }
+            if (channel(3))
+            {
+                std::vector<float> colors;
+                for (int v = 0; v < mesh.VertexCount; ++v)
+                    for (int c = 0; c < 4; ++c)
+                        colors.push_back(mesh.Read(3, v, c));
+                target.Colors(output, colors);
+            }
+            std::set<int> used;
+            int submeshIndex = 0;
+            for (auto &submesh : mesh.Submeshes)
+            {
+                if (submesh.Topology != 0)
+                    throw std::runtime_error("Export requires triangular topology: " + mesh.Name);
+                auto materialIt = appearance.Materials.find(renderer);
+                if (materialIt == appearance.Materials.end() ||
+                    submeshIndex >= static_cast<int>(materialIt->second.size()))
+                    throw std::runtime_error("Missing export material: " + renderer->Node->Name + "/" +
+                                             std::to_string(submeshIndex));
+                if (progress)
+                    progress({materialNumber, 0, "烘焙材质 · " + renderer->Node->Name});
+                auto material = materials.Get(*materialIt->second.at(submeshIndex++), renderer->Part->Role,
+                                              renderer->Node->Name, std::to_string(++materialNumber), cancellation);
+                int slot = target.Material(material.at("Id"), material.value("BaseColor", ""),
+                                           material.value("Normal", ""), material.value("Emission", ""));
+                result["Materials"] = result["Materials"].get<int>() + 1;
+                std::vector<int> indices;
+                indices.reserve(submesh.IndexCount);
+                for (int i = 0; i < submesh.IndexCount; ++i)
+                {
+                    auto index = static_cast<std::int64_t>(submesh.BaseVertex) +
+                                 mesh.Index(static_cast<std::size_t>(submesh.FirstIndex) + i);
+                    if (index < 0 || index >= mesh.VertexCount)
+                        throw std::runtime_error("Invalid export index.");
+                    indices.push_back(static_cast<int>(index));
+                    used.insert(static_cast<int>(index));
+                }
+                target.Triangles(output, slot, indices, mirrored);
+                result["Triangles"] = result["Triangles"].get<int>() + static_cast<int>(indices.size() / 3);
+            }
+            if (weighted)
+            {
+                std::vector<std::vector<int>> indices(renderer->Bones.size());
+                std::vector<std::vector<float>> weights(renderer->Bones.size());
+                for (int vertex = 0; vertex < mesh.VertexCount; ++vertex)
+                {
+                    float total = 0;
+                    for (int i = 0; i < 4; ++i)
+                        total += mesh.Read(12, vertex, i);
+                    if (total <= 0 || !std::isfinite(total))
+                        throw std::runtime_error("Invalid export skin total.");
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        float weight = mesh.Read(12, vertex, i);
+                        if (weight > 0)
+                        {
+                            float b = mesh.Read(13, vertex, i);
+                            if (!std::isfinite(b) || b < 0 || b >= renderer->Bones.size() || std::floor(b) != b)
+                                throw std::runtime_error("Invalid export skin bone.");
+                            indices[static_cast<std::size_t>(b)].push_back(vertex);
+                            weights[static_cast<std::size_t>(b)].push_back(weight / total);
+                        }
+                    }
+                }
+                for (std::size_t b = 0; b < indices.size(); ++b)
+                    if (!indices[b].empty())
+                        target.Skin(output, bone(renderer->Bones[b]), indices[b], weights[b]);
+            }
+            else
+            {
+                std::vector<int> indices(mesh.VertexCount);
+                for (int i = 0; i < mesh.VertexCount; ++i)
+                    indices[i] = i;
+                target.Skin(output, bone(renderer->Node), indices, std::vector<float>(mesh.VertexCount, 1));
+            }
+            bool reset = false;
+            if (std::any_of(renderer->BlendWeights.begin(), renderer->BlendWeights.end(),
+                            [](float w)
+                            {
+                                return w != 0;
+                            }))
+                for (int i = 0; i < mesh.VertexCount; ++i)
+                    if (Length(Sub(posed.Positions[i], neutral.Positions[i])) > 1e-4f)
+                    {
+                        reset = true;
+                        break;
+                    }
+            std::vector<float> displacement(mesh.BlendShapes.size() + (reset ? 1 : 0));
+            std::vector<std::string> shapeNames;
+            for (std::size_t shape = 0; shape < mesh.BlendShapes.size(); ++shape)
+            {
+                shapeNames.push_back(mesh.BlendShapes[shape].Name);
+                for (auto &frame : mesh.BlendShapes[shape].Frames)
+                {
+                    CheckCancelled(cancellation);
+                    std::vector<float> weights(mesh.BlendShapes.size());
+                    weights[shape] = frame.Weight;
+                    auto shaped = DeformMesh(mesh, weights, matrices);
+                    std::vector<Vector3> positions, shapedNormals, shapedTangents;
+                    for (int i = 0; i < mesh.VertexCount; ++i)
+                    {
+                        auto delta = Sub(shaped.Positions[i], neutral.Positions[i]);
+                        positions.push_back(Add(posed.Positions[i], delta));
+                        shapedNormals.push_back(Add(posed.Normals[i], Sub(shaped.Normals[i], neutral.Normals[i])));
+                        shapedTangents.push_back(Unit(TransformVector(
+                            Add(Xyz(posed.Tangents[i]), Sub(Xyz(shaped.Tangents[i]), Xyz(neutral.Tangents[i]))),
+                            transform)));
+                        displacement[shape] =
+                            std::max(displacement[shape], Length(TransformVector(delta, transform)) * .1f);
+                    }
+                    target.Shape(output, mesh.BlendShapes[shape].Name, frame.Weight, points(positions),
+                                 normals(shapedNormals), Flat(shapedTangents));
+                    ++shapeFrames;
+                }
+                result["BlendShapes"] = result["BlendShapes"].get<int>() + 1;
+            }
+            if (reset)
+            {
+                CheckCancelled(cancellation);
+                target.Shape(output, "HS2_ResetExpressions", 100, points(neutral.Positions), normals(neutral.Normals));
+                ++shapeFrames;
+                result["BlendShapes"] = result["BlendShapes"].get<int>() + 1;
+                shapeNames.push_back("HS2_ResetExpressions");
+                for (int i = 0; i < mesh.VertexCount; ++i)
+                    displacement.back() = std::max(
+                        displacement.back(),
+                        Length(TransformVector(Sub(neutral.Positions[i], posed.Positions[i]), transform)) * .1f);
+            }
+            std::vector<int> sorted(used.begin(), used.end()), sampleIndices;
+            std::vector<float> referencePositions;
+            int samples = std::min(32, static_cast<int>(sorted.size()));
+            for (int i = 0; i < samples; ++i)
+            {
+                int sample = sorted[static_cast<std::size_t>(i) * (sorted.size() - 1) / std::max(1, samples - 1)];
+                sampleIndices.push_back(sample);
+                auto p = Scale(TransformPoint(posed.Positions[sample], transform), .1f);
+                referencePositions.insert(referencePositions.end(), {p.x, p.y, p.z});
+            }
+            geometry.push_back({{"Node", nodeName},
+                                {"Vertices", mesh.VertexCount},
+                                {"RebaseError", 0},
+                                {"SkinInfluences", renderer->Source.Skinned ? 4 : 0},
+                                {"SampleIndices", sampleIndices},
+                                {"ReferencePositions", referencePositions},
+                                {"BlendShapeNames", shapeNames},
+                                {"BlendShapeMaximumDisplacements", displacement},
+                                {"SourceDefaultWeights", renderer->BlendWeights},
+                                {"DefaultWeights", std::vector<float>(displacement.size())},
+                                {"NeutralResetShape", reset ? "HS2_ResetExpressions" : ""}});
+            result["Meshes"] = result["Meshes"].get<int>() + 1;
+            result["Vertices"] = result["Vertices"].get<int>() + mesh.VertexCount;
+        }
+        result["Bones"] = bones.size();
+        result["Geometry"] = geometry;
+        CheckCancelled(cancellation);
+        auto reopened = target.WriteAndVerify(fs::absolute(directory / "character.fbx"));
+        CheckCancelled(cancellation);
+        if (reopened.Meshes != result["Meshes"] || reopened.Vertices != result["Vertices"] ||
+            reopened.Polygons != result["Triangles"] || reopened.Bones != result["Bones"] ||
+            reopened.Channels != result["BlendShapes"] || reopened.ShapeFrames != shapeFrames ||
+            reopened.Materials != result["Materials"])
+            throw std::runtime_error("Independent FBX reopen changed scene counts.");
+        materials.Save();
+        std::set<std::string> warnings(materials.Warnings.begin(), materials.Warnings.end()),
+            issues(source.Definition->Diagnostics.begin(), source.Definition->Diagnostics.end());
+        issues.insert(source.Diagnostics.begin(), source.Diagnostics.end());
+        issues.insert(composer.SourceReferenceDiagnostics.begin(), composer.SourceReferenceDiagnostics.end());
+        issues.insert(materials.Issues.begin(), materials.Issues.end());
+        result["Warnings"] = warnings;
+        result["Issues"] = issues;
+        WriteJson(directory / "geometry-validation.json", {{"Result", result},
+                                                           {"Reopened", Summary(reopened)},
+                                                           {"GeometryReopened", true},
+                                                           {"MaterialsComplete", true}});
+        WriteJson(directory / Path("骨骼映射.json"), {{"SchemaVersion", 1}, {"Bones", maps}});
+        WriteJson(directory / "model-result.json", result);
+        TextFile(
+            directory / Path("导入说明.txt"),
+            "通用 FBX 可动画角色\n\n请一起移动整个角色文件夹；贴图使用相对路径。FBX 为右手 Y-up、厘米，HS2 源单位按 10 "
+            "厘米换算。\n体形已经转换为参考形态；保留原骨架、额外骨骼、蒙皮、表情、UV、法线和切线。不包含待机动画或物理"
+            "组件。\n默认表情已烘焙到基础网格，导入后的形变权重应为 0。沿用游戏原始控制值时，先将 "
+            "HS2_ResetExpressions（若存在）设为 100，再设置原始形变通道。\n\n按 materials.json 的 Id 匹配 FBX "
+            "材质槽。BaseColor 和 Emission 使用 sRGB；Normal、Metallic、Roughness、Occlusion 使用线性数据。Normal 为 "
+            "OpenGL +Y；Unreal 需翻转绿色通道。AlphaMode=Mask 使用 Alpha Clipping，阈值见 AlphaCutoff；Blend "
+            "使用半透明；按 DoubleSided 设置双面。\nHairStreakMask 使用 HairStreakUv 指定的 UV 通道，按 "
+            "HairStreakColor 和 HairStreakStrength 混合挑染颜色。参照骨骼映射.json 配置 Humanoid 或 Unreal IK Rig / "
+            "Retargeter，并检查参考姿态。\n\n本包采用通用 PBR 材质。需要自动建立专用材质、灯光和相机时，请选择 Blender "
+            "或 Unreal 3D 模型导出。未知 "
+            "Shader、眼球折射、MatCap、描边及后处理可能存在差异；缺失资源与效果近似见导出报告。预览参考.png "
+            "保留导出参考姿态和所选视图。\n");
+        return result;
+    }
+}

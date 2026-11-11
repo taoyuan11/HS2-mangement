@@ -1,0 +1,192 @@
+#include "Character/CharacterExtensions.h"
+#include "Animation/ShapeRig.h"
+#include "Animation/Animation.h"
+#include <algorithm>
+#include <cmath>
+#include <functional>
+
+namespace hs2
+{
+    namespace
+    {
+        struct Garment
+        {
+            bool Enabled = false, Flatten = false, HideNipples = false, HideAccessories = false;
+            float Lift = 0, Together = 0, Squeeze = 0, Center = 0, Corset = 0, Firmness = 0;
+        };
+
+        Garment Read(const Parameter &p)
+        {
+            return {p.Float("ENABLE_PUSHUP") != 0,
+                    p.Float("FLATTEN_NIPPLES") != 0,
+                    p.Float("HIDE_NIPPLES") != 0,
+                    p.Float("HIDE_ACCESSORIES") != 0,
+                    p.Float("LIFT"),
+                    p.Float("PUSH_TOGETHER"),
+                    p.Float("SQUEEZE"),
+                    p.Float("CENTER_NIPPLES"),
+                    p.Float("CORSET"),
+                    p.Float("FIRMNESS")};
+        }
+
+        Quaternion Product(Quaternion a, Quaternion b)
+        {
+            return {a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                    a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
+        }
+
+        void Apply(std::vector<BoneDefinition> &bones, const std::vector<BoneAdjustment> &changes)
+        {
+            for (auto &change : changes)
+                for (auto &bone : bones)
+                    if (bone.Name == change.Name)
+                    {
+                        bone.Position = {bone.Position.x * change.Length + change.Position.x,
+                                         bone.Position.y * change.Length + change.Position.y,
+                                         bone.Position.z * change.Length + change.Position.z};
+                        bone.Scale = {bone.Scale.x * change.Scale.x, bone.Scale.y * change.Scale.y,
+                                      bone.Scale.z * change.Scale.z};
+                        bone.Rotation = Product(bone.Rotation, EulerRotation(change.Rotation));
+                        break;
+                    }
+        }
+    }
+
+    void ApplyCharacterPushUp(CharacterDefinition &definition, const CharacterExtensionState &state,
+                              std::span<const std::uint8_t> animation, bool braWorn, bool topWorn)
+    {
+        if (state.PushUp.Children.empty())
+            return;
+        auto bra = Read(state.PushUp.Get("Bra")), top = Read(state.PushUp.Get("Top"));
+        float softness = definition.Body.Float("bustSoftness");
+        if (braWorn && bra.Enabled)
+            softness = (std::min)(softness, 1 - bra.Firmness);
+        if (topWorn && top.Enabled)
+            softness = (std::min)(softness, 1 - top.Firmness);
+        Parameter p;
+        p.Name = "effectiveBustSoftness";
+        p.Number = softness;
+        auto found = std::find_if(definition.Body.Children.begin(), definition.Body.Children.end(),
+                                  [](auto &field)
+                                  {
+                                      return field.Name == "effectiveBustSoftness";
+                                  });
+        if (found == definition.Body.Children.end())
+            definition.Body.Children.push_back(p);
+        else
+            *found = p;
+        bra.Enabled &= braWorn;
+        top.Enabled &= topWorn;
+        if (!bra.Enabled && !top.Enabled)
+            return;
+        std::vector<float> body;
+        std::function<void(const Parameter &)> flatten = [&](auto &value)
+        {
+            if (value.Children.empty())
+                body.push_back(static_cast<float>(value.Number));
+            else
+                for (auto &child : value.Children)
+                    flatten(child);
+        };
+        flatten(definition.Body.Get("shapeValueBody"));
+        if (body.size() < 33)
+            throw std::runtime_error("PushUp：身体参数不完整。");
+        Garment c = !bra.Enabled   ? top
+                    : !top.Enabled ? bra
+                                   : Garment{true,
+                                             top.Flatten,
+                                             top.HideNipples,
+                                             bra.HideAccessories || top.HideAccessories,
+                                             (std::max)(bra.Lift, top.Lift),
+                                             (std::max)(bra.Together, top.Together),
+                                             (std::max)(bra.Squeeze, top.Squeeze),
+                                             (std::max)(bra.Center, top.Center),
+                                             (std::max)(bra.Corset, top.Corset),
+                                             0};
+        std::vector<BoneAdjustment> changes;
+        auto change = [&](std::string name, float x = 0, float y = 0, float z = 0, float rx = 0, float ry = 0,
+                          float sx = 1, float sy = 1, float sz = 1)
+        {
+            for (float value : {x, y, z, rx, ry, sx, sy, sz})
+                if (!std::isfinite(value))
+                    throw std::runtime_error("PushUp：塑形结果无效。");
+            changes.push_back({std::move(name), {sx, sy, sz}, {x, y, z}, {rx, ry, 0}, 1});
+        };
+        auto length = [](float value, float factor)
+        {
+            return static_cast<float>((value - .5f) * (value < .5f ? .1f : factor));
+        };
+        for (auto side : {std::string("L"), std::string("R")})
+        {
+            float sign = side == "L" ? 1.f : -1.f;
+            change("cf_J_Mune00_t_" + side, 0, static_cast<float>((std::max)(0.f, c.Lift - body[2]) * .3f));
+            float together = (std::max)(0.f, c.Together - (1 - body[3])),
+                  spacing = (std::max)(0.f, c.Together - (1 - body[4]));
+            float angle = (body[5] - .5f) * c.Center;
+            change(
+                "cf_J_Mune00_d_" + side, static_cast<float>(sign * (together * .1f + spacing * .4f)), 0,
+                static_cast<float>((together > 0 ? (std::abs(.5f - c.Together) - std::abs(.5f - body[3])) * .1f : 0) -
+                                   std::abs(angle) * .03f),
+                angle * 10, sign * together * 30);
+            float squeeze = (std::min)(body[6], 1 - c.Squeeze);
+            for (int segment : {1, 2})
+                change("cf_J_Mune0" + std::to_string(segment) + "_t_" + side, 0, 0,
+                       length(squeeze, segment == 1 ? .3f : .36f) - length(body[6], segment == 1 ? .3f : .36f),
+                       angle * 30);
+            float size = static_cast<float>(1 + (std::max)(0.f, body[6] - squeeze) * .2f);
+            change("cf_J_Mune01_s_" + side, 0, 0, 0, 0, 0, size, size);
+            if (c.Flatten || c.HideNipples)
+            {
+                float scale = static_cast<float>(.9f / (1 + body[7] / 10)), nipple = std::clamp(body[32], 0.f, 1.f),
+                      nipScale = static_cast<float>(1 / (1 + nipple * .6f));
+                change("cf_J_Mune04_s_" + side, 0, 0, static_cast<float>((-1 - body[7]) * .025f), 0, 0, scale, scale,
+                       scale);
+                float hidden = c.HideNipples ? .7f : 1.f;
+                change("cf_J_Mune_Nip02_s_" + side, 0, 0,
+                       static_cast<float>(-nipple * .08f - (c.HideNipples ? .03f : 0)), 0, 0, nipScale * hidden,
+                       nipScale * hidden, nipScale * hidden);
+                change("cf_J_Mune_Nipacs01_" + side, 0, 0, -nipple * .06f);
+            }
+        }
+        if (c.Corset > 0)
+        {
+            auto keys = NativeShapeRig::ReadKeys(animation);
+            auto sample = [&](const std::string &name, float value, int component)
+            {
+                auto found = keys.find(name);
+                if (found == keys.end() || found->second.empty())
+                    throw std::runtime_error("PushUp：缺少束腰形变数据。");
+                auto &frames = found->second;
+                float rate = std::clamp(value, 0.f, 1.f) * static_cast<float>(frames.size() - 1);
+                auto a = static_cast<std::size_t>(rate), b = (std::min)(a + 1, frames.size() - 1);
+                return static_cast<float>(frames[a][component] + (frames[b][component] - frames[a][component]) *
+                                                                     (rate - static_cast<float>(a)));
+            };
+            float target = 1 - c.Corset,
+                  width = target < body[16]
+                              ? sample("cf_s_Spine01_s", target, 6) / sample("cf_s_Spine01_s", body[16], 6)
+                              : 1,
+                  depth = target < body[17]
+                              ? sample("cf_s_Spine01_s_sz", target, 8) / sample("cf_s_Spine01_s_sz", body[17], 8)
+                              : 1,
+                  position = target < body[17]
+                                 ? sample("cf_s_Spine01_s_sz", target, 2) - sample("cf_s_Spine01_s_sz", body[17], 2)
+                                 : 0;
+            change("cf_J_Spine01_s", 0, 0, position, 0, 0, width, 1, depth);
+        }
+        for (auto &part : definition.Parts)
+            if (part->Role == "rig")
+            {
+                Apply(part->Bones, changes);
+                Apply(part->UnmodifiedBones, changes);
+                break;
+            }
+        if (c.HideAccessories)
+            std::erase_if(definition.Parts,
+                          [](auto &part)
+                          {
+                              return part->Role == "accessory" &&
+                                     (part->Parent == "N_Tikubi_L" || part->Parent == "N_Tikubi_R");
+                          });
+    }
+}

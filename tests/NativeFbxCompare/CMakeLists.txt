@@ -1,13 +1,20 @@
 cmake_minimum_required(VERSION 3.24)
 project(HS2ManagerFbxCompare LANGUAGES CXX)
-set(FBX_SDK_ROOT "" CACHE PATH "Official Autodesk FBX SDK directory")
+set(FBX_SDK_ROOT
+    ""
+    CACHE PATH "Official Autodesk FBX SDK directory"
+)
 add_executable(HS2Manager.FbxCompare Compare.cpp)
 target_compile_features(HS2Manager.FbxCompare PRIVATE cxx_std_17)
 target_compile_definitions(HS2Manager.FbxCompare PRIVATE FBXSDK_SHARED)
 target_include_directories(HS2Manager.FbxCompare PRIVATE "${FBX_SDK_ROOT}/include")
 target_link_libraries(HS2Manager.FbxCompare PRIVATE "${FBX_SDK_ROOT}/lib/x64/release/libfbxsdk.lib")
 if(MSVC)
-  target_compile_options(HS2Manager.FbxCompare PRIVATE /W4 /EHsc)
+    target_compile_options(HS2Manager.FbxCompare PRIVATE /W4 /EHsc /utf-8)
 endif()
-add_custom_command(TARGET HS2Manager.FbxCompare POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
-  "${FBX_SDK_ROOT}/lib/x64/release/libfbxsdk.dll" "$<TARGET_FILE_DIR:HS2Manager.FbxCompare>")
+add_custom_command(
+    TARGET HS2Manager.FbxCompare
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FBX_SDK_ROOT}/lib/x64/release/libfbxsdk.dll"
+            "$<TARGET_FILE_DIR:HS2Manager.FbxCompare>"
+)

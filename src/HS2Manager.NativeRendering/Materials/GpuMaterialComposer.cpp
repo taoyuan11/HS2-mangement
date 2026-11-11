@@ -1,0 +1,731 @@
+#include "Materials/GpuMaterialComposer.h"
+#include "Common/RenderMath.h"
+#include <wincodec.h>
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <fstream>
+#include <stdexcept>
+
+namespace hs2
+{
+    namespace
+    {
+        std::string Lower(std::string value)
+        {
+            for (char &c : value)
+                if (c >= 'A' && c <= 'Z')
+                    c += 32;
+            return value;
+        }
+
+        std::string Key(const GpuAssetPointer &p)
+        {
+            auto path = p.Bundle.lexically_normal().u8string();
+            return Lower(std::string(reinterpret_cast<const char *>(path.data()), path.size())) + ":" +
+                   std::to_string(p.FileId) + ":" + std::to_string(p.PathId);
+        }
+
+        bool Png(const std::filesystem::path &path)
+        {
+            return Lower(RenderPathKey(path.extension())) == ".png";
+        }
+
+        GpuMeshData Quad()
+        {
+            GpuMeshData result;
+            result.Name = "composite";
+            result.VertexCount = 4;
+            result.Channels = {{0, 0, 0, 0, 3}, {4, 0, 12, 0, 2}};
+            result.StreamOffsets = {0};
+            result.StreamStrides = {20};
+            const float data[]{-1, -1, 0, 0, 0, 1, -1, 0, 1, 0, -1, 1, 0, 0, 1, 1, 1, 0, 1, 1};
+            result.VertexBytes.resize(sizeof(data));
+            std::memcpy(result.VertexBytes.data(), data, sizeof(data));
+            result.IndexBytes = {0, 0, 1, 0, 2, 0, 2, 0, 1, 0, 3, 0};
+            result.Submeshes = {{0, 6, 0, 0}};
+            return result;
+        }
+
+        const GpuMeshData CompositeQuad = Quad();
+    }
+
+    Vector4 ParameterColor(const Parameter &value, Vector4 fallback)
+    {
+        if (value.Has("r"))
+            return {value.Float("r"), value.Float("g"), value.Float("b"), value.Float("a", 1)};
+        if (value.Children.size() >= 3)
+            return {static_cast<float>(value.Children[0].Number), static_cast<float>(value.Children[1].Number),
+                    static_cast<float>(value.Children[2].Number),
+                    value.Children.size() > 3 ? static_cast<float>(value.Children[3].Number) : 1};
+        return fallback;
+    }
+
+    float ParameterComponent(const Parameter &value, int axis)
+    {
+        constexpr const char *keys[]{"x", "y", "z", "w"};
+        if (axis < 0 || axis > 3)
+            throw std::out_of_range("Parameter component.");
+        return value.Has(keys[axis])                               ? value.Float(keys[axis])
+               : static_cast<size_t>(axis) < value.Children.size() ? static_cast<float>(value.Children[axis].Number)
+                                                                   : 0;
+    }
+
+    GpuMaterialInstance::GpuMaterialInstance(const GpuMaterialData &source, std::shared_ptr<NativeShaderAsset> shader)
+        : Name(source.Name), Textures(source.Textures), Keywords(source.Keywords.begin(), source.Keywords.end()),
+          OverrideTags(source.OverrideTags), queue_(source.Queue)
+    {
+        for (const auto &[name, value] : source.Floats)
+            scalarValues_[name] = {value};
+        for (const auto &[name, value] : source.Colors)
+            vectorValues_[name] = {value.x, value.y, value.z, value.w};
+        SetShader(std::move(shader));
+    }
+
+    int GpuMaterialInstance::Queue() const
+    {
+        return queue_ >= 0 ? queue_ : DefaultQueue(*Shader);
+    }
+
+    bool GpuMaterialInstance::HasProperty(const std::string &name) const
+    {
+        return properties_.contains(name) || assigned_.contains(name);
+    }
+
+    std::optional<std::vector<float>> GpuMaterialInstance::CopyPropertyValue(const std::string &name,
+                                                                             int components) const
+    {
+        const auto v = Values.find(name);
+        if (v != Values.end() && v->second.size() == components)
+            return v->second;
+        const auto &map = components == 1 ? scalarValues_ : vectorValues_;
+        auto hidden = map.find(name);
+        if (hidden != map.end() && hidden->second.size() == components)
+            return hidden->second;
+        return {};
+    }
+
+    std::string GpuMaterialInstance::Tag(const std::string &name) const
+    {
+        auto override = OverrideTags.find(name);
+        if (override != OverrideTags.end())
+            return override->second;
+        if (Shader->SubShaders.empty())
+            return {};
+        for (const auto &tag : Shader->SubShaders[0].Get("m_Tags").Get("tags").Children)
+            if (Lower(tag.String("first")) == Lower(name))
+                return tag.String("second");
+        return {};
+    }
+
+    void GpuMaterialInstance::SetShader(std::shared_ptr<NativeShaderAsset> shader)
+    {
+        if (!shader)
+            throw std::invalid_argument("Null material shader.");
+        Shader = std::move(shader);
+        properties_.clear();
+        propertyTypes_.clear();
+        Values.clear();
+        ColorProperties.clear();
+        GammaProperties.clear();
+        DefaultTextures.clear();
+        for (const auto &property : Shader->Properties.Get("m_Props").Children)
+        {
+            const auto name = property.String("m_Name");
+            const int type = static_cast<int>(property.Get("m_Type").Number);
+            properties_.insert(name);
+            propertyTypes_[name] = type;
+            if (type == 4)
+            {
+                DefaultTextures[name] = property.Get("m_DefTexture").String("m_DefaultName");
+                continue;
+            }
+            std::vector<float> values{property.Float("m_DefValue[0]"), property.Float("m_DefValue[1]"),
+                                      property.Float("m_DefValue[2]"), property.Float("m_DefValue[3]")};
+            const auto &map = (type == 2 || type == 3) ? scalarValues_ : vectorValues_;
+            auto found = map.find(name);
+            Values[name] = found == map.end() ? ((type == 2 || type == 3) ? std::vector<float>{values[0]} : values)
+                                              : found->second;
+            const int flags = static_cast<int>(property.Get("m_Flags").Number);
+            if (type == 0 && !(flags & 16))
+                ColorProperties.insert(name);
+            if (flags & 32)
+                GammaProperties.insert(name);
+        }
+        for (const auto &name : assigned_)
+            if (!properties_.contains(name))
+            {
+                auto s = scalarValues_.find(name), v = vectorValues_.find(name);
+                if (s != scalarValues_.end())
+                    Values[name] = s->second;
+                else if (v != vectorValues_.end())
+                    Values[name] = v->second;
+            }
+    }
+
+    void GpuMaterialInstance::Set(const std::string &name, std::vector<float> values)
+    {
+        if (values.empty())
+            throw std::invalid_argument("Empty material property.");
+        bool scalar = values.size() == 1;
+        assigned_.insert(name);
+        (scalar ? scalarValues_ : vectorValues_)[name] = values;
+        auto type = propertyTypes_.find(name);
+        if (type == propertyTypes_.end() ||
+            (scalar ? (type->second == 2 || type->second == 3) : (type->second == 0 || type->second == 1)))
+            Values[name] = std::move(values);
+    }
+
+    int GpuMaterialInstance::DefaultQueue(const NativeShaderAsset &shader)
+    {
+        std::string tag;
+        if (!shader.SubShaders.empty())
+            for (const auto &value : shader.SubShaders[0].Get("m_Tags").Get("tags").Children)
+                if (Lower(value.String("first")) == "queue")
+                    tag = value.String("second");
+        if (tag.empty())
+            return 2000;
+        auto split = tag.find_first_of("+-");
+        auto name = tag.substr(0, split);
+        int add = 0;
+        if (split != std::string::npos)
+        {
+            size_t count;
+            add = std::stoi(tag.substr(split), &count);
+            if (count != tag.size() - split)
+                throw std::runtime_error("Invalid material queue offset.");
+        }
+        const int base = name == "Background"    ? 1000
+                         : name == "Geometry"    ? 2000
+                         : name == "AlphaTest"   ? 2450
+                         : name == "Transparent" ? 3000
+                         : name == "Overlay"     ? 4000
+                                                 : -1;
+        if (base < 0 || add > INT_MAX - base)
+            throw std::runtime_error("Unknown material render queue: " + tag);
+        return base + add;
+    }
+
+    void GpuMaterialInstance::SetColor(const std::string &name, Vector4 color)
+    {
+        Set(name, {color.x, color.y, color.z, color.w});
+    }
+
+    void GpuMaterialInstance::SetColor(const std::string &name, const Parameter &color, Vector4 fallback)
+    {
+        SetColor(name, ParameterColor(color, fallback));
+    }
+
+    Vector4 GpuMaterialInstance::Vector(const std::string &name) const
+    {
+        auto it = Values.find(name);
+        if (it == Values.end() || it->second.size() != 4)
+            return {};
+        const auto &v = it->second;
+        return {v[0], v[1], v[2], v[3]};
+    }
+
+    void GpuMaterialInstance::SetTextureTransform(const std::string &name, std::optional<Vector2> scale,
+                                                  std::optional<Vector2> offset)
+    {
+        auto &texture = Textures[name];
+        if (scale)
+            texture.Scale = *scale;
+        if (offset)
+            texture.Offset = *offset;
+    }
+
+    GpuMaterialComposer::GpuMaterialComposer(GraphicsDevice &g, NativeGpuAssetStore &store,
+                                             const CharacterDefinition &definition)
+        : graphics_(g), store_(store), definition_(definition),
+          anisotropicFiltering_(definition.Environment.DhhEnabled
+                                    ? 2
+                                    : static_cast<int>(definition.Environment.Quality.Float("anisotropicTextures", 2)))
+    {
+        for (const auto &selection : definition.Selections)
+            if (!selections_.emplace(selection.Key, selection.Reference).second)
+                throw std::runtime_error("Duplicate appearance selection: " + selection.Key);
+    }
+
+    bool GpuMaterialComposer::HasSelection(const std::string &key) const
+    {
+        return selections_.contains(key);
+    }
+
+    std::shared_ptr<NativeShaderAsset> GpuMaterialComposer::Shader(const GpuAssetPointer &pointer)
+    {
+        auto p = store_.Resolve(pointer);
+        const auto key = Key(p);
+        auto found = shaders_.find(key);
+        if (found != shaders_.end())
+            return found->second;
+        auto value = std::make_shared<NativeShaderAsset>(ReadShader(*store_.Reader(p.Bundle), p.PathId));
+        shaders_[key] = value;
+        return value;
+    }
+
+    NativeComputeAsset GpuMaterialComposer::Compute(const GpuAssetPointer &pointer)
+    {
+        auto p = store_.Resolve(pointer);
+        return ReadComputeShader(*store_.Reader(p.Bundle), p.PathId);
+    }
+
+    std::shared_ptr<GpuMaterialInstance> GpuMaterialComposer::CreateMaterial(const GpuMaterialData &source)
+    {
+        auto value = std::make_shared<GpuMaterialInstance>(source, Shader(source.Shader));
+        OptimizeShader(*value);
+        return value;
+    }
+
+    void GpuMaterialComposer::OptimizeShader(GpuMaterialInstance &material)
+    {
+        auto replacement = std::find_if(definition_.Shaders.begin(), definition_.Shaders.end(),
+                                        [&](const auto &s)
+                                        {
+                                            return s.AutoReplace && s.Name == material.Shader->Name;
+                                        });
+        if (replacement != definition_.Shaders.end())
+        {
+            auto queue = material.Queue();
+            material.SetShader(Shader(replacement->Name));
+            material.Queue(queue);
+        }
+    }
+
+    std::shared_ptr<NativeShaderAsset> GpuMaterialComposer::Shader(const std::string &name)
+    {
+        auto entry = std::find_if(definition_.Shaders.begin(), definition_.Shaders.end(),
+                                  [&](const auto &s)
+                                  {
+                                      return s.Name == name;
+                                  });
+        if (entry != definition_.Shaders.end() && entry->Source)
+        {
+            const auto &source = *entry->Source;
+            auto reader = store_.Reader(source.Bundle);
+            if (auto p = reader->TryFind(source.Asset, 48))
+                return Shader(*p);
+            if (auto p = reader->TryFind(source.Asset, 21))
+                return Shader(store_.Material(*p)->Shader);
+            if (auto p = reader->TryFind(source.Asset, 1))
+            {
+                auto prefab = reader->Prefab(source.Asset);
+                for (const auto &renderer : prefab.Renderers)
+                    for (const auto &material : renderer.Materials)
+                        if (material.PathId)
+                        {
+                            auto shader = Shader(store_.Material(material)->Shader);
+                            if (shader->Name == name)
+                                return shader;
+                        }
+            }
+        }
+        for (const auto &path : store_.Paths())
+            if (auto p = store_.Reader(path)->TryFind(name, 48))
+                return Shader(*p);
+        return Shader(store_.GameResource(name, 48));
+    }
+
+    const AssetReference &GpuMaterialComposer::Selection(const std::string &key) const
+    {
+        auto it = selections_.find(key);
+        if (it == selections_.end())
+            throw std::runtime_error("Missing appearance resource: " + key);
+        return it->second;
+    }
+
+    std::shared_ptr<GpuMaterialInstance> GpuMaterialComposer::Material(const std::string &selection)
+    {
+        const auto &ref = Selection(selection);
+        return CreateMaterial(*store_.Material(store_.Reader(ref.Bundle)->Find(ref.Asset, 21)));
+    }
+
+    std::shared_ptr<GpuMaterialInstance> GpuMaterialComposer::ShaderMaterial(const std::string &selection)
+    {
+        const auto &ref = Selection(selection);
+        auto shader = Shader(store_.Reader(ref.Bundle)->Find(ref.Asset, 48));
+        GpuMaterialData source;
+        source.Name = shader->Name;
+        return std::make_shared<GpuMaterialInstance>(source, std::move(shader));
+    }
+
+    void GpuMaterialComposer::SelectTexture(GpuMaterialInstance &material, const std::string &property,
+                                            const std::string &selection)
+    {
+        auto it = selections_.find(selection);
+        SelectTexture(material, property,
+                      it == selections_.end() ? std::optional<AssetReference>{}
+                                              : std::optional<AssetReference>{it->second});
+    }
+
+    void GpuMaterialComposer::SelectTexture(GpuMaterialInstance &material, const std::string &property,
+                                            const std::optional<AssetReference> &reference)
+    {
+        material.ImageSelections.erase(property);
+        material.TextureOverrides.erase(property);
+        auto &binding = material.Textures[property];
+        binding.Texture = {};
+        if (!reference)
+            return;
+        if (Png(reference->Bundle))
+        {
+            material.ImageSelections[property] = *reference;
+            return;
+        }
+        auto pointer = store_.Reader(reference->Bundle)->TryFind(reference->Asset, 28);
+        if (pointer)
+            binding.Texture = *pointer;
+        else
+            SourceReferenceDiagnostics.insert("Missing authored texture selection: " + material.Name + "/" + property +
+                                              ": " + reference->Asset);
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::Texture(const std::string &selection)
+    {
+        const auto &reference = Selection(selection);
+        if (Png(reference.Bundle))
+            return LooseImage(reference);
+        auto reader = store_.Reader(reference.Bundle);
+        auto pointer = reader->TryFind(reference.Asset, 28);
+        return Texture(pointer ? *pointer : reader->Find(reference.Asset, 89));
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::TryTexture(const std::string &selection)
+    {
+        const auto &ref = Selection(selection);
+        if (Png(ref.Bundle))
+            return LooseImage(ref);
+        auto p = store_.Reader(ref.Bundle)->TryFind(ref.Asset, 28);
+        if (p)
+            return Texture(*p);
+        SourceReferenceDiagnostics.insert("Missing authored composition texture: " + selection + ": " + ref.Asset);
+        return {};
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::Texture(const GpuAssetPointer &pointer)
+    {
+        const auto p = store_.Resolve(pointer), keyPointer = p;
+        const auto key = Key(keyPointer);
+        auto found = textures_.find(key);
+        if (found != textures_.end())
+            return found->second;
+        auto texture = std::make_shared<GpuTexture>(graphics_, store_.Texture(p), anisotropicFiltering_);
+        textures_[key] = texture;
+        return texture;
+    }
+
+    GpuCopyPass &GpuMaterialComposer::Copier()
+    {
+        if (!copy_)
+            copy_ = std::make_unique<GpuCopyPass>(graphics_);
+        return *copy_;
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::LooseImage(const AssetReference &reference)
+    {
+        const auto size = std::filesystem::file_size(reference.Bundle);
+        if (size > 64 * 1024 * 1024)
+            throw std::runtime_error("Loose image exceeds limit.");
+        return Embedded({reference.Bundle, 0, static_cast<int>(size)},
+                        reference.Asset.find("clamp") != std::string::npos);
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::Embedded(const EmbeddedTextureReference &reference, bool clamp)
+    {
+        graphics_.VerifyThread();
+        const auto key = RenderPathKey(reference.Path) + ":" + std::to_string(reference.Offset) + ":" +
+                         std::to_string(reference.Length) + ":" + std::to_string(clamp);
+        auto found = embedded_.find(key);
+        if (found != embedded_.end())
+            return found->second;
+        if (reference.Length < 1 || reference.Length > 64 * 1024 * 1024)
+            throw std::runtime_error("Invalid embedded image range.");
+        const auto size = std::filesystem::file_size(reference.Path);
+        if (reference.Offset > size || static_cast<std::uint64_t>(reference.Length) > size - reference.Offset)
+            throw std::runtime_error("Embedded image is truncated.");
+        std::vector<std::uint8_t> encoded(reference.Length);
+        std::ifstream stream(reference.Path, std::ios::binary);
+        stream.seekg(reference.Offset);
+        if (!stream.read(reinterpret_cast<char *>(encoded.data()), encoded.size()))
+            throw std::runtime_error("Cannot read embedded image.");
+        ComPtr<IWICImagingFactory> factory;
+        CheckHResult(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)),
+                     "Create WIC image decoder");
+        ComPtr<IWICStream> memory;
+        CheckHResult(factory->CreateStream(&memory), "Create WIC stream");
+        CheckHResult(memory->InitializeFromMemory(encoded.data(), static_cast<DWORD>(encoded.size())),
+                     "Read WIC memory stream");
+        ComPtr<IWICBitmapDecoder> decoder;
+        CheckHResult(factory->CreateDecoderFromStream(memory.Get(), nullptr, WICDecodeMetadataCacheOnLoad, &decoder),
+                     "Decode embedded image");
+        ComPtr<IWICBitmapFrameDecode> frame;
+        CheckHResult(decoder->GetFrame(0, &frame), "Read embedded frame");
+        UINT width, height;
+        CheckHResult(frame->GetSize(&width, &height), "Read embedded dimensions");
+        if (!width || !height || width > 16384 || height > 16384)
+            throw std::runtime_error("Embedded image dimensions exceed limits.");
+        ComPtr<IWICFormatConverter> converter;
+        CheckHResult(factory->CreateFormatConverter(&converter), "Create WIC format converter");
+        CheckHResult(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr,
+                                           0, WICBitmapPaletteTypeCustom),
+                     "Convert embedded BGRA image");
+        std::vector<std::uint8_t> pixels(static_cast<size_t>(width) * height * 4);
+        CheckHResult(converter->CopyPixels(nullptr, width * 4, static_cast<UINT>(pixels.size()), pixels.data()),
+                     "Copy embedded image pixels");
+        GpuTextureData source;
+        source.Name = key;
+        source.Width = width;
+        source.Height = height;
+        source.Format = 14;
+        source.Bytes.resize(pixels.size());
+        for (UINT row = 0; row < height; ++row)
+            std::memcpy(source.Bytes.data() + static_cast<size_t>(height - 1 - row) * width * 4,
+                        pixels.data() + static_cast<size_t>(row) * width * 4, static_cast<size_t>(width) * 4);
+        GpuTexture uploaded(graphics_, source);
+        auto result = std::make_shared<GpuTexture>(graphics_, width, height, clamp, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+                                                   true, D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT,
+                                                   EffectiveAnisotropy(1, anisotropicFiltering_));
+        Copier().Copy(uploaded, *result);
+        result->GenerateMips(graphics_);
+        embedded_[key] = result;
+        return result;
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::Overlay(const GpuTexture &source, const OverlayDefinition &overlay,
+                                                             int width, int height)
+    {
+        if (!overlay.Texture)
+            throw std::runtime_error("Overlay has no image payload.");
+        auto texture = Embedded(*overlay.Texture);
+        return Compose(source, *ShaderMaterial("overlay.composite"), width, height, {{"_Overlay", texture.get()}},
+                       true);
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::Copy(const GpuTexture &source, int width, int height)
+    {
+        auto result = std::make_shared<GpuTexture>(graphics_, width, height, true, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+                                                   true, D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT,
+                                                   EffectiveAnisotropy(1, anisotropicFiltering_));
+        Copier().Copy(source, *result);
+        result->GenerateMips(graphics_);
+        return result;
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::Compose(const GpuTexture &source,
+                                                             const GpuMaterialInstance &material, int width, int height,
+                                                             const ShaderTextures &overrides, bool preserve)
+    {
+        graphics_.VerifyThread();
+        if (height == 0)
+            height = width;
+        auto target = std::make_shared<GpuTexture>(graphics_, width, height, true, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+                                                   true, D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT,
+                                                   EffectiveAnisotropy(1, anisotropicFiltering_));
+        const auto &pass = material.Shader->Passes.at(0);
+        auto keywords = material.Keywords;
+        keywords.insert("DIRECTIONAL");
+        keywords.insert("LIGHTPROBE_SH");
+        const auto vertex = SelectShaderVariant(*material.Shader, pass, NativeShaderStage::Vertex, keywords),
+                   pixel = SelectShaderVariant(*material.Shader, pass, NativeShaderStage::Pixel, keywords);
+        auto values = material.Values;
+        auto transform = [&](const std::string &property)
+        {
+            auto it = material.Textures.find(property);
+            values[property + "_ST"] = it == material.Textures.end()
+                                           ? std::vector<float>{1, 1, 0, 0}
+                                           : std::vector<float>{it->second.Scale.x, it->second.Scale.y,
+                                                                it->second.Offset.x, it->second.Offset.y};
+        };
+        for (const auto &[name, _] : material.DefaultTextures)
+            transform(name);
+        for (const auto &[name, _] : material.Textures)
+            transform(name);
+        auto colorProperties = material.ColorProperties;
+        colorProperties.insert(material.GammaProperties.begin(), material.GammaProperties.end());
+        for (const auto &name : colorProperties)
+        {
+            auto found = values.find(name);
+            if (found != values.end())
+                for (size_t i = 0; i < std::min<size_t>(3, found->second.size()); ++i)
+                    found->second[i] = Linear(found->second[i]);
+        }
+        for (const auto *name : {"unity_ObjectToWorld", "unity_WorldToObject", "unity_MatrixVP", "unity_MatrixV",
+                                 "unity_MatrixInvV", "glstate_matrix_projection"})
+            values[name] = MatrixValues(IdentityMatrix());
+        values["unity_MatrixVP"][5] = -1;
+        values["_ScreenParams"] = {static_cast<float>(width), static_cast<float>(height), 1 + 1.f / width,
+                                   1 + 1.f / height};
+        values["_ProjectionParams"] = {1, .1f, 1000, .001f};
+        ShaderTextures resources;
+        std::vector<std::shared_ptr<GpuTexture>> retained;
+        for (const auto *variant : {&vertex, &pixel})
+            for (const auto &binding : variant->Textures)
+            {
+                if (resources.contains(binding.Name))
+                    continue;
+                const GpuTexture *texture;
+                auto override = overrides.find(binding.Name);
+                if (override != overrides.end())
+                    texture = override->second;
+                else if (binding.Name == "_MainTex")
+                    texture = &source;
+                else
+                {
+                    retained.push_back(ResolveTexture(material, binding.Name));
+                    texture = retained.back().get();
+                }
+                resources[binding.Name] = texture;
+                values[binding.Name + "_TexelSize"] = {1.f / texture->Width(), 1.f / texture->Height(),
+                                                       static_cast<float>(texture->Width()),
+                                                       static_cast<float>(texture->Height())};
+                transform(binding.Name);
+            }
+        std::unordered_map<std::string, float> floats;
+        for (const auto &[name, value] : material.Values)
+            if (value.size() == 1)
+                floats[name] = value[0];
+        NativeMaterialPass renderPass(graphics_, *material.Shader, pass, keywords, floats);
+        auto *context = graphics_.Context();
+        auto *rt = target->Target.Get();
+        const float clear[4]{};
+        context->ClearRenderTargetView(rt, clear);
+        if (preserve)
+            Copier().Copy(source, *target);
+        context->OMSetRenderTargets(1, &rt, nullptr);
+        D3D11_VIEWPORT viewport{0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1};
+        context->RSSetViewports(1, &viewport);
+        try
+        {
+            renderPass.Draw(CompositeQuad, 0, values, resources);
+            context->ClearState();
+            target->GenerateMips(graphics_);
+            return target;
+        }
+        catch (...)
+        {
+            context->ClearState();
+            throw;
+        }
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::ResolveTexture(const GpuMaterialInstance &material,
+                                                                    const std::string &property)
+    {
+        auto override = material.TextureOverrides.find(property);
+        if (override != material.TextureOverrides.end())
+            return override->second;
+        auto loose = material.ImageSelections.find(property);
+        if (loose != material.ImageSelections.end())
+            return LooseImage(loose->second);
+        auto binding = material.Textures.find(property);
+        if (binding != material.Textures.end() && binding->second.Texture.PathId)
+        {
+            auto type = store_.AssetClass(binding->second.Texture);
+            if (type == 28 || type == 89)
+                return Texture(binding->second.Texture);
+            SourceReferenceDiagnostics.insert("Dangling authored texture: " + material.Name + "/" + property + ": " +
+                                              Key(binding->second.Texture));
+        }
+        auto fallback = material.DefaultTextures.find(property);
+        return Default(fallback == material.DefaultTextures.end() ? "white" : fallback->second);
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::AssignedTexture(const GpuMaterialInstance &material,
+                                                                     const std::string &property)
+    {
+        if (!material.HasProperty(property))
+            return {};
+        auto override = material.TextureOverrides.find(property);
+        if (override != material.TextureOverrides.end())
+            return override->second;
+        auto loose = material.ImageSelections.find(property);
+        if (loose != material.ImageSelections.end())
+            return LooseImage(loose->second);
+        auto binding = material.Textures.find(property);
+        if (binding != material.Textures.end() && binding->second.Texture.PathId)
+        {
+            auto type = store_.AssetClass(binding->second.Texture);
+            if (type == 28 || type == 89)
+                return Texture(binding->second.Texture);
+        }
+        return {};
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::TryGlobalTexture(const std::string &name)
+    {
+        if (name != "_RimEmissionMap")
+            return {};
+        const std::string key = "unassigned-global-2d";
+        auto found = defaults_.find(key);
+        if (found != defaults_.end())
+            return found->second;
+        GpuTextureData data;
+        data.Name = key;
+        data.Width = data.Height = 16;
+        data.Format = 4;
+        data.Bytes.resize(16 * 16 * 4, 128);
+        auto texture = std::make_shared<GpuTexture>(graphics_, data, anisotropicFiltering_);
+        defaults_[key] = texture;
+        return texture;
+    }
+
+    std::shared_ptr<GpuTexture> GpuMaterialComposer::Default(const std::string &name)
+    {
+        auto found = defaults_.find(name);
+        if (found != defaults_.end())
+            return found->second;
+        std::vector<std::uint8_t> rgba;
+        if (name.empty() || name == "white")
+            rgba = {255, 255, 255, 255};
+        else if (name == "black")
+            rgba = {0, 0, 0, 0};
+        else if (name == "opaque-black")
+            rgba = {0, 0, 0, 255};
+        else if (name == "gray" || name == "grey")
+            rgba = {127, 127, 127, 127};
+        else if (name == "red")
+            rgba = {255, 0, 0, 0};
+        else if (name == "bump")
+            rgba = {127, 127, 255, 255};
+        else
+            throw std::runtime_error("Unknown default texture: " + name);
+        GpuTextureData data;
+        data.Name = name;
+        data.Width = data.Height = 1;
+        data.Format = 4;
+        data.Srgb = name == "gray" || name == "grey";
+        data.Bytes = std::move(rgba);
+        auto texture = std::make_shared<GpuTexture>(graphics_, data);
+        defaults_[name] = texture;
+        return texture;
+    }
+
+    std::vector<std::uint8_t> GpuMaterialComposer::ReadImage(const GpuTexture &texture)
+    {
+        D3D11_TEXTURE2D_DESC description{};
+        texture.Texture->GetDesc(&description);
+        std::vector<std::uint8_t> pixels;
+        if (description.Format == DXGI_FORMAT_B8G8R8A8_UNORM || description.Format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB ||
+            description.Format == DXGI_FORMAT_B8G8R8A8_TYPELESS)
+            pixels = graphics_.Readback(texture.Texture.Get());
+        else
+        {
+            GpuTexture resolved(graphics_, texture.Width(), texture.Height(), true, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+                                false);
+            Copier().Copy(texture, resolved);
+            pixels = graphics_.Readback(resolved.Texture.Get());
+        }
+        const size_t stride = static_cast<size_t>(texture.Width()) * 4;
+        std::vector<std::uint8_t> top(pixels.size());
+        for (int row = 0; row < texture.Height(); ++row)
+            std::memcpy(top.data() + row * stride, pixels.data() + (texture.Height() - 1 - row) * stride, stride);
+        return top;
+    }
+
+    float GpuMaterialComposer::Linear(float value)
+    {
+        return value <= .04045f ? value / 12.92f
+               : value < 1      ? std::pow((value + .055f) / 1.055f, 2.4f)
+                                : std::pow(value, 2.2f);
+    }
+}

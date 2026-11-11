@@ -1,0 +1,389 @@
+#include "Model/ModelExportInternal.h"
+#include "Baking/ExportGpuPass.h"
+#include "Images/ImageFiles.h"
+#include "Pipeline/NativeFramePipeline.h"
+#include "PostProcessing/NativePostSettings.h"
+#include "Lighting/NativeSkybox.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <set>
+
+namespace hs2
+{
+    namespace
+    {
+        constexpr const char *EnvironmentShader = R"hlsl(
+TextureCube radiance : register(t0);
+Texture3D grading : register(t1);
+SamplerState imageSampler : register(s0);
+
+cbuffer Settings : register(b0)
+{
+    float decodeScale;
+    float lutSize;
+    float2 unused;
+}
+
+struct Vertex
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD0;
+};
+
+Vertex VS(uint id : SV_VertexID)
+{
+    Vertex o;
+    o.uv = float2((id << 1) & 2, id & 2);
+    o.position = float4(o.uv * float2(2, -2) + float2(-1, 1), 0, 1);
+    return o;
+}
+
+float4 CubePS(Vertex i) : SV_Target
+{
+    float longitude = (i.uv.x - .5) * 6.283185307179586;
+    float latitude = (.5 - i.uv.y) * 3.141592653589793;
+    float3 d = float3(sin(longitude) * cos(latitude), sin(latitude), cos(longitude) * cos(latitude));
+    return float4(radiance.SampleLevel(imageSampler, d, 0).rgb * decodeScale, 1);
+}
+
+float4 LutPS(Vertex i) : SV_Target
+{
+    float2 p = floor(float2(i.uv.x, 1 - i.uv.y) * float2(lutSize * lutSize, lutSize));
+    float3 xyz = float3(fmod(p.x, lutSize), p.y, floor(p.x / lutSize));
+    return float4(grading.SampleLevel(imageSampler, (xyz + .5) / lutSize, 0).rgb, 1);
+}
+)hlsl";
+
+        struct EnvironmentImages
+        {
+            std::vector<float> Lighting, Reflection, Grading;
+            int LutSize = 0;
+        };
+
+        EnvironmentImages CaptureEnvironment(GraphicsDevice &graphics, NativeGpuAssetStore &assets,
+                                             const CharacterDefinition &definition, const GpuVolume *lut,
+                                             std::stop_token cancellation)
+        {
+            CheckCancelled(cancellation);
+            GpuMaterialComposer composer(graphics, assets, definition);
+            NativeSkybox sky(graphics, composer, definition.Environment);
+            ComPtr<ID3D11Texture2D> texture;
+            D3D11_TEXTURE2D_DESC description{};
+            description.Width = description.Height = 256;
+            description.ArraySize = 6;
+            description.MipLevels = 1;
+            description.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            description.SampleDesc.Count = 1;
+            description.Usage = D3D11_USAGE_DEFAULT;
+            description.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+            description.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
+            CheckHResult(graphics.Device()->CreateTexture2D(&description, nullptr, &texture),
+                         "Export environment cube");
+            const std::array<Vector3, 6> directions{
+                {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}}};
+            for (UINT face = 0; face < 6; ++face)
+            {
+                CheckCancelled(cancellation);
+                D3D11_RENDER_TARGET_VIEW_DESC targetDescription{};
+                targetDescription.Format = description.Format;
+                targetDescription.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+                targetDescription.Texture2DArray.ArraySize = 1;
+                targetDescription.Texture2DArray.FirstArraySlice = face;
+                ComPtr<ID3D11RenderTargetView> target;
+                CheckHResult(graphics.Device()->CreateRenderTargetView(texture.Get(), &targetDescription, &target),
+                             "Export environment face");
+                NativeRenderCamera camera;
+                camera.Position = {};
+                camera.Target = directions[face];
+                camera.Up = face == 2 ? Vector3{0, 0, -1} : face == 3 ? Vector3{0, 0, 1} : Vector3{0, 1, 0};
+                camera.FieldOfView = 90;
+                camera.Near = .1f;
+                camera.Far = 1000;
+                sky.Draw(target.Get(), 256, 256, camera);
+            }
+            ComPtr<ID3D11ShaderResourceView> cube;
+            CheckHResult(graphics.Device()->CreateShaderResourceView(texture.Get(), nullptr, &cube),
+                         "Export environment cube view");
+            ComPtr<ID3D11SamplerState> sampler;
+            auto samplerDescription = DefaultSampler(true, D3D11_FILTER_MIN_MAG_MIP_LINEAR);
+            CheckHResult(graphics.Device()->CreateSamplerState(&samplerDescription, &sampler),
+                         "Export environment sampler");
+            ExportGpuPass cubePass(graphics, EnvironmentShader, "CubePS", 16),
+                lutPass(graphics, EnvironmentShader, "LutPS", 16);
+            auto draw = [&](ID3D11ShaderResourceView *radiance, ID3D11ShaderResourceView *grading, int width,
+                            int height, int size)
+            {
+                GpuTexture target(graphics, width, height, true, DXGI_FORMAT_R32G32B32A32_FLOAT, false);
+                std::array<float, 4> constants{1, static_cast<float>(size), 0, 0};
+                std::array<ID3D11ShaderResourceView *, 2> views{radiance, grading};
+                std::array<ID3D11SamplerState *, 1> samplers{sampler.Get()};
+                (grading ? lutPass : cubePass)
+                    .Draw(target, {reinterpret_cast<const std::uint8_t *>(constants.data()), sizeof(constants)}, views,
+                          samplers);
+                return graphics.ReadbackFloat(target.Texture.Get());
+            };
+            EnvironmentImages images;
+            images.Lighting = draw(cube.Get(), nullptr, 1024, 512, 0);
+            CheckCancelled(cancellation);
+            auto reflection = composer.Texture("environment.reflection");
+            images.Reflection = draw(reflection->View.Get(), nullptr, 1024, 512, 0);
+            CheckCancelled(cancellation);
+            if (lut)
+            {
+                D3D11_TEXTURE3D_DESC lutDescription{};
+                lut->Texture->GetDesc(&lutDescription);
+                images.LutSize = static_cast<int>(lutDescription.Width);
+                images.Grading =
+                    draw(nullptr, lut->View.Get(), images.LutSize * images.LutSize, images.LutSize, images.LutSize);
+            }
+            return images;
+        }
+
+        std::array<float, 3> V(Vector3 value)
+        {
+            return {value.x, value.y, value.z};
+        }
+
+        Vector3 Add(Vector3 a, Vector3 b)
+        {
+            return {a.x + b.x, a.y + b.y, a.z + b.z};
+        }
+
+        Vector3 Sub(Vector3 a, Vector3 b)
+        {
+            return {a.x - b.x, a.y - b.y, a.z - b.z};
+        }
+
+        Vector3 Scale(Vector3 a, float s)
+        {
+            return {a.x * s, a.y * s, a.z * s};
+        }
+
+        std::array<float, 4> Linear(std::array<float, 4> value)
+        {
+            return {GpuMaterialComposer::Linear(value[0]), GpuMaterialComposer::Linear(value[1]),
+                    GpuMaterialComposer::Linear(value[2]), value[3]};
+        }
+
+        std::array<float, 4> Color(const Parameter &p)
+        {
+            return Linear({p.Float("r"), p.Float("g"), p.Float("b"), p.Float("a", 1)});
+        }
+
+        Vector3 Rotate(Vector3 v, Quaternion q)
+        {
+            Vector3 result;
+            DirectX::XMStoreFloat3(&result,
+                                   DirectX::XMVector3Rotate(DirectX::XMLoadFloat3(&v), DirectX::XMLoadFloat4(&q)));
+            return result;
+        }
+
+        std::pair<Vector3, Vector3> ReferenceBounds(NativeCharacterScene &scene, std::stop_token cancellation)
+        {
+            Vector3 minimum{FLT_MAX, FLT_MAX, FLT_MAX}, maximum{-FLT_MAX, -FLT_MAX, -FLT_MAX};
+            bool any = false;
+            for (auto &renderer : scene.Renderers)
+                if (renderer->Visible() && renderer->HasGeometry())
+                {
+                    CheckCancelled(cancellation);
+                    auto positions = renderer->BakeReferenceMesh().Positions;
+                    auto &mesh = *renderer->Mesh;
+                    std::set<int> indices;
+                    for (auto &submesh : mesh.Submeshes)
+                        for (int i = 0; i < submesh.IndexCount; ++i)
+                            indices.insert(submesh.BaseVertex + static_cast<int>(mesh.Index(
+                                                                    static_cast<std::size_t>(submesh.FirstIndex) + i)));
+                    for (auto index : indices)
+                    {
+                        if (index < 0 || static_cast<std::size_t>(index) >= positions.size())
+                            throw std::runtime_error("Invalid reference geometry index.");
+                        auto p = renderer->Node->TransformPoint(positions[index]);
+                        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+                            continue;
+                        minimum = {std::min(minimum.x, p.x), std::min(minimum.y, p.y), std::min(minimum.z, p.z)};
+                        maximum = {std::max(maximum.x, p.x), std::max(maximum.y, p.y), std::max(maximum.z, p.z)};
+                        any = true;
+                    }
+                }
+            if (!any)
+                throw std::runtime_error("人物没有有效的预览参考形态。");
+            return {Scale(Add(minimum, maximum), .5f), Sub(maximum, minimum)};
+        }
+
+        Json Lights(const EnvironmentDefinition &environment, const NativeRenderCamera &camera, float multiplier,
+                    NativeSceneNode &root)
+        {
+            Json lights = Json::array();
+            for (auto &source : environment.Lights)
+            {
+                auto &p = source.Parameters;
+                auto &shadow = p.Get("m_Shadows");
+                auto &r = source.Rotation;
+                auto direction = Rotate({0, 0, 1}, {r[0], r[1], r[2], r[3]});
+                if (source.CameraRelative)
+                    direction = TransformVector(direction, camera.World());
+                float intensity = p.Float("m_Intensity", 1), strength = shadow.Float("m_Strength", 1);
+                if (environment.DhhEnabled && source.Name.find("Back") != std::string::npos)
+                    intensity = environment.DhhFloats[34];
+                if (source.Name.find("Key") != std::string::npos)
+                {
+                    intensity *= multiplier;
+                    if (environment.DhhEnabled)
+                        strength = environment.DhhFloats[36];
+                }
+                lights.push_back(
+                    {{"Name", source.Name},
+                     {"Type", static_cast<int>(p.Float("m_Type"))},
+                     {"Position", V(root.InverseTransformPoint(source.CameraRelative ? camera.Position : Vector3{}))},
+                     {"Direction", V(root.InverseTransformDirection(direction))},
+                     {"Color", Color(p.Get("m_Color"))},
+                     {"Intensity", intensity},
+                     {"Range", p.Float("m_Range", 10)},
+                     {"SpotAngle", p.Float("m_SpotAngle", 30)},
+                     {"Shadows", shadow.Float("m_Type") != 0},
+                     {"ShadowStrength", strength}});
+            }
+            if (environment.DhhEnabled && environment.DhhBools[8])
+            {
+                auto &c = environment.DhhColors;
+                Quaternion rotation;
+                DirectX::XMStoreFloat4(&rotation, DirectX::XMQuaternionRotationRollPitchYaw(
+                                                      c[6] * DirectX::XM_PI / 180, c[7] * DirectX::XM_PI / 180, 0));
+                auto direction = TransformVector(Rotate({0, 0, 1}, rotation), camera.World());
+                lights.push_back({{"Name", "DHH additional light"},
+                                  {"Type", 1},
+                                  {"Position", V(root.InverseTransformPoint(camera.Position))},
+                                  {"Direction", V(root.InverseTransformDirection(direction))},
+                                  {"Color", Linear({c[9] / 255, c[10] / 255, c[11] / 255, 1})},
+                                  {"Intensity", environment.DhhFloats[38]},
+                                  {"Range", 10},
+                                  {"SpotAngle", 30},
+                                  {"Shadows", true},
+                                  {"ShadowStrength", environment.DhhFloats[39]}});
+            }
+            return lights;
+        }
+    }
+
+    std::vector<std::string> ExportNativeScene(GraphicsDevice &graphics, NativeCharacterScene &character,
+                                               NativeGpuAssetStore &assets, const fs::path &directory,
+                                               ModelExportView view, bool includeScene, Progress progress,
+                                               std::stop_token cancellation)
+    {
+        if (!view.HasCamera)
+        {
+            auto [center, size] = ReferenceBounds(character, cancellation);
+            float aspect = static_cast<float>(view.Width) / view.Height;
+            float distance =
+                std::max(size.x / aspect, size.y) / (2 * std::tan(view.FieldOfView * DirectX::XM_PI / 360)) * 1.12f +
+                size.z;
+            view.Target = center;
+            view.Position = Add(
+                center, Scale({0, std::sin(5 * DirectX::XM_PI / 180), std::cos(5 * DirectX::XM_PI / 180)}, distance));
+            view.HasCamera = true;
+        }
+        auto &environment = character.Definition->Environment;
+        NativeRenderCamera camera;
+        camera.Position = view.Position;
+        camera.Target = view.Target;
+        camera.Up = view.Up;
+        camera.FieldOfView = view.FieldOfView;
+        camera.Near = environment.Camera.Float("near clip plane", .08f);
+        camera.Far = environment.Camera.Float("far clip plane", 1000);
+        NativeFrameOptions options;
+        options.StaticReference = true;
+        options.UseGameBackground = view.UseGameBackground;
+        options.Background = view.Background;
+        options.KeyLightMultiplier = view.KeyLightMultiplier;
+        NativeFramePipeline pipeline(graphics, character, assets, options);
+        if (progress)
+            progress({0, 0, "捕获预览灯光、反射和调色…"});
+        for (int i = 0; i < 12; ++i)
+        {
+            CheckCancelled(cancellation);
+            pipeline.Draw(camera, view.Width, view.Height, 0);
+        }
+        auto pixels = graphics.Readback(pipeline.LastFrame().Texture.Get());
+        for (std::size_t i = 3; i < pixels.size(); i += 4)
+            pixels[i] = 255;
+        SavePng(directory / Path("预览参考.png"), view.Width, view.Height, pixels);
+        if (!includeScene)
+            return {};
+        auto images = CaptureEnvironment(graphics, assets, *character.Definition, pipeline.GradingLut(), cancellation);
+        auto folder = directory / "Environment";
+        fs::create_directories(folder);
+        WriteRadiance(folder / "lighting.hdr", 1024, 512, images.Lighting);
+        WriteRadiance(folder / "reflection.hdr", 1024, 512, images.Reflection);
+        if (!images.Grading.empty())
+            WriteOpenExr(folder / "grading.exr", images.LutSize * images.LutSize, images.LutSize, images.Grading);
+        auto &settings = pipeline.PostSettings();
+        auto &render = environment.RenderSettings;
+        std::vector<std::string> warnings;
+        auto cg = [&](const std::string &key, float fallback = 0)
+        {
+            return settings.Scalar("ColorGrading", key, fallback);
+        };
+        int mapper = static_cast<int>(cg("tonemapper"));
+        if (mapper < 0 || mapper > 2)
+            throw std::runtime_error("Unsupported export tonemapper.");
+        Json post = {{"ColorGrading", settings.Enabled("ColorGrading")},
+                     {"Tonemapper", std::array{"None", "Neutral", "ACES"}[mapper]},
+                     {"Exposure", cg("postExposure")},
+                     {"Temperature", cg("temperature")},
+                     {"Tint", cg("tint")},
+                     {"HueShift", cg("hueShift")},
+                     {"Saturation", cg("saturation")},
+                     {"Contrast", cg("contrast")},
+                     {"ColorFilter", settings.Value("ColorGrading", "colorFilter", {1, 1, 1, 1})},
+                     {"Lift", settings.Value("ColorGrading", "lift", {1, 1, 1, 0})},
+                     {"Gamma", settings.Value("ColorGrading", "gamma", {1, 1, 1, 0})},
+                     {"Gain", settings.Value("ColorGrading", "gain", {1, 1, 1, 0})},
+                     {"LutContribution", cg("ldrLutContribution")},
+                     {"Bloom", settings.Enabled("Bloom")},
+                     {"BloomIntensity", settings.Scalar("Bloom", "intensity")},
+                     {"BloomThreshold", settings.Scalar("Bloom", "threshold")},
+                     {"AmbientOcclusion", settings.Enabled("AmbientOcclusion")},
+                     {"AoIntensity", settings.Scalar("AmbientOcclusion", "intensity")},
+                     {"AoRadius", settings.Scalar("AmbientOcclusion", "radius")},
+                     {"Vignette", settings.Enabled("Vignette")},
+                     {"VignetteIntensity", settings.Scalar("Vignette", "intensity")}};
+        if (settings.Enabled("Bloom") || settings.Enabled("AmbientOcclusion") || settings.Enabled("Vignette"))
+            warnings.push_back("预览的 Bloom、AO 和暗角使用目标引擎的近似参数；调色 LUT 单独保留。");
+        for (auto effect :
+             {"DepthOfField", "ScreenSpaceReflections", "MotionBlur", "ChromaticAberration", "Grain", "AutoExposure"})
+            if (settings.Enabled(effect))
+                warnings.push_back("未迁移的预览后处理：" + std::string(effect) + "；原生场景使用固定曝光与参考姿态。");
+        warnings.push_back("跨引擎近似：皮肤散射、头发各向异性、透明排序和屏幕空间光照使用目标软件的可编辑实现。");
+        Json scene = {{"SchemaVersion", 1},
+                      {"NearClip", camera.Near},
+                      {"FarClip", camera.Far},
+                      {"SourceRootPosition", V(character.Root->Position())},
+                      {"SkyBackground", view.UseGameBackground && environment.DhhEnabled},
+                      {"Background", Linear(view.UseGameBackground ? environment.Background
+                                                                   : std::array{view.Background.x, view.Background.y,
+                                                                                view.Background.z, view.Background.w})},
+                      {"AmbientMode", environment.DhhEnabled ? 0 : static_cast<int>(render.Float("m_AmbientMode", 1))},
+                      {"AmbientSky", Color(render.Get("m_AmbientSkyColor"))},
+                      {"AmbientEquator", Color(render.Get("m_AmbientEquatorColor"))},
+                      {"AmbientGround", Color(render.Get("m_AmbientGroundColor"))},
+                      {"AmbientIntensity",
+                       environment.DhhEnabled ? environment.DhhFloats[32] : render.Float("m_AmbientIntensity", 1)},
+                      {"ReflectionIntensity",
+                       environment.DhhEnabled ? environment.DhhFloats[33] : render.Float("m_ReflectionIntensity", 1)},
+                      {"EnvironmentTexture", "Environment/lighting.hdr"},
+                      {"ReflectionTexture", "Environment/reflection.hdr"},
+                      {"LutTexture", images.Grading.empty() ? "" : "Environment/grading.exr"},
+                      {"LutEncoding", images.Grading.empty() ? "None" : "LogC"},
+                      {"LutSize", images.LutSize},
+                      {"Lights", Lights(environment, camera, view.KeyLightMultiplier, *character.Root)},
+                      {"Post", post},
+                      {"Warnings", warnings}};
+        view.Position = character.Root->InverseTransformPoint(view.Position);
+        view.Target = character.Root->InverseTransformPoint(view.Target);
+        view.Up = character.Root->InverseTransformDirection(view.Up);
+        scene["View"] = view;
+        WriteJson(directory / "scene.json", scene);
+        return warnings;
+    }
+}
