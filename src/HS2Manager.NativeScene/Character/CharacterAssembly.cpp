@@ -160,7 +160,8 @@ namespace hs2
         {
             if (cancellation.stop_requested())
                 throw std::runtime_error("Character assembly cancelled.");
-            auto prefab = assets.Reader(part->Prefab.Bundle)->Prefab(part->Prefab.Asset);
+            auto preparedPrefab = assets.Prefab(part->Prefab.Bundle, part->Prefab.Asset);
+            const auto &prefab = *preparedPrefab;
             std::unordered_map<int64_t, NativeSceneNode *> map;
             auto runtime = std::make_shared<NativeScenePart>();
             runtime->Definition = part;

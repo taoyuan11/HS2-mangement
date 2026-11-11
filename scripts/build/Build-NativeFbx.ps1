@@ -1,4 +1,5 @@
-﻿param([string]$SdkRoot = (Join-Path $PSScriptRoot '../../.tools/fbx-native-2020.3.7'), [string]$BuildDirectory)
+﻿param([string]$SdkRoot = (Join-Path $PSScriptRoot '../../.tools/fbx-native-2020.3.7'), [string]$BuildDirectory,
+    [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount))
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if (!$BuildDirectory) {
@@ -33,7 +34,7 @@ if (!(Test-Path -LiteralPath $cmake)) {
 if ($LASTEXITCODE -ne 0) {
     throw 'Native FBX configuration failed.'
 }
-& $cmake --build $BuildDirectory --config Release --parallel 4 -- /nr:false
+& $cmake --build $BuildDirectory --config Release --parallel $Jobs -- /nr:false
 if ($LASTEXITCODE -ne 0) {
     throw 'Native FBX compilation failed.'
 }

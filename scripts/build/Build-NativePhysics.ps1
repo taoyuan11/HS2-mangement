@@ -1,4 +1,5 @@
-﻿param([string]$Source = (Join-Path $PSScriptRoot '../../.tools/physx-3.4'), [string]$BuildDirectory)
+﻿param([string]$Source = (Join-Path $PSScriptRoot '../../.tools/physx-3.4'), [string]$BuildDirectory,
+    [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount))
 $ErrorActionPreference = 'Stop'
 if (!$BuildDirectory) {
     $BuildDirectory = Join-Path $env:LOCALAPPDATA 'HS2Manager/NativeBuild/PhysX-3.4.2'
@@ -14,13 +15,16 @@ if ($version -notmatch 'PX_PHYSICS_VERSION_MAJOR 3' -or $version -notmatch 'PX_P
     throw 'The cloth adapter requires PhysX 3.4.2.'
 }
 New-Item -ItemType Directory -Path $localSource -Force | Out-Null
-& robocopy.exe $Source $localSource /E /XD .git /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+& robocopy.exe $Source $localSource /E /XD .git /XF PsAllocator.h /MT:$Jobs /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) {
     throw 'Could not copy the PhysX build sources.'
 }
 # 仅兼容新版 MSVC 对标准头文件的更名，不修改求解器公式。
 $allocator = Join-Path $localSource 'PxShared/src/foundation/include/PsAllocator.h'
-[IO.File]::WriteAllText($allocator, ([IO.File]::ReadAllText($allocator).Replace('<typeinfo.h>', '<typeinfo>')))
+$allocatorContent = [IO.File]::ReadAllText((Join-Path $Source 'PxShared/src/foundation/include/PsAllocator.h')).Replace('<typeinfo.h>', '<typeinfo>')
+if (!(Test-Path -LiteralPath $allocator) -or [IO.File]::ReadAllText($allocator) -cne $allocatorContent) {
+    [IO.File]::WriteAllText($allocator, $allocatorContent)
+}
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
 $vs = $null
 if (Test-Path -LiteralPath $vswhere) {
@@ -62,7 +66,7 @@ try {
         ('/p:ForceImportBeforeCppTargets=' + (Join-Path $PSScriptRoot 'PhysX.Build.props')),
         '/nr:false', '/v:minimal'
     )
-    & $msbuild @sdkArguments '/t:PhysX;PhysXExtensions' /m:4 *> $log
+    & $msbuild @sdkArguments '/t:PhysX;PhysXExtensions' "/m:$Jobs" *> $log
     $sdkExitCode = $LASTEXITCODE
     if ($sdkExitCode -ne 0 -and (Select-String -LiteralPath $log -Pattern '\berror\s+(C1052|C2859|LNK1209|LNK1318)\s*:' -Quiet)) {
         # 旧 PDB 损坏时先完整清理依赖，再串行重建一次，避免多个链接器争用调试数据库。
@@ -90,7 +94,7 @@ finally {
 if ($LASTEXITCODE -ne 0) {
     throw 'Cloth bridge configuration failed.'
 }
-& $cmake --build (Join-Path $BuildDirectory 'bridge') --config Release --parallel 4 -- /nr:false
+& $cmake --build (Join-Path $BuildDirectory 'bridge') --config Release --parallel $Jobs -- /nr:false
 if ($LASTEXITCODE -ne 0) {
     throw 'Cloth bridge compilation failed.'
 }

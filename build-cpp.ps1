@@ -9,7 +9,8 @@ param(
     [switch]$SkipUi,
     [switch]$Run,
     [string]$DataDirectory = '',
-    [string]$ResultFile = ''
+    [string]$ResultFile = '',
+    [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount)
 )
 $ErrorActionPreference = 'Stop'
 $source = $PSScriptRoot
@@ -69,14 +70,14 @@ if (!$SkipUi) {
         $PhysicsDirectory = Join-Path $env:LOCALAPPDATA 'HS2Manager/NativeBuild/PhysX-3.4.2/bridge/Release'
         $missingPhysics = @('HS2Manager.Physics.dll', 'PhysX3_x64.dll', 'PhysX3Common_x64.dll', 'PxFoundation_x64.dll', 'PxPvdSDK_x64.dll') | Where-Object { !(Test-Path -LiteralPath (Join-Path $PhysicsDirectory $_) -PathType Leaf) }
         if ($missingPhysics) {
-            & (Join-Path $source 'scripts/build/Build-NativePhysics.ps1')
+            & (Join-Path $source 'scripts/build/Build-NativePhysics.ps1') -Jobs $Jobs
         }
     }
     if (!$FbxDirectory) {
         $FbxDirectory = Join-Path $env:LOCALAPPDATA 'HS2Manager/NativeBuild/Fbx-2020.3.7/Release'
         $missingFbx = @('HS2Manager.FbxBridge.dll', 'libfbxsdk.dll') | Where-Object { !(Test-Path -LiteralPath (Join-Path $FbxDirectory $_) -PathType Leaf) }
         if ($missingFbx) {
-            & (Join-Path $source 'scripts/build/Build-NativeFbx.ps1')
+            & (Join-Path $source 'scripts/build/Build-NativeFbx.ps1') -Jobs $Jobs
         }
     }
 }
@@ -163,12 +164,12 @@ else {
     $cmakeArguments += '-DHS2_FBX_BRIDGE='
 }
 Invoke-BuildTool $cmake $cmakeArguments
-Invoke-BuildTool $cmake @('--build', $native, '--config', $Configuration, '--', '/m:1', '/nr:false', '/v:minimal')
+Invoke-BuildTool $cmake @('--build', $native, '--config', $Configuration, '--parallel', "$Jobs", '--', '/nr:false', '/v:minimal')
 if (!$SkipTests) {
-    Invoke-BuildTool $ctest @('--test-dir', $native, '-C', $Configuration, '--output-on-failure')
+    Invoke-BuildTool $ctest @('--test-dir', $native, '-C', $Configuration, '--parallel', "$Jobs", '--output-on-failure')
 }
 if (!$SkipUi) {
-    $uiBuildArguments = @((Join-Path $source 'HS2Manager.Native.sln'), "/p:Configuration=$Configuration", '/p:Platform=x64', "/p:NativeBuildRoot=$BuildDirectory", '/p:NativeModulesBuilt=true', ("/p:NativePackageRoot=" + $packageRoot.TrimEnd('\', '/') + '\'), "/p:WindowsTargetPlatformVersion=$($sdk.Name)", '/m:1', '/nr:false', '/nologo', '/v:minimal')
+    $uiBuildArguments = @((Join-Path $source 'HS2Manager.Native.sln'), "/p:Configuration=$Configuration", '/p:Platform=x64', "/p:NativeBuildRoot=$BuildDirectory", '/p:NativeModulesBuilt=true', ("/p:NativePackageRoot=" + $packageRoot.TrimEnd('\', '/') + '\'), "/p:WindowsTargetPlatformVersion=$($sdk.Name)", "/p:NativeBuildParallelism=$Jobs", "/m:$Jobs", '/nr:false', '/nologo', '/v:minimal')
     $uiErrorLog = Join-Path $BuildDirectory ("msbuild-errors-" + [Guid]::NewGuid().ToString('N') + '.log')
     try {
         try {
@@ -202,9 +203,7 @@ if (!$SkipUi) {
     }
     & (Join-Path $source 'scripts/package/Copy-CppRuntime.ps1') @runtime
     & (Join-Path $source 'scripts/package/Test-CppPackage.ps1') -Package (Split-Path -Parent $executable) -DevelopmentOutput
-    if (!$SkipTests) {
-        & (Join-Path $source 'tests/ui/Invoke-CppWinUiSmoke.ps1') -Executable $executable -FixtureTool (Join-Path $native "$Configuration/hs2_ui_fixtures.exe")
-    }
+    # GUI 冒烟测试仅由 tests/ui/Invoke-CppWinUiSmoke.ps1 显式运行，构建不打开应用窗口。
     if ($ResultFile) {
         $resultPath = [IO.Path]::GetFullPath($ResultFile)
         New-Item -ItemType Directory -Path (Split-Path -Parent $resultPath) -Force | Out-Null

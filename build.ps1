@@ -8,7 +8,8 @@ param(
     [string]$PhysXSource = '',
     [string]$OutputDirectory = '',
     [switch]$SkipArchive,
-    [string]$BuildDirectory = ''
+    [string]$BuildDirectory = '',
+    [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount)
 )
 $ErrorActionPreference = 'Stop'
 # 生产构建仅包含 C++ 应用模块和原生运行库。

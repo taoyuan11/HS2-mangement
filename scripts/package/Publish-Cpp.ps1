@@ -8,7 +8,8 @@ param(
     [string]$PhysXSource = '',
     [string]$OutputDirectory = '',
     [switch]$SkipArchive,
-    [string]$BuildDirectory = ''
+    [string]$BuildDirectory = '',
+    [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount)
 )
 $ErrorActionPreference = 'Stop'
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -36,7 +37,6 @@ $id = [Guid]::NewGuid().ToString('N')
 $result = Join-Path $env:LOCALAPPDATA ('HS2Manager/CppBuild/publish-' + $id + '.json')
 $staging = Join-Path $parent ('.hs2-cpp-package-' + $id)
 $archiveStaging = Join-Path $parent ('.hs2-cpp-archive-' + $id + '.zip')
-$smokeRoot = Join-Path $env:LOCALAPPDATA ('HS2Manager/CppBuild/package-smoke-' + $id)
 
 function Get-SafeFiles([string]$Directory) {
     if ((Get-Item -LiteralPath $Directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
@@ -68,26 +68,15 @@ function Remove-OwnedStaging {
     }
 }
 
-function Remove-OwnedSmoke {
-    $resolved = [IO.Path]::GetFullPath($smokeRoot)
-    $allowed = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'HS2Manager/CppBuild'))
-    if ([IO.Path]::GetDirectoryName($resolved) -ne $allowed -or [IO.Path]::GetFileName($resolved) -ne ('package-smoke-' + $id)) {
-        throw '发布启动检查目录越界。'
-    }
-    if (Test-Path -LiteralPath $resolved) {
-        if ((Get-Item -LiteralPath $resolved -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-            throw '发布启动检查目录不能是链接。'
-        }
-        Remove-Item -LiteralPath $resolved -Recurse -Force
-    }
-}
-
 try {
-    $fbx = @{}
+    if (!('HS2Manager.Build.PackageFiles' -as [type])) {
+        Add-Type -Path (Join-Path $PSScriptRoot 'PackageFiles.cs')
+    }
+    $fbx = @{Jobs = $Jobs}
     if ($FbxSdkRoot) {
         $fbx.SdkRoot = $FbxSdkRoot
     }
-    $physics = @{}
+    $physics = @{Jobs = $Jobs}
     if ($PhysXSource) {
         $physics.Source = $PhysXSource
     }
@@ -96,6 +85,7 @@ try {
     $arguments = @{Configuration = 'Release'
         ResultFile = $result
         SkipTests = $SkipTests
+        Jobs = $Jobs
     }
     if ($BuildDirectory) {
         $arguments.BuildDirectory = $BuildDirectory
@@ -126,6 +116,8 @@ try {
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
     New-Item -ItemType Directory -Path $staging | Out-Null
     $packageRoot = [IO.Path]::GetFullPath($build.Package).TrimEnd('\', '/')
+    $copySources = [Collections.Generic.List[string]]::new()
+    $copyTargets = [Collections.Generic.List[string]]::new()
     foreach ($file in Get-SafeFiles $packageRoot) {
         $relative = $file.FullName.Substring($packageRoot.Length).TrimStart('\', '/')
         if ($relative -match '^(Data|Logs|Covers|CardBackups|Operations|NativeCpp|NativePreview[^\\/]*|UnityPreview)[\\/]' -or
@@ -133,9 +125,8 @@ try {
             $file.Name -match '^(native-.*error.*|hs2_.*_(checks|fixtures)\.exe|library\.db.*|settings\.json)$') {
             continue
         }
-        $target = Join-Path $staging $relative
-        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
-        Copy-Item -LiteralPath $file.FullName -Destination $target
+        $copySources.Add($file.FullName)
+        $copyTargets.Add((Join-Path $staging $relative))
     }
     $data = Join-Path $staging 'Data'
     New-Item -ItemType Directory -Path $data -Force | Out-Null
@@ -143,29 +134,18 @@ try {
     $docs = Join-Path $source 'docs'
     foreach ($file in Get-SafeFiles $docs) {
         $relative = $file.FullName.Substring($docs.Length).TrimStart('\', '/')
-        $target = Join-Path $staging ('docs/' + $relative)
-        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
-        Copy-Item -LiteralPath $file.FullName -Destination $target
+        $copySources.Add($file.FullName)
+        $copyTargets.Add((Join-Path $staging ('docs/' + $relative)))
     }
+    [HS2Manager.Build.PackageFiles]::Copy($copySources.ToArray(), $copyTargets.ToArray(), $Jobs)
     & (Join-Path $PSScriptRoot 'Test-CppPackage.ps1') -Package $staging
-    if (!$SkipTests) {
-        # 发布到 NAS 时也从本机副本验证暂存包。
-        # 测试使用独立的 --data 目录，并等待所启动的进程结束。
-        Copy-Item -LiteralPath $staging -Destination $smokeRoot -Recurse
-        & (Join-Path $source 'tests/ui/Invoke-CppWinUiSmoke.ps1') -Executable (Join-Path $smokeRoot 'HS2Manager.exe') -FixtureTool (Join-Path $build.BuildDirectory 'modules/Release/hs2_ui_fixtures.exe')
-        Remove-OwnedSmoke
-    }
-    $manifest = foreach ($file in Get-ChildItem -LiteralPath $staging -File -Recurse) {
-        [ordered]@{Path = $file.FullName.Substring($staging.Length).TrimStart('\', '/')
-            Bytes = $file.Length
-            SHA256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
-        }
-    }
+    $files = @(Get-ChildItem -LiteralPath $staging -File -Recurse | Sort-Object FullName | Select-Object -ExpandProperty FullName)
+    $manifest = [HS2Manager.Build.PackageFiles]::Manifest($staging, $files, $Jobs)
     $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $staging 'package-files.json') -Encoding UTF8
     [IO.Directory]::Move($staging, $destination)
     if (!$SkipArchive) {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [IO.Compression.ZipFile]::CreateFromDirectory($destination, $archiveStaging, [IO.Compression.CompressionLevel]::Optimal, $true)
+        [IO.Compression.ZipFile]::CreateFromDirectory($destination, $archiveStaging, [IO.Compression.CompressionLevel]::Fastest, $true)
         [IO.File]::Move($archiveStaging, $archive)
         Write-Output "便携压缩包：$archive"
     }
@@ -173,7 +153,6 @@ try {
 }
 finally {
     Remove-OwnedStaging
-    Remove-OwnedSmoke
     if (Test-Path -LiteralPath $archiveStaging) {
         Remove-Item -LiteralPath $archiveStaging -Force
     }

@@ -31,7 +31,7 @@
 
 ## 构建与检查
 
-使用 Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake。`build-cpp.ps1` 还原固定版本的 C++/WinRT / Windows App SDK NuGet 包，构建原生模块与 WinUI 程序、运行 CTest、检查发布目录的 PE CLR 数据目录、启动独立测试资料库并验证正常关闭。
+使用 Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake。`build-cpp.ps1` 还原固定版本的 C++/WinRT / Windows App SDK NuGet 包，并行构建原生模块与 WinUI 程序、运行 CTest、检查发布目录的 PE CLR 数据目录。并行度通过 `-Jobs` 设置（默认最多 4）；GUI 启动和关闭检查改由 `tests/ui/Invoke-CppWinUiSmoke.ps1` 单独执行。
 
 ```powershell
 .\build-cpp.ps1

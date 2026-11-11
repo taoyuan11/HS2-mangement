@@ -139,7 +139,9 @@ C++ 版本已执行真实人物字段、无损读写、保存事务和界面流�
 .\build-cpp.ps1
 ```
 
-`build.ps1` 编译独立 FBX / 物理适配层、C++ 业务模块及 WinUI 程序，运行 CTest 和窗口启动 / 关闭检查，发布自带 Windows App SDK 与 VC++ 运行库的便携目录及 ZIP，并写入 SHA-256 清单。输出位于 `artifacts/release`；已有输出不会被覆盖，可用 `-OutputDirectory` 指定新目录。`-SkipTests` 跳过自动测试，发布包的纯原生依赖审计仍然执行。无需构建或下载 Unity。
+`build.ps1` 编译独立 FBX / 物理适配层、C++ 业务模块及 WinUI 程序，运行 CTest，发布自带 Windows App SDK 与 VC++ 运行库的便携目录及 ZIP，并写入 SHA-256 清单。构建和打包不再运行 GUI 窗口测试；需要时可单独执行 `tests/ui/Invoke-CppWinUiSmoke.ps1`。输出位于 `artifacts/release`；已有输出不会被覆盖，可用 `-OutputDirectory` 指定新目录。`-SkipTests` 跳过自动测试，发布包的纯原生依赖审计仍然执行。无需构建或下载 Unity。
+
+各构建入口支持 `-Jobs 4` 控制编译、CTest、发布文件复制及 SHA-256 计算的并行度，默认最多 4 路；内存紧张时可指定 `-Jobs 1`。ZIP 使用快速压缩，文件内容保持一致，包体积可能略大。PhysX 兼容头文件仅在内容变化时更新，重复打包可复用已有编译结果。
 
 `build-cpp.ps1` 默认使用增量构建。若 WinUI 的 PCH / PDB 缓存不一致导致 C2859 或 LNK1209，脚本会自动重建当前配置的 WinUI 项目并重试一次，保留已构建的 CMake 模块；重建失败或其他错误仍会终止构建。
 
@@ -147,7 +149,7 @@ PhysX 构建将编译器 PDB 放入各项目的中间目录，与链接器 PDB �
 
 日常可双击 `start.cmd`，以 Release 配置构建并运行；首次使用先运行一次完整 `build.ps1` 准备原生适配层。源码在 NAS 时，编译产物放在 `%LOCALAPPDATA%/HS2Manager/CppBuild/<项目标识>`，资料库保留原来的 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
 
-`build-desktop.ps1` 创建当前用户桌面的 `HS2Manager` 目录，不生成 ZIP；若已有安装，完整构建成功后替换程序并保留 `Data`，失败则保留或恢复旧目录。支持 `-GamePath`、`-SkipTests`、`-PreviewTest` 和 `-PreviewCard`。更新前关闭该安装的程序。
+`build-desktop.ps1` 创建当前用户桌面的 `HS2Manager` 目录，不生成 ZIP；若已有安装，完整构建成功后替换程序并保留 `Data`，失败则保留或恢复旧目录。支持 `-GamePath`、`-SkipTests`、`-PreviewTest`、`-PreviewCard` 和 `-Jobs`。更新前关闭该安装的程序。
 
 在 Visual Studio 打开 `HS2Manager.Native.sln` 或 `HS2Manager.slnx`。生产代码在 `src/HS2Manager.NativeApp`、`NativeCore`、`NativeScene`、`NativeRendering` 和 `NativeExport`；底层库也可通过根目录 `CMakeLists.txt` 构建。旧 C#、Unity 与桥接源代码、参考解决方案及专用构建和测试脚本已移除，可通过 Git 历史查看。冻结数值基准保留在 `tests/fixtures`，供 C++ 回归检查及历史对照使用。
 

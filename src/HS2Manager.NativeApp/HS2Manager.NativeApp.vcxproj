@@ -25,6 +25,7 @@
         <CppWinRTUsePrefixes>true</CppWinRTUsePrefixes>
         <NativePackageRoot Condition="'$(NativePackageRoot)'==''">$(USERPROFILE)\.nuget\packages\</NativePackageRoot>
         <NativeBuildRoot Condition="'$(NativeBuildRoot)'==''">$(LOCALAPPDATA)\HS2Manager\CppMigration</NativeBuildRoot>
+        <NativeBuildParallelism Condition="'$(NativeBuildParallelism)'==''">4</NativeBuildParallelism>
     </PropertyGroup>
     <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
     <PropertyGroup Label="Configuration">
@@ -44,7 +45,7 @@
     <ItemDefinitionGroup>
         <ClCompile>
             <LanguageStandard>stdcpp20</LanguageStandard>
-            <AdditionalOptions>/utf-8 /bigobj %(AdditionalOptions)</AdditionalOptions>
+            <AdditionalOptions>/utf-8 /bigobj /MP$(NativeBuildParallelism) %(AdditionalOptions)</AdditionalOptions>
             <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
             <WarningLevel>Level4</WarningLevel>
             <SDLCheck>true</SDLCheck>
@@ -83,7 +84,7 @@
         <Exec
             Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; -S &quot;$(ProjectDir)..\..&quot; -B &quot;$(NativeBuildRoot)\modules&quot; -G &quot;Visual Studio 17 2022&quot; -A x64 -DBUILD_TESTING=ON"/>
         <Exec
-            Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; --build &quot;$(NativeBuildRoot)\modules&quot; --config $(Configuration) --target hs2_core hs2_archive hs2_character hs2_rendering hs2_card_export hs2_core_components hs2_model_export -- /m:1 /nr:false /v:minimal"/>
+            Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; --build &quot;$(NativeBuildRoot)\modules&quot; --config $(Configuration) --target hs2_core hs2_archive hs2_character hs2_rendering hs2_card_export hs2_core_components hs2_model_export --parallel $(NativeBuildParallelism) -- /nr:false /v:minimal"/>
     </Target>
     <Target Name="CopyNativeUiResources" AfterTargets="Build">
         <ItemGroup>

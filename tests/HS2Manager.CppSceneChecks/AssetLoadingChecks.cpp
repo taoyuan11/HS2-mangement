@@ -248,6 +248,43 @@ namespace
         Check(resolved.Bundle == paths[0] && resolved.FileId == 0 && resolved.PathId == 17 &&
                   store.ReaderStats().Loads == loads + 1,
               "CAB identity lookup reopened the dependency payload.");
+
+        // 未读取的依赖跨多批并行建立索引；路径去重、顺序、淘汰和增量添加保持原语义。
+        NativeGpuAssetStore parallel(paths, {}, {});
+        parallel.AddPath(root / "." / "target");
+        Check(parallel.Paths().size() == paths.size(), "Equivalent dependency paths were not deduplicated.");
+        auto indexed = parallel.Resolve({origin, 1, 17});
+        Check(indexed.Bundle == paths[0] && parallel.ReaderStats().Loads == paths.size() + 1,
+              "Parallel CAB index lost a dependency or loaded it more than once.");
+        Check(parallel.ReaderStats().Evictions >= 3, "Parallel CAB index bypassed the reader budget.");
+        auto later = root / "later", laterOrigin = root / "later-origin";
+        Write(later, SerializedFile());
+        Write(laterOrigin, SerializedFile("later"));
+        parallel.AddPath(later);
+        Check(parallel.Resolve({laterOrigin, 1, 19}).Bundle == later &&
+                  parallel.ReaderStats().Loads == paths.size() + 3,
+              "Incremental CAB indexing reread old dependencies.");
+
+        auto broken = root / "broken";
+        NativeGpuAssetStore retry({paths[0], broken, paths[1]}, {}, {});
+        Reject(
+            [&]
+            {
+                retry.Resolve({origin, 1, 17});
+            });
+        // 失败批次已提交的索引不能重复提交，未完成的读取器必须能安全重试。
+        Write(broken, SerializedFile());
+        Check(retry.Resolve({origin, 1, 17}).Bundle == paths[0], "Failed CAB batch poisoned a later retry.");
+        auto duplicate = root / "duplicate" / "target";
+        std::filesystem::create_directory(duplicate.parent_path());
+        Write(duplicate, SerializedFile());
+        NativeGpuAssetStore ambiguous({paths[0], duplicate}, {}, {});
+        Reject(
+            [&]
+            {
+                ambiguous.Resolve({origin, 1, 17});
+            });
+
         Check(borrowed->UnityVersion() == "2018.4.11f1", "Eviction invalidated a borrowed reader.");
         Write(root / "stream.resS", {'0', '1', '2', '3', '4', '5', '6', '7'});
         Check(Text(borrowed->ResourceStream("archive:/stream.resS", 2, 3)) == "234", "External range mismatch.");

@@ -116,11 +116,16 @@ Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser
 常用入口仍为根目录 `build-cpp.ps1`、`build.ps1`、`build-desktop.ps1` 和 `start.cmd`。
 
 ```powershell
-# 编译原生模块、运行 CTest、构建 WinUI 并检查窗口启动和退出
-.\build-cpp.ps1
+# 并行编译原生模块、运行 CTest、构建 WinUI 和审计运行库，不启动 GUI 测试
+.\build-cpp.ps1 -Jobs 4
 
 # 仅构建和验证底层模块
 .\build-cpp.ps1 -SkipUi
+
+# 检查并行发布的文件内容、清单和失败处理
+.\tests\package\Test-ParallelPackage.ps1
 ```
+
+GUI 启动和退出检查通过 `tests/ui/Invoke-CppWinUiSmoke.ps1 -Executable <程序路径> -FixtureTool <hs2_ui_fixtures.exe 路径>` 单独执行，不在构建或打包中运行。
 
 真实游戏资源、GPU、FBX 或 PhysX 相关检查需要相应的本机依赖。历史画面对照和外部软件验证脚本已按职责放入 `tests` 的子目录，具体参数和样本范围见各验证文档。测试和工具必须等待其启动的子进程退出，并在失败或取消时完成清理。

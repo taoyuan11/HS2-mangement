@@ -5,7 +5,8 @@ param(
     [switch]$PreviewTest,
     [string]$PreviewCard = '',
     [string]$FbxSdkRoot = '',
-    [string]$PhysXSource = ''
+    [string]$PhysXSource = '',
+    [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount)
 )
 $ErrorActionPreference = 'Stop'
 $desktop = [Environment]::GetFolderPath('DesktopDirectory')

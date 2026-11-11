@@ -1,0 +1,374 @@
+{
+  "Date": "2026-11-11",
+  "BaselineCommit": "9129a9f45909f036459b4273a80f60c3dc09d951",
+  "Configuration": "Release x64",
+  "Endpoint": "Process exit after preparation, GPU pipeline, 8 frames, PNG capture and resize/history checks; not WinUI presentation",
+  "ExecutableSHA256": {
+    "before": "9bea52c3969fc277bf23d7a91f3387f181064ea7f16be098e4ca306141d47449",
+    "after": "6d829e0dfa6d6e1bac2b75815aaf9e3c7aa805706e89916effac06fa3f765ffc"
+  },
+  "SamplesPerVersionPerCard": 3,
+  "AlternatingVersionOrder": true,
+  "FreshProcessForEachSample": true,
+  "ExistingModIndexResourceAndBlockCache": true,
+  "OSAndNASFileCachesCleared": false,
+  "FramePairs": 12,
+  "Cards": [
+    {
+      "Case": "female",
+      "BeforeWallSeconds": 6.008489100000588,
+      "AfterWallSeconds": 5.268324499999835,
+      "ReductionPercent": 12.31864762808142,
+      "FramesIdentical": true,
+      "BeforePeakPrivateMiB": 2183.9921875,
+      "AfterPeakPrivateMiB": 2118.2578125,
+      "Card": "UserData/chara/navi/navi.png",
+      "BeforeMedianPrepareSeconds": 3.4046063,
+      "BeforeMedianPipelineSeconds": 1.2262907000000003,
+      "BeforeMedianFirstFrameSeconds": 5.5181622,
+      "AfterMedianPrepareSeconds": 2.9930542,
+      "AfterMedianPipelineSeconds": 1.1943171000000001,
+      "AfterMedianFirstFrameSeconds": 4.7897004,
+      "Samples": [
+        {
+          "Case": "female",
+          "Repeat": 0,
+          "Version": "before",
+          "WallSeconds": 8.340110999999524,
+          "PeakPrivateMiB": 2183.9921875,
+          "Frames": {
+            "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+            "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 7.9294843,
+            "PipelineSeconds": 1.4934687999999996,
+            "PrepareSeconds": 5.2228103,
+            "ReaderEvictions": 110,
+            "ReaderHits": 9029,
+            "ReaderLoadSeconds": 2.4715298999999997,
+            "ReaderLoads": 152,
+            "RuntimeSeconds": 0.06096030000000052
+          }
+        },
+        {
+          "Case": "female",
+          "Repeat": 0,
+          "Version": "after",
+          "WallSeconds": 5.268324499999835,
+          "PeakPrivateMiB": 2118.2578125,
+          "Frames": {
+            "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+            "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 4.7897004,
+            "PipelineSeconds": 1.1943171000000001,
+            "PrepareSeconds": 2.9379525,
+            "ReaderEvictions": 102,
+            "ReaderHits": 9037,
+            "ReaderLoadSeconds": 1.1379703000000003,
+            "ReaderLoads": 144,
+            "RuntimeSeconds": 0.057566000000000006
+          }
+        },
+        {
+          "Case": "female",
+          "Repeat": 1,
+          "Version": "after",
+          "WallSeconds": 5.223392699999749,
+          "PeakPrivateMiB": 2083.5625,
+          "Frames": {
+            "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+            "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 4.7330905,
+            "PipelineSeconds": 1.1429771000000004,
+            "PrepareSeconds": 2.9930542,
+            "ReaderEvictions": 102,
+            "ReaderHits": 9037,
+            "ReaderLoadSeconds": 1.1426528999999999,
+            "ReaderLoads": 144,
+            "RuntimeSeconds": 0.05980389999999991
+          }
+        },
+        {
+          "Case": "female",
+          "Repeat": 1,
+          "Version": "before",
+          "WallSeconds": 5.638936599999397,
+          "PeakPrivateMiB": 2145.83203125,
+          "Frames": {
+            "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+            "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 5.207857,
+            "PipelineSeconds": 1.2041027999999998,
+            "PrepareSeconds": 3.3144786,
+            "ReaderEvictions": 110,
+            "ReaderHits": 9029,
+            "ReaderLoadSeconds": 1.2795413999999994,
+            "ReaderLoads": 152,
+            "RuntimeSeconds": 0.06787989999999988
+          }
+        },
+        {
+          "Case": "female",
+          "Repeat": 2,
+          "Version": "before",
+          "WallSeconds": 6.008489100000588,
+          "PeakPrivateMiB": 2170.9296875,
+          "Frames": {
+            "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+            "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 5.5181622,
+            "PipelineSeconds": 1.2262907000000003,
+            "PrepareSeconds": 3.4046063,
+            "ReaderEvictions": 110,
+            "ReaderHits": 9029,
+            "ReaderLoadSeconds": 1.3457167999999993,
+            "ReaderLoads": 152,
+            "RuntimeSeconds": 0.0905967999999997
+          }
+        },
+        {
+          "Case": "female",
+          "Repeat": 2,
+          "Version": "after",
+          "WallSeconds": 6.154395200000181,
+          "PeakPrivateMiB": 2110.57421875,
+          "Frames": {
+            "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+            "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 5.7525209,
+            "PipelineSeconds": 1.2906244000000004,
+            "PrepareSeconds": 3.7814222,
+            "ReaderEvictions": 102,
+            "ReaderHits": 9037,
+            "ReaderLoadSeconds": 1.4367100000000002,
+            "ReaderLoads": 144,
+            "RuntimeSeconds": 0.06560549999999976
+          }
+        }
+      ]
+    },
+    {
+      "Case": "male",
+      "BeforeWallSeconds": 4.049643299999843,
+      "AfterWallSeconds": 3.9955752000005305,
+      "ReductionPercent": 1.3351324053482667,
+      "FramesIdentical": true,
+      "BeforePeakPrivateMiB": 1645.4921875,
+      "AfterPeakPrivateMiB": 1696.22265625,
+      "Card": "UserData/chara/male/HS2_ill_M_000.png",
+      "BeforeMedianPrepareSeconds": 2.3447627,
+      "BeforeMedianPipelineSeconds": 0.9046433,
+      "BeforeMedianFirstFrameSeconds": 3.6862575,
+      "AfterMedianPrepareSeconds": 2.2289474,
+      "AfterMedianPipelineSeconds": 0.8939016,
+      "AfterMedianFirstFrameSeconds": 3.597842,
+      "Samples": [
+        {
+          "Case": "male",
+          "Repeat": 0,
+          "Version": "before",
+          "WallSeconds": 4.772467300000244,
+          "PeakPrivateMiB": 1630.125,
+          "Frames": {
+            "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+            "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 4.3770884,
+            "PipelineSeconds": 0.9746397999999998,
+            "PrepareSeconds": 2.6577019,
+            "ReaderEvictions": 72,
+            "ReaderHits": 8884,
+            "ReaderLoadSeconds": 1.0476379000000005,
+            "ReaderLoads": 107,
+            "RuntimeSeconds": 0.054733699999999885
+          }
+        },
+        {
+          "Case": "male",
+          "Repeat": 0,
+          "Version": "after",
+          "WallSeconds": 3.9955752000005305,
+          "PeakPrivateMiB": 1649.61328125,
+          "Frames": {
+            "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+            "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 3.597842,
+            "PipelineSeconds": 0.9154975999999997,
+            "PrepareSeconds": 2.2289474,
+            "ReaderEvictions": 70,
+            "ReaderHits": 8886,
+            "ReaderLoadSeconds": 0.7792338999999996,
+            "ReaderLoads": 105,
+            "RuntimeSeconds": 0.052192600000000144
+          }
+        },
+        {
+          "Case": "male",
+          "Repeat": 1,
+          "Version": "after",
+          "WallSeconds": 4.341682299999775,
+          "PeakPrivateMiB": 1619.7890625,
+          "Frames": {
+            "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+            "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 3.9705691,
+            "PipelineSeconds": 0.8939016,
+            "PrepareSeconds": 2.6192096,
+            "ReaderEvictions": 70,
+            "ReaderHits": 8886,
+            "ReaderLoadSeconds": 0.8062215000000003,
+            "ReaderLoads": 105,
+            "RuntimeSeconds": 0.055016900000000035
+          }
+        },
+        {
+          "Case": "male",
+          "Repeat": 1,
+          "Version": "before",
+          "WallSeconds": 4.049643299999843,
+          "PeakPrivateMiB": 1638.60546875,
+          "Frames": {
+            "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+            "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 3.6862575,
+            "PipelineSeconds": 0.9046433,
+            "PrepareSeconds": 2.3355343,
+            "ReaderEvictions": 72,
+            "ReaderHits": 8884,
+            "ReaderLoadSeconds": 0.7932921000000001,
+            "ReaderLoads": 107,
+            "RuntimeSeconds": 0.05437570000000003
+          }
+        },
+        {
+          "Case": "male",
+          "Repeat": 2,
+          "Version": "before",
+          "WallSeconds": 4.039292299999943,
+          "PeakPrivateMiB": 1645.4921875,
+          "Frames": {
+            "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+            "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 3.6814807,
+            "PipelineSeconds": 0.8877717999999999,
+            "PrepareSeconds": 2.3447627,
+            "ReaderEvictions": 72,
+            "ReaderHits": 8884,
+            "ReaderLoadSeconds": 0.7930118,
+            "ReaderLoads": 107,
+            "RuntimeSeconds": 0.052877300000000016
+          }
+        },
+        {
+          "Case": "male",
+          "Repeat": 2,
+          "Version": "after",
+          "WallSeconds": 3.8482490000005782,
+          "PeakPrivateMiB": 1696.22265625,
+          "Frames": {
+            "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+            "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+          },
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 3.4646199,
+            "PipelineSeconds": 0.8431254999999998,
+            "PrepareSeconds": 2.1837416,
+            "ReaderEvictions": 70,
+            "ReaderHits": 8886,
+            "ReaderLoadSeconds": 0.7802120000000003,
+            "ReaderLoads": 105,
+            "RuntimeSeconds": 0.05417360000000038
+          }
+        }
+      ]
+    }
+  ],
+  "Validation": {
+    "CTestPassed": 11,
+    "CTestFailed": 0,
+    "ReleaseCMakeAndWinUIBuildPassed": true,
+    "NativePackageAuditPEFiles": 71,
+    "GUIWindowTestsRun": false,
+    "ParallelPackageChecksPowerShellVersions": [
+      "5.1",
+      "7"
+    ]
+  },
+  "Packaging": {
+    "ArchiveBytes": 65489089,
+    "PhysXHeaderTimestampUnchanged": true,
+    "Seconds": 12.8929138,
+    "ManifestAndArchiveFilesVerified": 358,
+    "Jobs": 4,
+    "SkipTests": true,
+    "GUIWindowTestsRun": false
+  }
+}

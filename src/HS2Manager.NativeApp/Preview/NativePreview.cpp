@@ -326,7 +326,8 @@ namespace hs2::ui
         Environment();
         worker_->Paused(!playing_);
         generation_ = worker_->Load(card_, draft_, visibility_);
-        SyncRail(true);
+        // 切卡时只同步选中项，保留用户当前浏览位置。
+        SyncRail();
     }
 
     void NativePreview::SyncRail(bool reveal)
@@ -358,7 +359,7 @@ namespace hs2::ui
                                           if (reveal && selected && owner->model_->Bool(L"ShowPreviewRail"))
                                           {
                                               owner->root_.UpdateLayout();
-                                              rail.ScrollIntoView(selected, ScrollIntoViewAlignment::Leading);
+                                              rail.ScrollIntoView(selected, ScrollIntoViewAlignment::Default);
                                           }
                                       });
     }

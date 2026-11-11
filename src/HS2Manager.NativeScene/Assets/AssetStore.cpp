@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cwctype>
+#include <future>
+#include <thread>
 #include <stdexcept>
 
 namespace hs2
@@ -10,7 +12,7 @@ namespace hs2
     {
         std::string Key(const std::filesystem::path &path)
         {
-            auto s = std::filesystem::absolute(path).lexically_normal().wstring();
+            auto s = (path.is_absolute() ? path : std::filesystem::absolute(path)).lexically_normal().wstring();
             for (auto &c : s)
                 c = static_cast<wchar_t>(std::towlower(c));
             auto u = std::filesystem::path(s).u8string();
@@ -61,11 +63,7 @@ namespace hs2
     {
         auto absolute = std::filesystem::absolute(path);
         auto key = Key(absolute);
-        if (std::none_of(paths_.begin(), paths_.end(),
-                         [&](auto &p)
-                         {
-                             return Key(p) == key;
-                         }))
+        if (pathKeys_.insert(key).second)
             paths_.push_back(absolute);
     }
 
@@ -107,18 +105,81 @@ namespace hs2
         }
         auto started = std::chrono::steady_clock::now();
         auto reader = std::make_shared<NativeGpuAssetReader>(path, database_.get(), blockCache_, cancellation_);
-        ++readerStats_.Loads;
         auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        readerStats_.LoadSeconds += elapsed;
+        RememberReader(key, reader, elapsed);
+        return reader;
+    }
+
+    void NativeGpuAssetStore::RememberReader(const std::string &key,
+                                             const std::shared_ptr<NativeGpuAssetReader> &reader, double seconds)
+    {
+        ++readerStats_.Loads;
+        readerStats_.LoadSeconds += seconds;
         auto &resource = readerStats_.Resources[key];
         ++resource.first;
-        resource.second += elapsed;
+        resource.second += seconds;
         reader->ScriptSchema = scriptSchema_;
         cabNames_[key] = reader->CabName;
         readers_[key] = reader;
         recent_.push_front(key);
         TrimReaders(key);
-        return reader;
+    }
+
+    std::shared_ptr<const GpuPrefabData> NativeGpuAssetStore::Prefab(const std::filesystem::path &path,
+                                                                     const std::string &name)
+    {
+        Cancel();
+        auto &prefabs = prefabs_[Key(path)];
+        auto found = prefabs.find(name);
+        if (found != prefabs.end())
+            return found->second;
+        auto prefab = std::make_shared<const GpuPrefabData>(Reader(path)->Prefab(name));
+        prefabs.emplace(name, prefab);
+        return prefab;
+    }
+
+    void NativeGpuAssetStore::IndexCabNames()
+    {
+        // 仅并行构造相互独立的读取器；脚本回调、索引和 LRU 仍由调用线程维护。
+        // 每批最多四个包，避免同时展开大量 MOD。future 在取消/异常时也会等待线程退出。
+        using Loaded = std::pair<std::shared_ptr<NativeGpuAssetReader>, double>;
+        const auto workers = std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
+        while (indexed_ < paths_.size())
+        {
+            Cancel();
+            const auto end = std::min(paths_.size(), indexed_ + workers);
+            std::vector<std::future<Loaded>> pending;
+            for (size_t i = indexed_; i < end; ++i)
+            {
+                if (cabNames_.contains(Key(paths_[i])))
+                    pending.emplace_back();
+                else
+                    pending.push_back(std::async(
+                        std::launch::async,
+                        [path = paths_[i], database = database_, cache = blockCache_, cancellation = cancellation_]
+                        {
+                            auto started = std::chrono::steady_clock::now();
+                            auto reader =
+                                std::make_shared<NativeGpuAssetReader>(path, database.get(), cache, cancellation);
+                            return Loaded{
+                                std::move(reader),
+                                std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count()};
+                        }));
+            }
+            for (auto &future : pending)
+            {
+                Cancel();
+                auto &path = paths_[indexed_];
+                auto key = Key(path);
+                if (future.valid())
+                {
+                    auto [reader, seconds] = future.get();
+                    RememberReader(key, reader, seconds);
+                }
+                cabs_[Lower(cabNames_.at(key))].push_back(path);
+                ++indexed_;
+            }
+        }
     }
 
     void NativeGpuAssetStore::IndexShaderNames(const std::shared_ptr<NativeGpuAssetReader> &reader)
@@ -178,16 +239,7 @@ namespace hs2
         }
         else
         {
-            while (indexed_ < paths_.size())
-            {
-                Cancel();
-                auto path = paths_[indexed_];
-                auto pathKey = Key(path);
-                if (!cabNames_.contains(pathKey))
-                    Reader(path);
-                cabs_[Lower(cabNames_.at(pathKey))].push_back(path);
-                ++indexed_;
-            }
+            IndexCabNames();
             auto found = cabs_.find(identity);
             if (found == cabs_.end())
                 throw std::runtime_error("Referenced resource bundle is missing: " + cab);

@@ -175,7 +175,8 @@ namespace hs2
                 progress({0, 0, "读取原始模型结构：" + name});
             auto ref = reference(bundle, name, archive);
             auto reader = assets->Reader(ref.Bundle);
-            auto raw = reader->Prefab(name);
+            auto prefab = assets->Prefab(ref.Bundle, name);
+            const auto &raw = *prefab;
             auto part = std::make_shared<CharacterPart>();
             part->Role = role;
             part->Slot = slot;
