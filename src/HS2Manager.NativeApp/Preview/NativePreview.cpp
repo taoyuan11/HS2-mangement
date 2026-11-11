@@ -50,50 +50,58 @@ namespace hs2::ui
         std::weak_ptr<NativePreview> weak = shared_from_this();
         auto queue = owner->dispatcher_;
         auto epoch = ++epoch_;
+        auto delivery = delivery_ = std::make_shared<PreviewReadyDelivery>();
         PreviewCallbacks callbacks;
-        callbacks.Ready = [weak, queue, epoch](PreviewReady result)
+        callbacks.Ready = [weak, queue, epoch, delivery](PreviewReady result)
         {
-            queue.TryEnqueue(
-                [weak, epoch, result = std::move(result)]() mutable
-                {
-                    if (auto self = weak.lock())
-                        if (auto owner = self->owner_.lock())
-                            if (self->epoch_ == epoch && self->generation_ == result.Generation && self->panel_)
-                            {
-                                try
+            if (!delivery->Publish(std::move(result)))
+                return;
+            if (!queue.TryEnqueue(
+                    [weak, epoch, delivery]()
+                    {
+                        auto ready = delivery->Take();
+                        if (!ready)
+                            return;
+                        auto &result = *ready;
+                        if (auto self = weak.lock())
+                            if (auto owner = self->owner_.lock())
+                                if (self->epoch_ == epoch && self->generation_ == result.Generation && self->panel_)
                                 {
-                                    check_hresult(
-                                        self->panel_.as<ISwapChainPanelNative>()->SetSwapChain(result.Chain.Get()));
-                                    if (self->editor_ && owner->editor_)
-                                        owner->editor_->Definition(result.Definition);
-                                    self->body_ = result.Body;
-                                    self->face_ = result.Face;
-                                    if (self->first_)
+                                    try
                                     {
-                                        self->Frame();
-                                        self->first_ = false;
+                                        check_hresult(
+                                            self->panel_.as<ISwapChainPanelNative>()->SetSwapChain(result.Chain.Get()));
+                                        if (self->editor_ && owner->editor_)
+                                            owner->editor_->Definition(result.Definition);
+                                        self->body_ = result.Body;
+                                        self->face_ = result.Face;
+                                        if (self->first_)
+                                        {
+                                            self->Frame();
+                                            self->first_ = false;
+                                        }
+                                        else
+                                            self->Camera();
+                                        owner->model_->Put(L"PreviewBusy", false);
+                                        owner->model_->Put(L"CanControlPreview", true);
+                                        if (owner->temporaryPreview_)
+                                            result.Diagnostics.insert(result.Diagnostics.end(),
+                                                                      owner->temporaryPreview_->Warnings.begin(),
+                                                                      owner->temporaryPreview_->Warnings.end());
+                                        owner->model_->Text(L"PreviewWarnings", JoinLines(result.Diagnostics));
+                                        owner->model_->Put(L"HasPreviewWarnings", !result.Diagnostics.empty());
+                                        owner->model_->Put(L"PreviewStatus",
+                                                           self->resources_ ? L"临时预览 · 包内资源优先 · Direct3D 11"
+                                                                            : L"原生 Direct3D 11 · 游戏环境");
                                     }
-                                    else
-                                        self->Camera();
-                                    owner->model_->Put(L"PreviewBusy", false);
-                                    owner->model_->Put(L"CanControlPreview", true);
-                                    if (owner->temporaryPreview_)
-                                        result.Diagnostics.insert(result.Diagnostics.end(),
-                                                                  owner->temporaryPreview_->Warnings.begin(),
-                                                                  owner->temporaryPreview_->Warnings.end());
-                                    owner->model_->Text(L"PreviewWarnings", JoinLines(result.Diagnostics));
-                                    owner->model_->Put(L"HasPreviewWarnings", !result.Diagnostics.empty());
-                                    owner->model_->Put(L"PreviewStatus", self->resources_
-                                                                             ? L"临时预览 · 包内资源优先 · Direct3D 11"
-                                                                             : L"原生 Direct3D 11 · 游戏环境");
+                                    catch (hresult_error const &e)
+                                    {
+                                        owner->model_->Text(L"PreviewError", to_string(e.message()));
+                                        owner->model_->Put(L"HasPreviewError", true);
+                                    }
                                 }
-                                catch (hresult_error const &e)
-                                {
-                                    owner->model_->Text(L"PreviewError", to_string(e.message()));
-                                    owner->model_->Put(L"HasPreviewError", true);
-                                }
-                            }
-                });
+                    }))
+                delivery->Close();
         };
         callbacks.Progress = [weak, queue, epoch](uint64_t generation, std::string message)
         {
@@ -132,8 +140,9 @@ namespace hs2::ui
                 [weak, epoch, path = std::move(path), error = std::move(error)]
                 {
                     if (auto self = weak.lock())
-                        if (auto owner = self->owner_.lock())
-                            owner->Report(error.empty() ? "截图已保存：" + Utf8(path) : "截图未保存：" + error);
+                        if (self->epoch_ == epoch)
+                            if (auto owner = self->owner_.lock())
+                                owner->Report(error.empty() ? "截图已保存：" + Utf8(path) : "截图未保存：" + error);
                 });
         };
         worker_ = std::make_unique<NativePreviewWorker>(Path(owner->settings_.GamePath), owner->dataDirectory_,
@@ -383,12 +392,16 @@ namespace hs2::ui
         generation_ = worker_->Load(card_, draft_, visibility_, true, resources_);
     }
 
-    void NativePreview::Stop()
+    void NativePreview::InvalidateCallbacks()
     {
         ++epoch_;
         ++generation_;
-        if (worker_)
-            worker_->Quiesce();
+        if (delivery_)
+            delivery_->Close();
+    }
+
+    void NativePreview::Detach()
+    {
         for (auto &undo : unbind_)
             undo();
         unbind_.clear();
@@ -405,9 +418,33 @@ namespace hs2::ui
         }
         view_ = nullptr;
         viewport_ = nullptr;
+    }
+
+    void NativePreview::Stop()
+    {
+        InvalidateCallbacks();
         if (worker_)
-            worker_->Unload();
+            worker_->Quiesce();
+        Detach();
         worker_.reset();
+    }
+
+    winrt::Windows::Foundation::IAsyncAction NativePreview::StopAsync()
+    {
+        auto lifetime = shared_from_this();
+        InvalidateCallbacks();
+        auto worker = std::move(worker_);
+        if (!worker)
+            co_return;
+        apartment_context ui;
+        // 保持窗口和消息循环存活，Present 和驱动清理不得阻塞界面线程。
+        co_await resume_background();
+        worker->Quiesce();
+        co_await ui;
+        Detach();
+        co_await resume_background();
+        worker.reset();
+        co_await ui;
     }
 
     void NativePreview::Resize()
@@ -475,6 +512,8 @@ namespace hs2::ui
 
     bool NativePreview::Action(std::wstring_view name, Object sender)
     {
+        if (!worker_)
+            return false;
         if (name == L"Angle_Click")
         {
             yaw_ = std::stod(to_string(unbox_value<hstring>(sender.as<Button>().Tag())));

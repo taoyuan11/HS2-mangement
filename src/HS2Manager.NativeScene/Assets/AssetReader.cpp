@@ -153,15 +153,6 @@ namespace hs2
             return i == std::string::npos ? value : value.substr(i + 1);
         }
 
-        bool EqualIgnoreCase(std::string_view a, std::string_view b)
-        {
-            return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
-                                                      [](unsigned char x, unsigned char y)
-                                                      {
-                                                          return std::tolower(x) == std::tolower(y);
-                                                      });
-        }
-
         std::string Lower(std::string value)
         {
             for (auto &c : value)
@@ -286,18 +277,37 @@ namespace hs2
             return result;
         }
 
-        Parameter ReadValue(Reader &r, const std::vector<UnityTypeNode> &nodes, size_t &cursor, size_t &budget,
-                            int depth)
+        std::vector<UnityTypeLayout> TypeLayout(const std::vector<UnityTypeNode> &nodes)
+        {
+            std::vector<UnityTypeLayout> layout(nodes.size());
+            std::vector<size_t> parents;
+            for (size_t i = 0; i < nodes.size(); ++i)
+            {
+                while (!parents.empty() && nodes[parents.back()].Level >= nodes[i].Level)
+                {
+                    layout[parents.back()].End = i;
+                    parents.pop_back();
+                }
+                if (!parents.empty())
+                    ++layout[parents.back()].Children;
+                parents.push_back(i);
+            }
+            for (auto i : parents)
+                layout[i].End = nodes.size();
+            return layout;
+        }
+
+        Parameter ReadValue(Reader &r, const std::vector<UnityTypeNode> &nodes,
+                            const std::vector<UnityTypeLayout> &layout, size_t &cursor, size_t &budget, int depth)
         {
             Require(cursor < nodes.size() && depth <= 128 && budget > 0, "Serialized value tree exceeds limits.");
             --budget;
+            const auto &shape = layout[cursor];
             const auto &node = nodes[cursor++];
             Parameter p;
             p.Name = node.Name;
-            auto type = node.Type;
-            auto end = cursor;
-            while (end < nodes.size() && nodes[end].Level > node.Level)
-                ++end;
+            const auto &type = node.Type;
+            const auto end = shape.End;
             auto signedValue = [&](int64_t v)
             {
                 p.Encoding = "int";
@@ -346,7 +356,7 @@ namespace hs2
                     for (size_t i = 0; i < count; ++i)
                     {
                         auto next = element;
-                        p.Children.push_back(ReadValue(r, nodes, next, budget, depth + 1));
+                        p.Children.push_back(ReadValue(r, nodes, layout, next, budget, depth + 1));
                     }
                 }
                 cursor = end;
@@ -398,8 +408,10 @@ namespace hs2
             else
             {
                 p.Encoding = "object";
+                // 网格形变等大数组会重复读取同一结构，预先计算边界并一次分配直接子字段。
+                p.Children.reserve(shape.Children);
                 while (cursor < end)
-                    p.Children.push_back(ReadValue(r, nodes, cursor, budget, depth + 1));
+                    p.Children.push_back(ReadValue(r, nodes, layout, cursor, budget, depth + 1));
                 if (p.Children.size() == 1 && p.Children.front().Name == "Array")
                 {
                     auto array = std::move(p.Children.front());
@@ -876,6 +888,7 @@ namespace hs2
                 Require(database != nullptr, "Serialized file has no type tree; provide classdata.tpk.");
                 t.Nodes = database->Type(t.ClassId, UnityVersion);
             }
+            t.Layout = TypeLayout(t.Nodes);
             types_.push_back(std::move(t));
             (void)script;
         }
@@ -942,7 +955,7 @@ namespace hs2
         Require(!type.Nodes.empty(), "Object type tree is empty.");
         Reader r(Bytes(id), bigEndian_);
         size_t cursor = 0, budget = 4000000;
-        auto result = ReadValue(r, type.Nodes, cursor, budget, 0);
+        auto result = ReadValue(r, type.Nodes, type.Layout, cursor, budget, 0);
         Require(cursor == type.Nodes.size(), "Object type tree was not fully consumed.");
         Require(allowTrailing || r.Position == r.Data.size(), "Object payload does not match its type tree.");
         return result;
@@ -952,7 +965,8 @@ namespace hs2
     {
         Reader r(Bytes(id), bigEndian_);
         size_t cursor = 0, budget = 4000000;
-        auto value = ReadValue(r, schema, cursor, budget, 0);
+        auto layout = TypeLayout(schema);
+        auto value = ReadValue(r, schema, layout, cursor, budget, 0);
         Require(cursor == schema.size() && r.Position == r.Data.size(),
                 "Mono payload does not match its serialized field schema.");
         return value;
@@ -995,6 +1009,28 @@ namespace hs2
             CabName.assign(reinterpret_cast<const char *>(u.data()), u.size());
         }
         ExternalNames = file_->ExternalNames;
+    }
+
+    std::string NativeGpuAssetReader::ReadCabName(const std::filesystem::path &path, std::stop_token cancellation)
+    {
+        if (cancellation.stop_requested())
+            throw std::runtime_error("Resource loading cancelled.");
+        std::array<char, 8> signature{};
+        std::ifstream input(path, std::ios::binary);
+        Require(bool(input), "Cannot read asset source.");
+        input.read(signature.data(), signature.size());
+        bool isBundle = input.gcount() == static_cast<std::streamsize>(signature.size()) &&
+                        std::memcmp(signature.data(), "UnityFS", 7) == 0;
+        input.close();
+        if (isBundle)
+        {
+            // CAB 身份位于目录中；索引依赖无需解压对象数据，也不应挤掉正在使用的读取器。
+            UnityBundle bundle(path, {}, cancellation);
+            Require(!bundle.Entries().empty(), "Empty UnityFS bundle.");
+            return bundle.Entries().front().Name;
+        }
+        auto name = path.filename().u8string();
+        return {reinterpret_cast<const char *>(name.data()), name.size()};
     }
 
     const std::string &NativeGpuAssetReader::UnityVersion() const
@@ -1083,47 +1119,49 @@ namespace hs2
 
     NativeGpuAssetReader::NameLookup NativeGpuAssetReader::ShaderNames()
     {
-        NameLookup names;
         // 保留 TryFind 的优先级：包内导出名称及其别名优先，然后才是对象名称。
-        for (auto &asset : file_->Assets())
-            if (asset.ClassId == 142)
-                for (auto &entry : Metadata(asset.PathId).Get("m_Container").Array())
-                {
-                    auto pointer = Pointer(entry.Get("second").Get("asset"));
-                    if (pointer.FileId != 0 || AssetClass(pointer.PathId) != 48)
-                        continue;
-                    auto name = entry.Get("first").Text;
-                    auto base = Basename(name);
-                    for (auto &alias : {name, base, base.substr(0, base.find_last_of('.'))})
-                        names[Lower(alias)].push_back(pointer.PathId);
-                }
+        auto names = ExportedNames(48);
         for (auto &asset : file_->Assets())
             if (asset.ClassId == 48)
                 names[Lower(AssetName(asset.PathId))].push_back(asset.PathId);
         return names;
     }
 
+    const NativeGpuAssetReader::NameLookup &NativeGpuAssetReader::ExportedNames(int classId)
+    {
+        if (!exports_)
+        {
+            std::unordered_map<int, NameLookup> names;
+            for (auto &asset : file_->Assets())
+                if (asset.ClassId == 142)
+                    for (auto &entry : Metadata(asset.PathId).Get("m_Container").Array())
+                    {
+                        auto pointer = Pointer(entry.Get("second").Get("asset"));
+                        auto type = pointer.FileId == 0 ? AssetClass(pointer.PathId) : std::optional<int>{};
+                        if (!type)
+                            continue;
+                        auto name = entry.Get("first").Text;
+                        auto base = Basename(name);
+                        for (auto &alias : {name, base, base.substr(0, base.find_last_of('.'))})
+                            names[*type][Lower(alias)].push_back(pointer.PathId);
+                    }
+            // 整个索引成功后再提交；异常不能留下半个缓存。
+            exports_ = std::move(names);
+        }
+        return (*exports_)[classId];
+    }
+
     std::optional<GpuAssetPointer> NativeGpuAssetReader::TryFind(std::string_view name, int classId, int textureSize)
     {
-        for (auto &a : file_->Assets())
-            if (a.ClassId == 142)
-            {
-                for (auto &p : Metadata(a.PathId).Get("m_Container").Array())
+        auto key = Lower(std::string(name));
+        auto &exported = ExportedNames(classId);
+        if (auto found = exported.find(key); found != exported.end())
+            for (auto id : found->second)
+                if (!textureSize ||
+                    (Metadata(id).Int("m_Width") == textureSize && Metadata(id).Int("m_Height") == textureSize))
                 {
-                    auto asset = Pointer(p.Get("second").Get("asset"));
-                    if (asset.FileId == 0 && AssetClass(asset.PathId) == classId &&
-                        (EqualIgnoreCase(p.Get("first").Text, name) ||
-                         EqualIgnoreCase(Basename(p.Get("first").Text), name) ||
-                         EqualIgnoreCase(
-                             Basename(p.Get("first").Text).substr(0, Basename(p.Get("first").Text).find_last_of('.')),
-                             name)))
-                    {
-                        if (!textureSize || (Metadata(asset.PathId).Int("m_Width") == textureSize &&
-                                             Metadata(asset.PathId).Int("m_Height") == textureSize))
-                            return asset;
-                    }
+                    return GpuAssetPointer{Path, 0, id};
                 }
-            }
         auto names = names_.find(classId);
         if (names == names_.end())
         {
@@ -1135,7 +1173,7 @@ namespace hs2
                 }
             names = names_.emplace(classId, std::move(index)).first;
         }
-        if (auto found = names->second.find(Lower(std::string(name))); found != names->second.end())
+        if (auto found = names->second.find(key); found != names->second.end())
             for (auto id : found->second)
                 if (!textureSize ||
                     (Metadata(id).Int("m_Width") == textureSize && Metadata(id).Int("m_Height") == textureSize))

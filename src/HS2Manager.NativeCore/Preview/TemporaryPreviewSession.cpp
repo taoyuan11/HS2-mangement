@@ -157,13 +157,14 @@ namespace hs2
 
         PreviewResources ResourcesFor(const TemporaryPreviewCard &card, const std::vector<PackageFile> &files,
                                       const ModIndex &base, const std::shared_ptr<TemporaryPreviewStorage> &storage,
-                                      const fs::path &game, std::stop_token token)
+                                      const fs::path &game, const fs::path &data, std::stop_token token)
         {
             auto context = std::make_shared<PreviewResourceContext>();
             context->Game = fs::absolute(game);
             context->Package = storage->Root() / "files";
             context->Storage = storage;
             context->Data = storage->Root() / "cache" / Path(context->Id);
+            context->CatalogCache = fs::absolute(data) / "NativeCpp/resources";
             context->Index = base;
             context->Index.Files.clear();
             context->Index.PluginFiles.clear();
@@ -423,7 +424,7 @@ namespace hs2
             progress({0, 0, "读取本机资源，补齐包内依赖"});
         auto base = ModDependencyService::ScanTransient(game, previous ? &*previous : nullptr, progress, cancellation);
         for (auto &card : session->Cards)
-            card.Resources = ResourcesFor(card, files, base, session->Storage, game, cancellation);
+            card.Resources = ResourcesFor(card, files, base, session->Storage, game, data, cancellation);
         CheckCancelled(cancellation);
         return session;
     }

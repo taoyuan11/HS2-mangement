@@ -15,6 +15,7 @@ namespace hs2::ui
         void Update(CharacterDocument draft, CharacterPreviewVisibility visibility);
         void SyncRail(bool reveal = false);
         void Stop();
+        winrt::Windows::Foundation::IAsyncAction StopAsync();
         bool Action(std::wstring_view name, Object sender);
         void Environment();
 
@@ -39,6 +40,8 @@ namespace hs2::ui
     private:
         explicit NativePreview(std::shared_ptr<NativeWindow> const &owner);
         void Initialize();
+        void InvalidateCallbacks();
+        void Detach();
         void Attach(xaml::FrameworkElement view, bool editor);
         void Resize();
         void Camera();
@@ -46,6 +49,7 @@ namespace hs2::ui
         winrt::fire_and_forget Screenshot();
         std::weak_ptr<NativeWindow> owner_;
         std::unique_ptr<NativePreviewWorker> worker_;
+        std::shared_ptr<PreviewReadyDelivery> delivery_;
         xaml::FrameworkElement view_{nullptr}, viewport_{nullptr};
         controls::SwapChainPanel panel_{nullptr};
         std::vector<std::function<void()>> unbind_;

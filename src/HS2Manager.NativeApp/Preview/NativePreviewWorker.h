@@ -24,6 +24,40 @@ namespace hs2::ui
         std::function<void(std::filesystem::path, std::string)> Screenshot;
     };
 
+    // 界面队列只持有信箱，关闭时可以立即释放尚未投递的交换链引用。
+    class PreviewReadyDelivery final
+    {
+    public:
+        bool Publish(PreviewReady value)
+        {
+            std::lock_guard lock(mutex_);
+            if (closed_)
+                return false;
+            ready_ = std::move(value);
+            return true;
+        }
+
+        std::optional<PreviewReady> Take()
+        {
+            std::lock_guard lock(mutex_);
+            auto result = std::move(ready_);
+            ready_.reset();
+            return result;
+        }
+
+        void Close()
+        {
+            std::lock_guard lock(mutex_);
+            closed_ = true;
+            ready_.reset();
+        }
+
+    private:
+        std::mutex mutex_;
+        std::optional<PreviewReady> ready_;
+        bool closed_ = false;
+    };
+
     struct ScreenshotTarget
     {
         fs::path Path;

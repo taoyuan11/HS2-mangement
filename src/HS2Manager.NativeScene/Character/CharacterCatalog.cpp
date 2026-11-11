@@ -4,11 +4,15 @@
 #include "Mods/ModIndex.h"
 #include <Windows.h>
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <cctype>
+#include <condition_variable>
 #include <fstream>
+#include <future>
 #include <set>
 #include <sstream>
+#include <thread>
 
 namespace hs2
 {
@@ -235,6 +239,113 @@ namespace hs2
             e.Values = j.at("Values").get<decltype(e.Values)>();
             return e;
         }
+
+        bool CharacterList(std::string name)
+        {
+            name = Normal(std::move(name));
+            return name.starts_with("abdata/list/characustom/") && name.ends_with(".csv");
+        }
+
+        std::string ModStamp(const ModFileInfo &mod)
+        {
+            return Utf8(fs::absolute(Path(mod.Path))) + "|" + std::to_string(mod.Size) + "|" +
+                   std::to_string(mod.ModifiedUtcTicks);
+        }
+
+        // 一次顺序读取代替每个 MOD 一个 JSON 文件；记录按源文件戳独立失效。
+        // 只缓存 CSV 数据，来源与资源优先级始终由本次选中的 MOD 索引决定。
+        class ModListCache
+        {
+        public:
+            ModListCache(fs::path directory, const fs::path &game, std::stop_token cancellation)
+                : file_(directory / Path("mod-lists-v2-" + Hash(Normal(Utf8(game))) + ".msgpack"))
+            {
+                try
+                {
+                    auto data = Json::from_msgpack(ReadFile(file_, 512ull * 1024 * 1024, cancellation));
+                    if (data.is_object())
+                        records_ = std::move(data);
+                }
+                catch (const Cancelled &)
+                {
+                    throw;
+                }
+                catch (const std::exception &)
+                {
+                    // 缓存不可用时仍可从 MOD 读取，不能因此丢失素材。
+                }
+            }
+
+            std::optional<std::vector<NativeAssetEntry>> Read(const ModFileInfo &mod)
+            {
+                auto record = records_.find(Normal(mod.Path));
+                if (record == records_.end())
+                    return {};
+                try
+                {
+                    if (record->at(0) != Json::array({mod.Size, mod.ModifiedUtcTicks}))
+                        return {};
+                    auto &data = record->at(1);
+                    if (!data.is_array())
+                        return {};
+                    std::vector<NativeAssetEntry> rows;
+                    rows.reserve(data.size());
+                    for (auto &row : data)
+                    {
+                        NativeAssetEntry e;
+                        e.Category = row.at(0);
+                        e.Id = row.at(1);
+                        e.Values = row.at(2).get<decltype(e.Values)>();
+                        e.Archive = Path(mod.Path);
+                        e.Guid = mod.Guid;
+                        e.Source = mod.Name.empty() ? mod.Guid : mod.Name;
+                        Finish(e);
+                        rows.push_back(std::move(e));
+                    }
+                    return rows;
+                }
+                catch (const std::exception &)
+                {
+                    return {};
+                }
+            }
+
+            void Put(const ModFileInfo &mod, const std::vector<NativeAssetEntry> &rows)
+            {
+                Json data = Json::array();
+                for (auto &e : rows)
+                    data.push_back(Json::array({e.Category, e.Id, e.Values}));
+                records_[Normal(mod.Path)] =
+                    Json::array({Json::array({mod.Size, mod.ModifiedUtcTicks}), std::move(data)});
+                changed_ = true;
+            }
+
+            void Save(std::stop_token cancellation)
+            {
+                if (!changed_)
+                    return;
+                CheckCancelled(cancellation);
+                try
+                {
+                    auto bytes = Json::to_msgpack(records_);
+                    CheckCancelled(cancellation);
+                    WriteAtomic(file_, bytes);
+                }
+                catch (const Cancelled &)
+                {
+                    throw;
+                }
+                catch (const std::exception &)
+                {
+                    // 只读目录、磁盘已满等缓存写入失败不影响已读取的清单。
+                }
+            }
+
+        private:
+            fs::path file_;
+            Json records_ = Json::object();
+            bool changed_ = false;
+        };
     }
 
     std::string NativeAssetEntry::Get(std::string_view key) const
@@ -417,8 +528,7 @@ namespace hs2
             ZipArchive zip(Path(mod.Path));
             for (auto &file : zip.Entries())
             {
-                auto name = Normal(file.Name);
-                if (!name.starts_with("abdata/list/characustom/") || !name.ends_with(".csv"))
+                if (!CharacterList(file.Name))
                     continue;
                 CheckCancelled(Cancellation);
                 auto rows = Csv(zip.Read(file, 8 * 1024 * 1024));
@@ -453,9 +563,9 @@ namespace hs2
             return result;
         }
 
-        template <class F> std::vector<NativeAssetEntry> Cached(const fs::path &source, F read, std::string stamp = {})
+        template <class F> std::vector<NativeAssetEntry> Cached(const fs::path &source, F read)
         {
-            auto cache = Cache / Path("list-v1-" + Hash(stamp.empty() ? Stamp(source) : stamp) + ".json");
+            auto cache = ListCacheDirectory(source) / Path("list-v1-" + Hash(Stamp(source)) + ".json");
             try
             {
                 if (fs::exists(cache))
@@ -474,8 +584,184 @@ namespace hs2
             Json json = Json::array();
             for (auto &e : rows)
                 json.push_back(Serialize(e));
-            WriteJson(cache, json);
+            try
+            {
+                WriteJson(cache, json);
+            }
+            catch (const std::exception &)
+            {
+                // 清单已解析成功，缓存持久化失败不能使素材消失。
+            }
             return rows;
+        }
+
+        fs::path ListCacheDirectory(const fs::path &source) const
+        {
+            if (Resources && !Resources->CatalogCache.empty() && Within(source, Game))
+                return Resources->CatalogCache;
+            return Cache;
+        }
+
+        std::vector<NativeAssetEntry> ReadMod(const ModFileInfo &mod)
+        {
+            CheckCancelled(Cancellation);
+            // 首次升级可读取旧缓存，但不再为每个 MOD 创建小文件。
+            auto legacy = ListCacheDirectory(Path(mod.Path)) / Path("list-v1-" + Hash(ModStamp(mod)) + ".json");
+            try
+            {
+                auto data = Json::parse(ReadFile(legacy, 512ull * 1024 * 1024, Cancellation));
+                if (!data.is_array())
+                    throw std::runtime_error("Invalid MOD list cache.");
+                std::vector<NativeAssetEntry> rows;
+                rows.reserve(data.size());
+                for (auto &row : data)
+                {
+                    auto e = Deserialize(row);
+                    e.Archive = Path(mod.Path);
+                    e.Guid = mod.Guid;
+                    e.Source = mod.Name.empty() ? mod.Guid : mod.Name;
+                    rows.push_back(std::move(e));
+                }
+                return rows;
+            }
+            catch (const Cancelled &)
+            {
+                throw;
+            }
+            catch (const std::exception &)
+            {
+                return Mod(mod);
+            }
+        }
+
+        void LoadMods(std::vector<NativeAssetEntry> &entries, Progress progress)
+        {
+            CheckCancelled(Cancellation);
+            if (progress)
+                progress({0, static_cast<int>(Mods.size()), "读取 MOD 素材清单"});
+            ModListCache local(Cache, Game, Cancellation);
+            std::unique_ptr<ModListCache> shared;
+            if (Resources && !Resources->CatalogCache.empty() && !SamePath(Resources->CatalogCache, Cache))
+                shared = std::make_unique<ModListCache>(Resources->CatalogCache, Game, Cancellation);
+            auto cacheFor = [&](const ModFileInfo &mod) -> ModListCache &
+            {
+                return shared && Within(Path(mod.Path), Game) ? *shared : local;
+            };
+            std::vector<std::vector<NativeAssetEntry>> rows(Mods.size());
+            std::vector<std::exception_ptr> errors(Mods.size());
+            std::vector<size_t> missing;
+            for (size_t i = 0; i < Mods.size(); ++i)
+            {
+                CheckCancelled(Cancellation);
+                auto &mod = Mods[i];
+                bool hasList = !mod.ArchiveEntries;
+                if (mod.ArchiveEntries)
+                    for (auto &e : *mod.ArchiveEntries)
+                    {
+                        auto name = Normal(e.Name);
+                        hasList = hasList || CharacterList(name);
+                        if (name.starts_with("abdata/") && (name.ends_with(".unity3d") || name.ends_with(".png")))
+                            Bundles[name.substr(7)].push_back(Path(mod.Path));
+                    }
+                if (hasList)
+                {
+                    if (auto cached = cacheFor(mod).Read(mod))
+                        rows[i] = std::move(*cached);
+                    else
+                        missing.push_back(i);
+                }
+            }
+
+            // 工作线程只读取自己的 MOD；合并、优先级和进度回调仍在调用线程执行。
+            // future 析构前等待所有任务退出，取消或回调异常不会留下后台工作。
+            std::atomic_size_t next = 0, completed = 0;
+            std::atomic_bool stop = false;
+            std::mutex gate;
+            std::condition_variable ready;
+            std::vector<std::future<void>> workers;
+            const auto count =
+                std::min(missing.size(), size_t(std::clamp(std::thread::hardware_concurrency(), 1u, 4u)));
+            try
+            {
+                for (size_t worker = 0; worker < count; ++worker)
+                    workers.push_back(std::async(std::launch::async,
+                                                 [&]
+                                                 {
+                                                     while (!stop && !Cancellation.stop_requested())
+                                                     {
+                                                         auto at = next.fetch_add(1);
+                                                         if (at >= missing.size())
+                                                             break;
+                                                         auto i = missing[at];
+                                                         try
+                                                         {
+                                                             rows[i] = ReadMod(Mods[i]);
+                                                         }
+                                                         catch (...)
+                                                         {
+                                                             errors[i] = std::current_exception();
+                                                         }
+                                                         ++completed;
+                                                         ready.notify_one();
+                                                     }
+                                                 }));
+                size_t reported = SIZE_MAX;
+                while (true)
+                {
+                    CheckCancelled(Cancellation);
+                    auto done = completed.load();
+                    if (progress && done != reported)
+                    {
+                        progress({static_cast<int>(Mods.size() - missing.size() + done), static_cast<int>(Mods.size()),
+                                  "读取 MOD 素材清单"});
+                        reported = done;
+                    }
+                    if (done == missing.size())
+                        break;
+                    std::unique_lock lock(gate);
+                    ready.wait_for(lock, std::chrono::milliseconds(100),
+                                   [&]
+                                   {
+                                       return completed == missing.size() || Cancellation.stop_requested();
+                                   });
+                }
+                for (auto &worker : workers)
+                    worker.get();
+            }
+            catch (...)
+            {
+                stop = true;
+                throw;
+            }
+            CheckCancelled(Cancellation);
+            for (auto i : missing)
+            {
+                CheckCancelled(Cancellation);
+                if (!errors[i])
+                    cacheFor(Mods[i]).Put(Mods[i], rows[i]);
+            }
+            for (size_t i = 0; i < Mods.size(); ++i)
+            {
+                CheckCancelled(Cancellation);
+                if (errors[i])
+                    try
+                    {
+                        std::rethrow_exception(errors[i]);
+                    }
+                    catch (const Cancelled &)
+                    {
+                        throw;
+                    }
+                    catch (const std::exception &e)
+                    {
+                        Warnings.push_back(Utf8(Path(Mods[i].Path).filename()) + ": " + e.what());
+                    }
+                entries.insert(entries.end(), std::make_move_iterator(rows[i].begin()),
+                               std::make_move_iterator(rows[i].end()));
+            }
+            local.Save(Cancellation);
+            if (shared)
+                shared->Save(Cancellation);
         }
 
         std::optional<NativeAssetEntry> Resolve(const ModReference &reference, std::set<std::string> &visited,
@@ -521,6 +807,9 @@ namespace hs2
             return;
         std::vector<NativeAssetEntry> entries;
         p.Warnings.clear();
+        p.Bundles.clear();
+        p.Entries.clear();
+        p.EntryKeys.clear();
         std::vector<fs::path> stock;
         auto directory = p.Game / "abdata/list/characustom";
         if (!fs::is_directory(directory))
@@ -593,41 +882,7 @@ namespace hs2
         if (p.Resources)
             p.Warnings.insert(p.Warnings.end(), index->Warnings.begin(), index->Warnings.end());
         p.Migration = index->MigrationEnabled;
-        for (size_t i = 0; i < p.Mods.size(); ++i)
-        {
-            CheckCancelled(cancellation);
-            auto &mod = p.Mods[i];
-            if (progress && i % 40 == 0)
-                progress({static_cast<int>(i), static_cast<int>(p.Mods.size()), "读取 MOD 素材清单"});
-            try
-            {
-                auto rows = p.Cached(
-                    Path(mod.Path),
-                    [&]
-                    {
-                        return p.Mod(mod);
-                    },
-                    Utf8(fs::absolute(Path(mod.Path))) + "|" + std::to_string(mod.Size) + "|" +
-                        std::to_string(mod.ModifiedUtcTicks));
-                entries.insert(entries.end(), std::make_move_iterator(rows.begin()),
-                               std::make_move_iterator(rows.end()));
-                if (mod.ArchiveEntries)
-                    for (auto &e : *mod.ArchiveEntries)
-                    {
-                        auto name = Normal(e.Name);
-                        if (name.starts_with("abdata/") && (name.ends_with(".unity3d") || name.ends_with(".png")))
-                            p.Bundles[name.substr(7)].push_back(Path(mod.Path));
-                    }
-            }
-            catch (const Cancelled &)
-            {
-                throw;
-            }
-            catch (const std::exception &e)
-            {
-                p.Warnings.push_back(Utf8(Path(mod.Path).filename()) + ": " + e.what());
-            }
-        }
+        p.LoadMods(entries, progress);
         std::unordered_map<std::string, NativeAssetEntry> unique;
         for (auto &e : entries)
             unique[Key(e.Category, e.Id, e.Guid)] = std::move(e);

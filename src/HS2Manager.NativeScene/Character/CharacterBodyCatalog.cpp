@@ -7,9 +7,11 @@
 #include <array>
 #include <cmath>
 #include <fstream>
+#include <future>
 #include <map>
 #include <set>
 #include <sstream>
+#include <thread>
 
 namespace hs2
 {
@@ -183,50 +185,69 @@ namespace hs2
                 else
                     *found = std::move(entry);
             };
-            for (auto &mod : mods)
+            // 首次读取身体清单需要打开所有 MOD；限量并行读取，仍按原顺序应用覆盖与迁移规则。
+            // future 析构会等待尚未结束的读取，取消或异常不能留下后台任务。
+            const auto workers = std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
+            for (size_t first = 0; first < mods.size(); first += workers)
             {
                 CheckCancelled(cancellation);
-                ZipArchive zip(Path(mod.Path));
-                auto *manifest = zip.Find("manifest.xml");
-                if (!manifest || manifest->Size > 2 * 1024 * 1024)
-                    continue;
-                auto xml = ReadSceneXml(zip.Read(*manifest, 2 * 1024 * 1024));
-                auto *body = xml.Child("KK_UncensorSelector");
-                if (!body)
-                    continue;
-                for (std::string kind : {"Body", "Penis", "Balls"})
+                auto end = std::min(mods.size(), first + workers);
+                std::vector<std::future<SceneXmlNode>> pending;
+                for (size_t i = first; i < end; ++i)
+                    pending.push_back(std::async(std::launch::async,
+                                                 [path = Path(mods[i].Path), cancellation]
+                                                 {
+                                                     CheckCancelled(cancellation);
+                                                     ZipArchive zip(path);
+                                                     auto *manifest = zip.Find("manifest.xml");
+                                                     if (!manifest || manifest->Size > 2 * 1024 * 1024)
+                                                         return SceneXmlNode{};
+                                                     auto xml = ReadSceneXml(zip.Read(*manifest, 2 * 1024 * 1024));
+                                                     CheckCancelled(cancellation);
+                                                     return xml;
+                                                 }));
+                for (size_t i = first; i < end; ++i)
+                {
+                    CheckCancelled(cancellation);
+                    auto &mod = mods[i];
+                    auto xml = pending[i - first].get();
+                    auto *body = xml.Child("KK_UncensorSelector");
+                    if (!body)
+                        continue;
+                    for (std::string kind : {"Body", "Penis", "Balls"})
+                        for (auto &value : body->Children)
+                            if (value.Name == Lower(kind))
+                            {
+                                auto guid = value.Value("guid");
+                                if (guid.empty())
+                                    continue;
+                                bool isBody = kind == "Body";
+                                int sex = isBody ? (Lower(value.Value("sex")) == "female" ? 1 : 0) : -1;
+                                auto *source = isBody ? value.Child("oo_base") : &value;
+                                auto bundle = source   ? source->Value("file", isBody ? "chara/oo_base.unity3d" : "")
+                                              : isBody ? "chara/oo_base.unity3d"
+                                                       : "";
+                                auto asset =
+                                    source   ? source->Value("asset",
+                                                             isBody ? (sex == 0 ? "p_cm_body_00" : "p_cf_body_00") : "")
+                                    : isBody ? (sex == 0 ? "p_cm_body_00" : "p_cf_body_00")
+                                             : "";
+                                if (bundle.empty() || asset.empty() || (isBody && bundle == "chara/oo_base.unity3d") ||
+                                    (!isBody && value.Value("displayName").empty()))
+                                    continue;
+                                auto random = Lower(value.Value("allowRandom"));
+                                add({kind, guid, value.Value("displayName", guid), sex,
+                                     random != "false" && random != "0", Path(mod.Path), bundle, asset});
+                            }
                     for (auto &value : body->Children)
-                        if (value.Name == Lower(kind))
+                        if (value.Name == "migration")
                         {
-                            auto guid = value.Value("guid");
-                            if (guid.empty())
-                                continue;
-                            bool isBody = kind == "Body";
-                            int sex = isBody ? (Lower(value.Value("sex")) == "female" ? 1 : 0) : -1;
-                            auto *source = isBody ? value.Child("oo_base") : &value;
-                            auto bundle = source   ? source->Value("file", isBody ? "chara/oo_base.unity3d" : "")
-                                          : isBody ? "chara/oo_base.unity3d"
-                                                   : "";
-                            auto asset =
-                                source
-                                    ? source->Value("asset", isBody ? (sex == 0 ? "p_cm_body_00" : "p_cf_body_00") : "")
-                                : isBody ? (sex == 0 ? "p_cm_body_00" : "p_cf_body_00")
-                                         : "";
-                            if (bundle.empty() || asset.empty() || (isBody && bundle == "chara/oo_base.unity3d") ||
-                                (!isBody && value.Value("displayName").empty()))
-                                continue;
-                            auto random = Lower(value.Value("allowRandom"));
-                            add({kind, guid, value.Value("displayName", guid), sex, random != "false" && random != "0",
-                                 Path(mod.Path), bundle, asset});
+                            auto guid = value.Value("guidUncensor");
+                            if (!guid.empty())
+                                migrations[guid] = {value.Value("guidBody"), value.Value("guidPenis"),
+                                                    value.Value("guidBalls")};
                         }
-                for (auto &value : body->Children)
-                    if (value.Name == "migration")
-                    {
-                        auto guid = value.Value("guidUncensor");
-                        if (!guid.empty())
-                            migrations[guid] = {value.Value("guidBody"), value.Value("guidPenis"),
-                                                value.Value("guidBalls")};
-                    }
+                }
             }
             Json encoded = Json::array();
             for (auto &e : entries)

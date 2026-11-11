@@ -109,6 +109,7 @@ namespace hs2::ui
         bool temporaryOpening_ = false;
         controls::ContentDialog temporaryPasswordDialog_{nullptr};
         bool closePrompt_ = false;
+        bool closeReady_ = false;
         bool busy_ = false, closing_ = false, dialogOpen_ = false, updating_ = false;
         winrt::Windows::UI::ViewManagement::UISettings preferences_;
         winrt::event_token preferenceToken_{};

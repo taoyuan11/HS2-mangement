@@ -106,12 +106,27 @@ int wmain(int argc, wchar_t **argv)
                     throw std::runtime_error(card.Error);
                 started = std::chrono::steady_clock::now();
             }
+            Json phases = Json::array();
+            std::string phase = "读取角色与素材目录";
+            auto phaseStarted = elapsed();
+            auto finishPhase = [&]
+            {
+                auto now = elapsed();
+                phases.push_back({{"Phase", phase}, {"Seconds", now - phaseStarted}});
+                phaseStarted = now;
+            };
             auto prepared = service.Prepare(card, nullptr, {},
-                                            [](const auto &p)
+                                            [&](const auto &p)
                                             {
+                                                if (p.Total == 0)
+                                                {
+                                                    finishPhase();
+                                                    phase = p.Message;
+                                                }
                                                 std::cout << p.Message << " " << p.Completed << "/" << p.Total
                                                           << std::endl;
                                             });
+            finishPhase();
             auto prepareSeconds = elapsed();
             std::cout << "prepared parts=" << prepared.Scene->Parts.size()
                       << " renderers=" << prepared.Scene->Renderers.size()
@@ -160,6 +175,7 @@ int wmain(int argc, wchar_t **argv)
                     auto stats = prepared.Assets->ReaderStats();
                     auto blocks = prepared.Assets->BlockStats();
                     WriteJson(output / "loading-performance.json", {{"PrepareSeconds", prepareSeconds},
+                                                                    {"PreparationPhases", phases},
                                                                     {"RuntimeSeconds", runtimeSeconds},
                                                                     {"PipelineSeconds", pipelineSeconds},
                                                                     {"FirstFrameSeconds", elapsed()},
@@ -167,6 +183,8 @@ int wmain(int argc, wchar_t **argv)
                                                                     {"ReaderHits", stats.Hits},
                                                                     {"ReaderEvictions", stats.Evictions},
                                                                     {"ReaderLoadSeconds", stats.LoadSeconds},
+                                                                    {"CabIndexLoads", stats.CabIndexLoads},
+                                                                    {"CabIndexSeconds", stats.CabIndexSeconds},
                                                                     {"ReaderResources", stats.Resources},
                                                                     {"BlockMemoryHits", blocks.MemoryHits},
                                                                     {"BlockDiskHits", blocks.DiskHits},

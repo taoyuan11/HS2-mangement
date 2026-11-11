@@ -99,6 +99,11 @@ namespace hs2
         int TypeIndex = 0;
     };
 
+    struct UnityTypeLayout
+    {
+        std::size_t End = 0, Children = 0;
+    };
+
     class UnitySerializedFile
     {
     public:
@@ -125,6 +130,7 @@ namespace hs2
         {
             int ClassId = 0;
             std::vector<UnityTypeNode> Nodes;
+            std::vector<UnityTypeLayout> Layout;
         };
 
         std::vector<std::uint8_t> bytes_;
@@ -139,6 +145,7 @@ namespace hs2
     public:
         explicit NativeGpuAssetReader(const std::filesystem::path &path, const UnityClassDatabase *database = nullptr,
                                       std::shared_ptr<UnityBlockCache> cache = {}, std::stop_token cancellation = {});
+        static std::string ReadCabName(const std::filesystem::path &path, std::stop_token cancellation = {});
         std::filesystem::path Path;
         std::string CabName;
         std::vector<std::string> ExternalNames;
@@ -169,6 +176,8 @@ namespace hs2
         std::unordered_map<std::int64_t, Parameter> fields_;
         std::size_t fieldBytes_ = 0;
         std::unordered_map<int, std::unordered_map<std::string, std::vector<std::int64_t>>> names_;
+        std::optional<std::unordered_map<int, NameLookup>> exports_;
+        const NameLookup &ExportedNames(int classId);
         GpuAssetPointer Pointer(const Parameter &p) const;
     };
 }

@@ -12,6 +12,7 @@ param(
     [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount)
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'RuntimeLanguages.ps1')
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $env:MSBUILDDISABLENODEREUSE = '1'
 $packageName = 'HS2Manager-1.4.0-cpp-win-x64'
@@ -122,7 +123,8 @@ try {
         $relative = $file.FullName.Substring($packageRoot.Length).TrimStart('\', '/')
         if ($relative -match '^(Data|Logs|Covers|CardBackups|Operations|NativeCpp|NativePreview[^\\/]*|UnityPreview)[\\/]' -or
             $file.Extension -in '.pdb', '.ilk', '.exp', '.lib', '.iobj', '.ipdb', '.log' -or
-            $file.Name -match '^(native-.*error.*|hs2_.*_(checks|fixtures)\.exe|library\.db.*|settings\.json)$') {
+            $file.Name -match '^(native-.*error.*|hs2_.*_(checks|fixtures)\.exe|library\.db.*|settings\.json)$' -or
+            (Test-UnusedRuntimeLanguageFile $relative)) {
             continue
         }
         $copySources.Add($file.FullName)

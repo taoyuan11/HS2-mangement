@@ -911,7 +911,8 @@
                         BorderBrush="{ThemeResource BorderBrush}"
                         BorderThickness="1"
                         CornerRadius="10">
-                        <Grid x:Name="Viewport" CornerRadius="9" Background="{Binding PreviewBackground}">
+                        <!-- 透明画刷保留鼠标命中；实际背景由原生渲染器绘制，不能绑定未提供的画刷属性。 -->
+                        <Grid x:Name="Viewport" CornerRadius="9" Background="Transparent">
                             <SwapChainPanel
                                 x:Name="CompositionViewport"
                                 Visibility="{Binding ShowNativeViewport, Converter={StaticResource BoolVisible}}"

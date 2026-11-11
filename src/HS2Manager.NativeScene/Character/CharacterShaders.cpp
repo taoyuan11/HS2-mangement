@@ -39,6 +39,22 @@ namespace hs2
             std::vector<Property> Properties;
         };
 
+        // 多个着色器及默认贴图通常来自同一 DLL、同一内嵌包。
+        // 缓存仅覆盖本次准备，下一次预览仍会重新读取已修改的插件。
+        struct EmbeddedResources
+        {
+            std::map<fs::path, std::unique_ptr<metadata::Assembly>> Assemblies;
+            std::map<std::pair<fs::path, std::string>, fs::path> Bundles;
+
+            metadata::Assembly &Assembly(const fs::path &source)
+            {
+                auto found = Assemblies.find(source);
+                if (found == Assemblies.end())
+                    found = Assemblies.emplace(source, std::make_unique<metadata::Assembly>(source)).first;
+                return *found->second;
+            }
+        };
+
         void Read(const SceneXmlNode &root, const fs::path &archive, std::map<std::string, Entry> &entries)
         {
             for (auto &node : root.Children)
@@ -73,7 +89,8 @@ namespace hs2
         }
 
         std::map<std::string, Entry> Catalog(const fs::path &data, const std::vector<fs::path> &plugins,
-                                             std::stop_token cancellation, const PreviewResources &resources)
+                                             std::stop_token cancellation, const PreviewResources &resources,
+                                             EmbeddedResources &embedded)
         {
             std::vector<ModFileInfo> mods;
             if (resources)
@@ -129,8 +146,7 @@ namespace hs2
             for (auto &plugin : plugins)
             {
                 CheckCancelled(cancellation);
-                metadata::Assembly assembly(plugin);
-                auto resource = assembly.EmbeddedResource("KK_Plugins.Resources.default.xml");
+                auto resource = embedded.Assembly(plugin).EmbeddedResource("KK_Plugins.Resources.default.xml");
                 if (!resource.empty())
                     Read(ReadSceneXml(resource), plugin, result);
             }
@@ -242,7 +258,8 @@ namespace hs2
             }
         if (wanted.empty() && automatic.empty())
             return;
-        auto entries = Catalog(data, plugins, cancellation, resources);
+        EmbeddedResources embedded;
+        auto entries = Catalog(data, plugins, cancellation, resources, embedded);
         auto names = wanted;
         names.insert(automatic.begin(), automatic.end());
         auto reference = [&](const std::string &bundle, const std::string &asset, const fs::path &source)
@@ -257,8 +274,10 @@ namespace hs2
                 assets.AddPath(value.Bundle);
                 return value;
             }
-            metadata::Assembly assembly(source);
-            auto bytes = assembly.EmbeddedResource("KK_Plugins." + bundle);
+            auto key = std::pair{source, bundle};
+            if (auto found = embedded.Bundles.find(key); found != embedded.Bundles.end())
+                return AssetReference{found->second, asset};
+            auto bytes = embedded.Assembly(source).EmbeddedResource("KK_Plugins." + bundle);
             const uint8_t magic[]{'U', 'n', 'i', 't', 'y', 'F', 'S', 0};
             if (bytes.size() < 48 || bytes.size() > 128 * 1024 * 1024 ||
                 !std::equal(std::begin(magic), std::end(magic), bytes.begin()))
@@ -268,6 +287,7 @@ namespace hs2
             if (!fs::is_regular_file(path) || HashFile(path, cancellation) != hash)
                 WriteAtomic(path, bytes);
             assets.AddPath(path);
+            embedded.Bundles.emplace(std::move(key), path);
             return AssetReference{path, asset};
         };
         for (auto &name : names)

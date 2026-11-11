@@ -85,10 +85,17 @@ namespace hs2
         Parameter ConvertComponent(const Parameter &source, NativeGpuAssetReader &reader, int depth = 0)
         {
             Require(depth <= 32, "Component parameter nesting exceeds limit.");
-            Parameter result = source;
+            // 只复制当前字段，避免每一层都先深拷贝整个子树，再被递归结果覆盖。
+            Parameter result;
+            result.Name = source.Name;
+            result.Encoding = source.Encoding;
+            result.Text = source.Text;
+            result.Number = source.Number;
+            result.Integer = source.Integer;
+            result.Unsigned = source.Unsigned;
+            result.Bytes = source.Bytes;
             if (source.Has("m_FileID") && source.Has("m_PathID"))
             {
-                result.Children.clear();
                 auto id = source.Int("m_PathID"), file = source.Int("m_FileID");
                 if (!id)
                     return result;
@@ -107,8 +114,9 @@ namespace hs2
                 result.Text = target->String("m_Name");
                 return result;
             }
-            for (size_t i = 0; i < source.Children.size(); ++i)
-                result.Children[i] = ConvertComponent(source.Children[i], reader, depth + 1);
+            result.Children.reserve(source.Children.size());
+            for (auto &child : source.Children)
+                result.Children.push_back(ConvertComponent(child, reader, depth + 1));
             return result;
         }
     }
@@ -163,8 +171,11 @@ namespace hs2
             auto preparedPrefab = assets.Prefab(part->Prefab.Bundle, part->Prefab.Asset);
             const auto &prefab = *preparedPrefab;
             std::unordered_map<int64_t, NativeSceneNode *> map;
+            map.reserve(prefab.Nodes.size());
             auto runtime = std::make_shared<NativeScenePart>();
             runtime->Definition = part;
+            runtime->Nodes.reserve(prefab.Nodes.size());
+            runtime->ByName.reserve(prefab.Nodes.size());
             runtime->Components = prefab.Components;
             runtime->SourceNodes = prefab.Nodes;
             auto bundleUtf8 = part->Prefab.Bundle.u8string();

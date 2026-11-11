@@ -129,4 +129,6 @@ Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser
 
 GUI 启动和退出检查通过 `tests/ui/Invoke-CppWinUiSmoke.ps1 -Executable <程序路径> -FixtureTool <hs2_ui_fixtures.exe 路径>` 单独执行，不在构建或打包中运行。
 
+便携目录和 ZIP 只携带 Windows App SDK 的 `zh-CN` 简体中文 MUI 资源及 `en-US` 英文回退资源，其他语言的独立 MUI 文件在发布复制时排除；开发构建目录仍可包含 SDK 的完整语言资源。`Test-CppPackage.ps1` 会检查必需的中英文资源，并拒绝发布包中多余的语言文件。公共 PRI、XAML 和运行库保留完整。
+
 真实游戏资源、GPU、FBX 或 PhysX 相关检查需要相应的本机依赖。历史画面对照和外部软件验证脚本已按职责放入 `tests` 的子目录，具体参数和样本范围见各验证文档。测试和工具必须等待其启动的子进程退出，并在失败或取消时完成清理。

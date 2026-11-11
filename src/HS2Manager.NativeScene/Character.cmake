@@ -15,6 +15,11 @@ target_include_directories(hs2_character PUBLIC "${CMAKE_CURRENT_LIST_DIR}")
 target_compile_options(hs2_character PRIVATE /utf-8 /W4 /EHsc /fp:precise)
 target_link_libraries(hs2_character PUBLIC hs2_scene hs2_core hs2_archive hs2_core_components)
 if(BUILD_TESTING)
+    add_executable(hs2_catalog_checks "${CMAKE_CURRENT_LIST_DIR}/../../tests/HS2Manager.CppSceneChecks/CatalogChecks.cpp")
+    target_compile_options(hs2_catalog_checks PRIVATE /utf-8 /W4 /EHsc)
+    target_link_libraries(hs2_catalog_checks PRIVATE hs2_character)
+    add_test(NAME character_catalog COMMAND hs2_catalog_checks "${CMAKE_CURRENT_LIST_DIR}/Resources/classdata.tpk")
+    set_tests_properties(character_catalog PROPERTIES TIMEOUT 60)
     add_executable(
         hs2_character_checks "${CMAKE_CURRENT_LIST_DIR}/../../tests/HS2Manager.CppSceneChecks/CharacterChecks.cpp"
     )

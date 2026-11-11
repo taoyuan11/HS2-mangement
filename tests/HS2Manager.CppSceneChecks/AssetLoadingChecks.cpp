@@ -1,4 +1,5 @@
 #include "Assets/AssetStore.h"
+#include "Character/CharacterAssembly.h"
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -168,11 +169,227 @@ namespace
         return file;
     }
 
+    void Align(Bytes &bytes)
+    {
+        bytes.resize((bytes.size() + 3) & ~size_t(3));
+    }
+
+    void FieldString(Bytes &bytes, std::string_view value)
+    {
+        Number(bytes, value.size(), 4, false);
+        bytes.insert(bytes.end(), value.begin(), value.end());
+        Align(bytes);
+    }
+
+    void StringSchema(std::vector<UnityTypeNode> &nodes, std::string name, uint8_t level)
+    {
+        nodes.push_back({"string", std::move(name), -1, 0, level});
+        nodes.push_back({"Array", "Array", -1, 0, static_cast<uint8_t>(level + 1)});
+        nodes.push_back({"int", "size", 4, 0, static_cast<uint8_t>(level + 2)});
+        nodes.push_back({"char", "data", 1, 0, static_cast<uint8_t>(level + 2)});
+    }
+
+    struct Object
+    {
+        int64_t Id;
+        int Type;
+        Bytes Data;
+    };
+
+    Bytes ObjectFile(const std::vector<std::pair<int, std::vector<UnityTypeNode>>> &types,
+                     const std::vector<Object> &objects)
+    {
+        Bytes metadata;
+        String(metadata, "2018.4.11f1");
+        Number(metadata, 0, 4, false);
+        Number(metadata, 1, 1, false);
+        Number(metadata, types.size(), 4, false);
+        for (auto &[id, nodes] : types)
+        {
+            Number(metadata, id, 4, false);
+            Number(metadata, 0, 1, false);
+            Number(metadata, 0xffff, 2, false);
+            metadata.resize(metadata.size() + (id == 114 ? 32 : 16));
+            Bytes tree, strings;
+            for (auto &node : nodes)
+            {
+                Number(tree, 1, 2, false);
+                Number(tree, node.Level, 1, false);
+                Number(tree, 0, 1, false);
+                Number(tree, strings.size(), 4, false);
+                String(strings, node.Type);
+                Number(tree, strings.size(), 4, false);
+                String(strings, node.Name);
+                Number(tree, node.Size, 4, false);
+                Number(tree, 0, 4, false);
+                Number(tree, node.Flags, 4, false);
+            }
+            Number(metadata, nodes.size(), 4, false);
+            Number(metadata, strings.size(), 4, false);
+            metadata.insert(metadata.end(), tree.begin(), tree.end());
+            metadata.insert(metadata.end(), strings.begin(), strings.end());
+        }
+        Number(metadata, objects.size(), 4, false);
+        Bytes payload;
+        for (auto &object : objects)
+        {
+            Align(metadata);
+            Align(payload);
+            Number(metadata, object.Id, 8, false);
+            Number(metadata, payload.size(), 4, false);
+            Number(metadata, object.Data.size(), 4, false);
+            Number(metadata, object.Type, 4, false);
+            payload.insert(payload.end(), object.Data.begin(), object.Data.end());
+        }
+        Number(metadata, 0, 4, false);
+        Number(metadata, 0, 4, false);
+        String(metadata, "");
+        Align(metadata);
+        Bytes file;
+        Number(file, metadata.size(), 4);
+        Number(file, 20 + metadata.size() + payload.size(), 4);
+        Number(file, 17, 4);
+        Number(file, 20 + metadata.size(), 4);
+        Number(file, 0, 4);
+        file.insert(file.end(), metadata.begin(), metadata.end());
+        file.insert(file.end(), payload.begin(), payload.end());
+        return file;
+    }
+
+    void StructuredValues()
+    {
+        std::vector<UnityTypeNode> schema{{"Test", "Base", -1, 0, 0},   {"vector", "values", -1, 0, 1},
+                                          {"Array", "Array", -1, 0, 2}, {"int", "size", 4, 0, 3},
+                                          {"Pair", "data", -1, 0, 3},   {"int", "number", 4, 0, 4}};
+        StringSchema(schema, "label", 4);
+        schema.push_back({"int", "tail", 4, 0, 1});
+        Bytes data;
+        Number(data, 2, 4, false);
+        Number(data, 17, 4, false);
+        FieldString(data, "first");
+        Number(data, 29, 4, false);
+        FieldString(data, "second");
+        Number(data, 71, 4, false);
+        UnitySerializedFile file(ObjectFile({{114, schema}}, {{7, 0, data}}));
+        for (auto value : {file.Read(7), file.ReadScript(7, schema)})
+        {
+            auto rows = value.Get("values").Array();
+            Check(rows.size() == 2 && rows[0].Int("number") == 17 && rows[1].String("label") == "second" &&
+                      value.Int("tail") == 71,
+                  "Compiled type layout changed nested arrays or following fields.");
+        }
+        auto shortSchema = schema;
+        shortSchema.pop_back();
+        Reject(
+            [&]
+            {
+                file.ReadScript(7, shortSchema);
+            });
+        data.pop_back();
+        UnitySerializedFile truncated(ObjectFile({{114, schema}}, {{7, 0, data}}));
+        Reject(
+            [&]
+            {
+                truncated.Read(7);
+            });
+        Bytes empty;
+        Number(empty, 0, 4, false);
+        Number(empty, 91, 4, false);
+        UnitySerializedFile zero(ObjectFile({{114, schema}}, {{7, 0, empty}}));
+        Check(zero.Read(7).Get("values").Array().empty() && zero.Read(7).Int("tail") == 91,
+              "Empty array consumed the next field.");
+    }
+
     void Write(const std::filesystem::path &path, const Bytes &bytes)
     {
         std::ofstream file(path, std::ios::binary);
         file.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
         Check(bool(file), "Fixture write failed.");
+    }
+
+    void ExportAliases(const std::filesystem::path &root)
+    {
+        std::vector<UnityTypeNode> texture{{"Texture2D", "Base", -1, 0, 0}};
+        StringSchema(texture, "m_Name", 1);
+        texture.push_back({"int", "m_Width", 4, 0, 1});
+        texture.push_back({"int", "m_Height", 4, 0, 1});
+        std::vector<UnityTypeNode> container{{"AssetBundle", "Base", -1, 0, 0},
+                                             {"map", "m_Container", -1, 0, 1},
+                                             {"Array", "Array", -1, 0, 2},
+                                             {"int", "size", 4, 0, 3},
+                                             {"pair", "data", -1, 0, 3}};
+        StringSchema(container, "first", 4);
+        container.insert(container.end(), {{"AssetInfo", "second", -1, 0, 4},
+                                           {"PPtr<Object>", "asset", -1, 0, 5},
+                                           {"int", "m_FileID", 4, 0, 6},
+                                           {"SInt64", "m_PathID", 8, 0, 6}});
+        Bytes exports;
+        Number(exports, 3, 4, false);
+        for (int i = 0; i < 3; ++i)
+        {
+            FieldString(exports, i == 2 ? "external.png" : "Assets/Shared.PNG");
+            Number(exports, i == 2 ? 1 : 0, 4, false);
+            Number(exports, i == 0 ? 11 : 12, 8, false);
+        }
+        std::vector<Object> objects{{1, 0, exports}};
+        for (int i = 0; i < 3; ++i)
+        {
+            Bytes bytes;
+            FieldString(bytes, i == 2 ? "shared" : "original" + std::to_string(i));
+            Number(bytes, 16u << i, 4, false);
+            Number(bytes, 16u << i, 4, false);
+            objects.push_back({11 + i, 1, std::move(bytes)});
+        }
+        auto path = root / "aliases.assets";
+        Write(path, ObjectFile({{142, container}, {28, texture}}, objects));
+        NativeGpuAssetReader reader(path);
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            for (auto name : {"assets/shared.png", "SHARED.PNG", "shared"})
+                Check(reader.Find(name, 28).PathId == 11, "Export alias lost precedence or case folding.");
+            Check(reader.Find("shared", 28, 32).PathId == 12 && reader.Find("shared", 28, 64).PathId == 13,
+                  "Texture size filtering lost duplicate exports or object-name fallback.");
+            Check(reader.Find("original0", 28).PathId == 11 && !reader.TryFind("external", 28) &&
+                      !reader.TryFind("shared", 48) && !reader.TryFind("missing", 28),
+                  "Name index changed class filtering, external exports, or missing-name behavior.");
+        }
+
+        // 组件转换保留数值、字节与层级；仅将对象引用转换为名称，不修改缓存的原始组件。
+        Parameter field;
+        field.Name = "value";
+        field.Encoding = "uint";
+        field.Text = "saved";
+        field.Number = 3.5;
+        field.Integer = -17;
+        field.Unsigned = UINT64_MAX;
+        field.Bytes = {1, 2, 3};
+        Parameter reference;
+        reference.Name = "reference";
+        Parameter fileId, pathId;
+        fileId.Name = "m_FileID";
+        pathId.Name = "m_PathID";
+        pathId.Encoding = "int";
+        pathId.Integer = 11;
+        reference.Children = {fileId, pathId};
+        Parameter nested;
+        nested.Name = "nested";
+        nested.Children = {field, reference};
+        GpuPrefabData prefab;
+        prefab.Nodes.emplace_back();
+        prefab.Nodes.back().Id = 1;
+        prefab.Nodes.back().Name = "node";
+        prefab.Components.push_back({1, 2, 137, nested});
+        std::vector<std::string> diagnostics;
+        auto converted = ReadCharacterComponents(reader, prefab, diagnostics);
+        Check(diagnostics.empty() && converted.size() == 1, "Component conversion failed.");
+        auto &value = converted[0].Data.Get("value");
+        Check(value.Encoding == field.Encoding && value.Text == field.Text && value.Number == field.Number &&
+                  value.Integer == field.Integer && value.Unsigned == field.Unsigned && value.Bytes == field.Bytes,
+              "Component conversion changed a scalar field.");
+        Check(converted[0].Data.Get("reference").Text == "original0" &&
+                  converted[0].Data.Get("reference").Children.empty() &&
+                  prefab.Components[0].Data.Get("reference").Children.size() == 2,
+              "Component conversion changed object references or its immutable source.");
     }
 
     void ReaderCacheAndStreams()
@@ -192,6 +409,8 @@ namespace
                 std::filesystem::remove_all(Root, error);
             }
         } cleanup{root};
+
+        ExportAliases(root);
 
         for (bool atEnd : {false, true})
         {
@@ -254,16 +473,30 @@ namespace
         parallel.AddPath(root / "." / "target");
         Check(parallel.Paths().size() == paths.size(), "Equivalent dependency paths were not deduplicated.");
         auto indexed = parallel.Resolve({origin, 1, 17});
-        Check(indexed.Bundle == paths[0] && parallel.ReaderStats().Loads == paths.size() + 1,
-              "Parallel CAB index lost a dependency or loaded it more than once.");
-        Check(parallel.ReaderStats().Evictions >= 3, "Parallel CAB index bypassed the reader budget.");
+        Check(indexed.Bundle == paths[0] && parallel.ReaderStats().Loads == 1 &&
+                  parallel.ReaderStats().CabIndexLoads == paths.size(),
+              "Parallel CAB index lost a dependency or loaded an unused payload.");
+        Check(parallel.ReaderStats().Evictions == 0, "CAB indexing evicted a live reader.");
         auto later = root / "later", laterOrigin = root / "later-origin";
         Write(later, SerializedFile());
         Write(laterOrigin, SerializedFile("later"));
         parallel.AddPath(later);
-        Check(parallel.Resolve({laterOrigin, 1, 19}).Bundle == later &&
-                  parallel.ReaderStats().Loads == paths.size() + 3,
+        Check(parallel.Resolve({laterOrigin, 1, 19}).Bundle == later && parallel.ReaderStats().Loads == 2 &&
+                  parallel.ReaderStats().CabIndexLoads == paths.size() + 1,
               "Incremental CAB indexing reread old dependencies.");
+
+        // 目录可读但对象数据无效的包仍可索引；只有实际请求对象时才解析并拒绝无效数据。
+        auto lazyBundle = root / "lazy.bundle", lazyOrigin = root / "lazy-origin";
+        Write(lazyBundle, Bundle(false, true));
+        Write(lazyOrigin, SerializedFile("CAB-test"));
+        NativeGpuAssetStore lazy({lazyBundle}, {}, {});
+        Check(lazy.Resolve({lazyOrigin, 1, 23}).Bundle == lazyBundle && lazy.ReaderStats().Loads == 1,
+              "CAB lookup decompressed an unrequested payload.");
+        Reject(
+            [&]
+            {
+                lazy.Reader(lazyBundle);
+            });
 
         auto broken = root / "broken";
         NativeGpuAssetStore retry({paths[0], broken, paths[1]}, {}, {});
@@ -354,6 +587,7 @@ int wmain(int argc, wchar_t **argv)
     try
     {
         BundleRanges();
+        StructuredValues();
         ReaderCacheAndStreams();
         if (argc == 3)
             RealShaderNames(argv[1], argv[2]);

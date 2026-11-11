@@ -1,4 +1,6 @@
 #include "Character/CharacterExtensions.h"
+#include "Character/CharacterBodyCatalog.h"
+#include "Archive/ZipArchive.h"
 #include <windows.h>
 #include <algorithm>
 #include <cmath>
@@ -272,6 +274,141 @@ namespace
               "ABMX extension99 LZ4 envelope");
     }
 
+    // 构造独立的未压缩 ZIP，不依赖游戏安装或外部压缩程序。
+    Bytes Zip(const std::string &name, const std::string &text)
+    {
+        Bytes out;
+        auto number = [&](uint64_t value, int bytes)
+        {
+            for (int i = 0; i < bytes; ++i)
+                out.push_back(static_cast<uint8_t>(value >> (8 * i)));
+        };
+        auto append = [&](const std::string &s)
+        {
+            out.insert(out.end(), s.begin(), s.end());
+        };
+        auto crc = Crc32({reinterpret_cast<const uint8_t *>(text.data()), text.size()});
+        number(0x04034b50, 4);
+        number(20, 2);
+        number(0x800, 2);
+        number(0, 2);
+        number(0, 4);
+        number(crc, 4);
+        number(text.size(), 4);
+        number(text.size(), 4);
+        number(name.size(), 2);
+        number(0, 2);
+        append(name);
+        append(text);
+        auto offset = out.size();
+        number(0x02014b50, 4);
+        number(20, 2);
+        number(20, 2);
+        number(0x800, 2);
+        number(0, 2);
+        number(0, 4);
+        number(crc, 4);
+        number(text.size(), 4);
+        number(text.size(), 4);
+        number(name.size(), 2);
+        number(0, 2);
+        number(0, 2);
+        number(0, 2);
+        number(0, 2);
+        number(0, 4);
+        number(0, 4);
+        append(name);
+        auto size = out.size() - offset;
+        number(0x06054b50, 4);
+        number(0, 2);
+        number(0, 2);
+        number(1, 2);
+        number(1, 2);
+        number(size, 4);
+        number(offset, 4);
+        number(0, 2);
+        return out;
+    }
+
+    void BodyCatalog(const fs::path &root)
+    {
+        auto resources = std::make_shared<PreviewResourceContext>();
+        resources->Game = root / "body-game";
+        resources->Data = root / "body-data";
+        PluginFileInfo plugin;
+        plugin.Path = Utf8(resources->Game / "BepInEx/plugins/HS2_UncensorSelector.dll");
+        resources->Index.PluginFiles.push_back(plugin);
+        auto document = Document(MP::Map());
+        Parameter selection, legacy;
+        legacy.Name = "UncensorGUID";
+        legacy.Text = "old.body";
+        selection.Children.push_back(legacy);
+        for (int i = 0; i < 12; ++i)
+        {
+            auto name = std::to_string(i);
+            auto path = resources->Game / Path(name + ".zipmod");
+            auto xml = "<manifest><KK_UncensorSelector><body><guid>fixture.body</guid>"
+                       "<sex>female</sex><displayName>Body" +
+                       name +
+                       "</displayName><oo_base>"
+                       "<file>body/" +
+                       name +
+                       ".unity3d</file><asset>body</asset></oo_base></body>"
+                       "<migration><guidUncensor>old.body</guidUncensor><guidBody>fixture.body</guidBody>"
+                       "</migration></KK_UncensorSelector></manifest>";
+            WriteAtomic(path, Zip("manifest.xml", xml));
+            ModFileInfo mod;
+            mod.Path = Utf8(path);
+            mod.Size = fs::file_size(path);
+            mod.ModifiedUtcTicks = ModifiedTicks(path);
+            resources->Index.Files.push_back(mod);
+        }
+        auto resolve = [&](std::stop_token cancellation = {})
+        {
+            return ResolveCharacterBody(resources->Game, resources->Data, document, selection, cancellation, resources);
+        };
+        auto check = [&](const std::vector<BodyCatalogEntry> &entries)
+        {
+            Check(entries.size() == 3 && entries[0].Name == "Body0" && entries[0].Bundle == "body/0.unity3d" &&
+                      entries[0].Guid == "fixture.body",
+                  "body manifest order, migration or cache changed the selected body");
+        };
+        check(resolve());
+        check(resolve());
+        resources->Data = root / "body-cancelled";
+        std::stop_source stop;
+        stop.request_stop();
+        bool cancelled = false;
+        try
+        {
+            resolve(stop.get_token());
+        }
+        catch (const Cancelled &)
+        {
+            cancelled = true;
+        }
+        Check(cancelled && !fs::exists(resources->Data / "NativeCpp/resources"),
+              "cancelled body catalog wrote an incomplete cache");
+        check(resolve());
+        resources->Data = root / "body-retry";
+        auto path = Path(resources->Index.Files[5].Path);
+        auto original = ReadFile(path);
+        WriteAtomic(path, Bytes{1, 2, 3});
+        bool failed = false;
+        try
+        {
+            resolve();
+        }
+        catch (const std::exception &)
+        {
+            failed = true;
+        }
+        Check(failed && !fs::exists(resources->Data / "NativeCpp/resources"),
+              "failed body batch wrote an incomplete cache");
+        WriteAtomic(path, original);
+        check(resolve());
+    }
+
     void PushUp()
     {
         CharacterDefinition definition;
@@ -321,6 +458,7 @@ int wmain(int argc, wchar_t **argv)
         fs::create_directories(root);
         Extensions(root);
         PushUp();
+        BodyCatalog(root);
         if (argc > 1)
         {
             auto document = CharacterDocument::Open(argv[1]);

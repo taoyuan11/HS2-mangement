@@ -759,7 +759,7 @@ namespace hs2::ui
         SetBusy(false);
         if (closing_)
         {
-            window_.Close();
+            RequestClose();
             co_return;
         }
         if (!document)
@@ -787,7 +787,7 @@ namespace hs2::ui
         if (!editor_)
             co_return true;
         auto editor = editor_;
-        if (editor->Saving() || dialogOpen_)
+        if (busy_ || editor->Saving() || dialogOpen_)
             co_return false;
         if (editor->IsDirty())
         {
@@ -808,6 +808,12 @@ namespace hs2::ui
                 co_return false;
         }
         editor_->Stop();
+        if (preview_)
+        {
+            SetBusy(true);
+            co_await preview_->StopAsync();
+            SetBusy(false);
+        }
         preview_.reset();
         model_->Put(L"IsPreview", false);
         Control<ContentControl>(L"EditorHost").Content(nullptr);
@@ -819,7 +825,7 @@ namespace hs2::ui
     fire_and_forget NativeWindow::RequestClose()
     {
         auto lifetime = shared_from_this();
-        if (closePrompt_)
+        if (closePrompt_ || busy_)
             co_return;
         closePrompt_ = true;
         try
@@ -827,11 +833,31 @@ namespace hs2::ui
             if (co_await CloseEditor())
             {
                 closing_ = true;
+                CancelTemporaryPreview();
+                if (preview_)
+                    co_await preview_->StopAsync();
+                ClosePreview();
+                try
+                {
+                    double scale = root_.XamlRoot() ? root_.XamlRoot().RasterizationScale() : 1;
+                    auto size = window_.AppWindow().Size();
+                    settings_.WindowWidth = size.Width / scale;
+                    settings_.WindowHeight = size.Height / scale;
+                    settings_.Save(dataDirectory_);
+                }
+                catch (std::exception const &e)
+                {
+                    Report(e.what());
+                }
+                closeReady_ = true;
                 window_.Close();
             }
+            else
+                closing_ = false;
         }
         catch (hresult_error const &e)
         {
+            closing_ = false;
             Report(to_string(e.message()));
         }
         closePrompt_ = false;

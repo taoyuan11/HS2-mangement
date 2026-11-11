@@ -72,6 +72,8 @@ namespace hs2
 
         void ApplyBoneModifiers(CharacterPart &part, const std::vector<BoneAdjustment> &modifiers)
         {
+            if (modifiers.empty())
+                return;
             std::string root;
             for (auto &b : part.Bones)
                 if (b.Parent.empty())
@@ -79,21 +81,24 @@ namespace hs2
                     root = b.Name;
                     break;
                 }
+            std::unordered_map<std::string, BoneDefinition *> bones;
+            bones.reserve(part.Bones.size());
+            for (auto &bone : part.Bones)
+                bones.try_emplace(bone.Name, &bone);
             for (auto &change : modifiers)
             {
                 std::string name = change.Name == part.RuntimeName && !root.empty() ? root : change.Name;
-                for (auto &bone : part.Bones)
-                    if (bone.Name == name)
-                    {
-                        part.UnmodifiedBones.push_back(bone);
-                        bone.Scale = {bone.Scale.x * change.Scale.x, bone.Scale.y * change.Scale.y,
-                                      bone.Scale.z * change.Scale.z};
-                        bone.Position = {bone.Position.x * change.Length + change.Position.x,
-                                         bone.Position.y * change.Length + change.Position.y,
-                                         bone.Position.z * change.Length + change.Position.z};
-                        bone.Rotation = Product(bone.Rotation, EulerRotation(change.Rotation));
-                        break;
-                    }
+                if (auto found = bones.find(name); found != bones.end())
+                {
+                    auto &bone = *found->second;
+                    part.UnmodifiedBones.push_back(bone);
+                    bone.Scale = {bone.Scale.x * change.Scale.x, bone.Scale.y * change.Scale.y,
+                                  bone.Scale.z * change.Scale.z};
+                    bone.Position = {bone.Position.x * change.Length + change.Position.x,
+                                     bone.Position.y * change.Length + change.Position.y,
+                                     bone.Position.z * change.Length + change.Position.z};
+                    bone.Rotation = Product(bone.Rotation, EulerRotation(change.Rotation));
+                }
             }
         }
     }
@@ -402,15 +407,18 @@ namespace hs2
                     definition->Parts.insert(before, head);
                     head->Parent = "cf_J_Head_s";
                     part->Parent = "p_cf_head_bone";
+                    std::unordered_map<std::string, BoneDefinition *> headBones;
+                    headBones.reserve(head->Bones.size());
+                    for (auto &bone : head->Bones)
+                        headBones.try_emplace(bone.Name, &bone);
                     for (auto &source : part->Bones)
-                        for (auto &target : head->Bones)
-                            if (source.Name == target.Name)
-                            {
-                                target.Position = source.Position;
-                                target.Rotation = source.Rotation;
-                                target.Scale = source.Scale;
-                                break;
-                            }
+                        if (auto found = headBones.find(source.Name); found != headBones.end())
+                        {
+                            auto &target = *found->second;
+                            target.Position = source.Position;
+                            target.Rotation = source.Rotation;
+                            target.Scale = source.Scale;
+                        }
                     auto animation = text(entry.Bundle, entry.Get("ShapeAnime"), entry.Archive),
                          categories =
                              text("list/customshape.unity3d", definition->Sex == 0 ? "cm_customhead" : "cf_customhead");

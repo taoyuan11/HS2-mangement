@@ -35,6 +35,15 @@ if(BUILD_TESTING)
             "${CMAKE_SOURCE_DIR}/src/HS2Manager.NativeScene/Resources/classdata.tpk"
     )
     add_subdirectory(tests/HS2Manager.CppToolChecks)
+    add_executable(
+        hs2_preview_worker_checks tests/HS2Manager.CppUiChecks/PreviewWorkerChecks.cpp
+                                  src/HS2Manager.NativeApp/Preview/NativePreviewWorker.cpp
+    )
+    target_include_directories(hs2_preview_worker_checks PRIVATE src/HS2Manager.NativeApp)
+    target_link_libraries(hs2_preview_worker_checks PRIVATE hs2_character hs2_rendering)
+    target_compile_options(hs2_preview_worker_checks PRIVATE /utf-8 /W4 /EHsc)
+    add_test(NAME preview_worker_lifetime COMMAND hs2_preview_worker_checks)
+    set_tests_properties(preview_worker_lifetime PROPERTIES TIMEOUT 15)
     add_executable(hs2_startup_checks tests/HS2Manager.CppUiChecks/DataLocationChecks.cpp)
     target_link_libraries(hs2_startup_checks PRIVATE hs2_startup)
     target_compile_options(hs2_startup_checks PRIVATE /utf-8 /W4 /EHsc)

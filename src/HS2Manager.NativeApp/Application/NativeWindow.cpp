@@ -312,26 +312,12 @@ namespace hs2::ui
                         self->Report("正在取消当前操作，完成清理后关闭…");
                         return;
                     }
-                    if (self->editor_ && !self->closing_)
+                    if (!self->closeReady_)
                     {
                         args.Cancel(true);
                         self->RequestClose();
                         return;
                     }
-                    try
-                    {
-                        double scale = self->root_.XamlRoot() ? self->root_.XamlRoot().RasterizationScale() : 1;
-                        auto size = self->window_.AppWindow().Size();
-                        self->settings_.WindowWidth = size.Width / scale;
-                        self->settings_.WindowHeight = size.Height / scale;
-                        self->settings_.Save(self->dataDirectory_);
-                    }
-                    catch (std::exception const &e)
-                    {
-                        self->Report(e.what());
-                    }
-                    self->ClosePreview();
-                    self->closing_ = true;
                 }
             });
         window_.VisibilityChanged(
@@ -497,13 +483,7 @@ namespace hs2::ui
                             self->Report(result);
                             if (self->closing_)
                             {
-                                if (self->editor_)
-                                {
-                                    self->closing_ = false;
-                                    self->RequestClose();
-                                }
-                                else
-                                    self->window_.Close();
+                                self->RequestClose();
                             }
                         }
                     });

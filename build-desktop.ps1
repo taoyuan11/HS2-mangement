@@ -6,9 +6,20 @@ param(
     [string]$PreviewCard = '',
     [string]$FbxSdkRoot = '',
     [string]$PhysXSource = '',
+    [switch]$CleanupOnly,
     [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount)
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'scripts/package/DesktopBuildCleanup.ps1')
+try {
+    Invoke-PendingDesktopBuildCleanup -RegisterForLogon
+}
+catch {
+    Write-Warning "此前发布的旧程序暂时无法清理：$($_.Exception.Message)"
+}
+if ($CleanupOnly) {
+    return
+}
 $desktop = [Environment]::GetFolderPath('DesktopDirectory')
 if (!$desktop -or !(Test-Path -LiteralPath $desktop -PathType Container)) {
     throw '无法找到当前用户的桌面目录。'
@@ -42,10 +53,10 @@ function Remove-DesktopBuildDirectory([string]$Path) {
         throw '临时构建目录超出指定桌面目录。'
     }
     if (Test-Path -LiteralPath $resolved) {
-        if ((Get-Item -LiteralPath $resolved -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-            throw "临时构建目录不能是链接：$resolved"
+        if (!('HS2Manager.Build.DesktopBuildCleanup' -as [type])) {
+            Add-Type -Path (Join-Path $PSScriptRoot 'scripts/package/DesktopBuildCleanup.cs')
         }
-        Remove-Item -LiteralPath $resolved -Recurse -Force
+        [HS2Manager.Build.DesktopBuildCleanup]::Remove($resolved, $desktop, [IO.Path]::GetFileName($resolved))
     }
 }
 
@@ -91,7 +102,9 @@ $libraryLock = $null
 Assert-DesktopInstallation
 try {
     # 完整构建便携版本成功后，再调整已安装版本。
-    & (Join-Path $PSScriptRoot 'build.ps1') @PSBoundParameters `
+    $buildArguments = @{} + $PSBoundParameters
+    $buildArguments.Remove('CleanupOnly')
+    & (Join-Path $PSScriptRoot 'build.ps1') @buildArguments `
         -OutputDirectory $staging -SkipArchive
 
     Assert-DesktopInstallation
@@ -135,7 +148,14 @@ try {
             Remove-DesktopBuildDirectory $backup
         }
         catch {
-            Write-Warning "新版本已发布，旧版本清理失败，保留在：$backup。$($_.Exception.Message)"
+            $cleanupError = $_.Exception.Message
+            try {
+                Register-DesktopBuildCleanup $backup
+                Write-Output "新版本已发布；部分旧文件仍被 Windows 占用或无删除权限，已登记下次登录时自动重试清理：$backup。若占用来自异常退出，请重启 Windows；也可在关闭占用程序后运行 .\build-desktop.ps1 -CleanupOnly。"
+            }
+            catch {
+                Write-Warning "新版本已发布，旧文件保留在：$backup。清理原因：$cleanupError。自动清理登记失败：$($_.Exception.Message)"
+            }
         }
     }
     else {

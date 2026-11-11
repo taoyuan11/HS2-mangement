@@ -4,6 +4,7 @@ param(
     [switch]$DevelopmentOutput
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'RuntimeLanguages.ps1')
 $root = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Package).Path).TrimEnd('\', '/')
 if (!(Test-Path -LiteralPath $root -PathType Container)) {
     throw 'C++ package directory is missing.'
@@ -12,6 +13,8 @@ $failures = New-Object System.Collections.Generic.List[string]
 $required = @(
     'HS2Manager.exe', 'resources.pri', 'MainWindow.xaml', 'CharacterEditorView.xaml', 'SettingsView.xaml', 'Styles.xaml',
     'Microsoft.UI.Xaml.dll', 'Microsoft.UI.Xaml.Controls.dll', 'Microsoft.UI.Xaml.Controls.pri', 'Microsoft.WindowsAppRuntime.dll',
+    'zh-CN/Microsoft.ui.xaml.dll.mui', 'zh-CN/Microsoft.UI.Xaml.Phone.dll.mui',
+    'en-US/Microsoft.ui.xaml.dll.mui', 'en-US/Microsoft.UI.Xaml.Phone.dll.mui',
     'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'classdata.tpk', 'native-runtime.json',
     'Assets/Brand/hs2-manager.ico', 'Assets/Brand/hs2-manager.png', 'README.md', 'THIRD-PARTY-NOTICES.md',
     'native/win-x64/HS2Manager.Physics.dll', 'native/win-x64/PhysX3_x64.dll', 'native/win-x64/PhysX3Common_x64.dll',
@@ -186,6 +189,9 @@ foreach ($file in Get-PackageFiles $root) {
     $dataFile = $relative -match '^(Data|Logs|Covers|CardBackups|Operations|NativeCpp|NativePreview[^\\/]*|UnityPreview)[\\/]'
     if ($DevelopmentOutput -and $dataFile) {
         continue
+    }
+    if (!$DevelopmentOutput -and (Test-UnusedRuntimeLanguageFile $relative)) {
+        $failures.Add("Unused runtime language resource: $relative")
     }
     if (!$DevelopmentOutput -and (($dataFile -and $relative -ne 'Data\README.txt') -or
             $file.Extension -in '.db', '.sqlite', '.sqlite3', '.pdb', '.ilk', '.lib', '.exp', '.iobj', '.ipdb', '.log' -or

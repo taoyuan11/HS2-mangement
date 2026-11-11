@@ -43,6 +43,8 @@ namespace hs2::ui
         CancelTemporaryPreview();
         ++temporaryGeneration_;
         // 先解除交换链并等待工作线程结束，再释放目录租约。
+        if (preview_)
+            preview_->Stop();
         preview_.reset();
         updating_ = true;
         model_->Set(L"PreviewCards", model_->Get(L"VisibleCards"), false);
@@ -257,7 +259,7 @@ namespace hs2::ui
                 Report("临时角色及资源已就绪，退出预览后自动清理。");
             }
             if (closing_)
-                window_.Close();
+                RequestClose();
         }
         catch (hresult_error const &e)
         {
@@ -271,7 +273,7 @@ namespace hs2::ui
             }
             Report("临时预览未打开：" + to_string(e.message()));
             if (closing_)
-                window_.Close();
+                RequestClose();
         }
         catch (std::exception const &e)
         {
@@ -285,7 +287,7 @@ namespace hs2::ui
             }
             Report("临时预览未打开：" + std::string(e.what()));
             if (closing_)
-                window_.Close();
+                RequestClose();
         }
     }
 

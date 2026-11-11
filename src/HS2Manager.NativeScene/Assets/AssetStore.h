@@ -32,6 +32,8 @@ namespace hs2
         {
             std::size_t Loads = 0, Hits = 0, Evictions = 0;
             double LoadSeconds = 0;
+            std::size_t CabIndexLoads = 0;
+            double CabIndexSeconds = 0;
             std::unordered_map<std::string, std::pair<size_t, double>> Resources;
         };
 

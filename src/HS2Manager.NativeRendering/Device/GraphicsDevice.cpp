@@ -1,5 +1,6 @@
 #include "Device/GraphicsDevice.h"
 #include <DirectXPackedVector.h>
+#include <chrono>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
@@ -46,6 +47,21 @@ namespace hs2
         {
             context_->ClearState();
             context_->Flush();
+            // Flush 只提交命令。退出前等待 GPU 完成，避免驱动任务延续到窗口/设备销毁。
+            D3D11_QUERY_DESC description{D3D11_QUERY_EVENT, 0};
+            ComPtr<ID3D11Query> completed;
+            if (SUCCEEDED(device_->CreateQuery(&description, &completed)))
+            {
+                context_->End(completed.Get());
+                context_->Flush();
+                auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                while (context_->GetData(completed.Get(), nullptr, 0, D3D11_ASYNC_GETDATA_DONOTFLUSH) == S_FALSE)
+                {
+                    if (FAILED(device_->GetDeviceRemovedReason()) || std::chrono::steady_clock::now() >= deadline)
+                        break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
         }
     }
 

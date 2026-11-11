@@ -76,6 +76,8 @@ namespace hs2::ui
         auto lifetime = shared_from_this();
         try
         {
+            if (closing_ || closePrompt_)
+                co_return;
             if (preview_ && preview_->Action(name, sender))
                 co_return;
             if (name == L"TemporaryPreview_Click")

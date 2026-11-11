@@ -11,6 +11,8 @@ namespace hs2
     {
         std::string Id = NewId();
         fs::path Game, Data, Package;
+        // 已安装游戏资源的清单缓存跨临时预览复用；包内资源仍使用会话目录。
+        fs::path CatalogCache;
         std::vector<fs::path> Roots;
         ModIndex Index;
         std::map<std::string, fs::path> Files;

@@ -147,7 +147,8 @@ namespace hs2::ui
                            preserveTime,  false,           std::move(resources)};
         unload_ = false;
         quiesce_ = false;
-        quiescent_ = false;
+        // 只有渲染线程离开暂停点时才能撤销确认。若界面在它醒来前再次请求暂停，
+        // 提前清零会让双方都等待对方，导致关闭窗口后进程无法退出。
         wake_.notify_all();
         return generation_;
     }

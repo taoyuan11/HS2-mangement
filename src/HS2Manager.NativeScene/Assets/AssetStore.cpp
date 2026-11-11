@@ -140,9 +140,9 @@ namespace hs2
 
     void NativeGpuAssetStore::IndexCabNames()
     {
-        // 仅并行构造相互独立的读取器；脚本回调、索引和 LRU 仍由调用线程维护。
-        // 每批最多四个包，避免同时展开大量 MOD。future 在取消/异常时也会等待线程退出。
-        using Loaded = std::pair<std::shared_ptr<NativeGpuAssetReader>, double>;
+        // 仅并行读取依赖包目录；对象数据在真正被引用时才加载，避免索引挤占读取器预算。
+        // 每批最多四个包，future 在取消/异常时也会等待线程退出。
+        using Loaded = std::pair<std::string, double>;
         const auto workers = std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
         while (indexed_ < paths_.size())
         {
@@ -156,13 +156,12 @@ namespace hs2
                 else
                     pending.push_back(std::async(
                         std::launch::async,
-                        [path = paths_[i], database = database_, cache = blockCache_, cancellation = cancellation_]
+                        [path = paths_[i], cancellation = cancellation_]
                         {
                             auto started = std::chrono::steady_clock::now();
-                            auto reader =
-                                std::make_shared<NativeGpuAssetReader>(path, database.get(), cache, cancellation);
+                            auto name = NativeGpuAssetReader::ReadCabName(path, cancellation);
                             return Loaded{
-                                std::move(reader),
+                                std::move(name),
                                 std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count()};
                         }));
             }
@@ -173,8 +172,10 @@ namespace hs2
                 auto key = Key(path);
                 if (future.valid())
                 {
-                    auto [reader, seconds] = future.get();
-                    RememberReader(key, reader, seconds);
+                    auto [name, seconds] = future.get();
+                    cabNames_[key] = std::move(name);
+                    ++readerStats_.CabIndexLoads;
+                    readerStats_.CabIndexSeconds += seconds;
                 }
                 cabs_[Lower(cabNames_.at(key))].push_back(path);
                 ++indexed_;
