@@ -160,6 +160,10 @@ namespace
                 completed = p.Completed;
             });
         Check(cold.Entries().size() == 20 && cold.Warnings().empty(), "Cold catalog entries mismatch.");
+        Check(cold.SelectedMods().size() == resources->Index.Files.size() &&
+                  cold.SelectedMods().front().Path == resources->Index.Files.front().Path &&
+                  cold.SelectedMods().back().Path == resources->Index.Files.back().Path,
+              "Selected MOD snapshot lost entries or resource priority order.");
         Check(completed == 40, "Catalog progress did not finish.");
         std::vector<fs::path> cacheFiles;
         auto cacheRoot = resources->Data / "NativeCpp/resources";

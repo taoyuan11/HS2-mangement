@@ -392,6 +392,107 @@ namespace
               "Component conversion changed object references or its immutable source.");
     }
 
+    void TransientMesh(const std::filesystem::path &root)
+    {
+        std::vector<UnityTypeNode> schema{{"Mesh", "Base", -1, 0, 0}};
+        StringSchema(schema, "m_Name", 1);
+        schema.push_back({"int", "m_MeshCompression", 4, 0, 1});
+        schema.push_back({"TypelessData", "unused", -1, 0, 1});
+        Bytes payload;
+        FieldString(payload, "empty mesh");
+        Number(payload, 0, 4, false);
+        Number(payload, 1024 * 1024, 4, false);
+        payload.resize(payload.size() + 1024 * 1024, 7);
+        auto path = root / "mesh.assets";
+        Write(path, ObjectFile({{43, schema}}, {{7, 0, payload}}));
+        NativeGpuAssetReader reader(path);
+        auto bytes = reader.ResidentBytes();
+        Parameter reference, fileId, pathId;
+        reference.Name = "m_Mesh";
+        fileId.Name = "m_FileID";
+        pathId.Name = "m_PathID";
+        pathId.Encoding = "int";
+        pathId.Integer = 7;
+        reference.Children = {fileId, pathId};
+        GpuPrefabData prefab;
+        prefab.Nodes.emplace_back();
+        prefab.Nodes.back().Id = 1;
+        prefab.Nodes.back().Name = "node";
+        prefab.Components.push_back({1, 2, 137, reference});
+        std::vector<std::string> diagnostics;
+        auto components = ReadCharacterComponents(reader, prefab, diagnostics);
+        Check(diagnostics.empty() && components.size() == 1 && components[0].Data.Text == "empty mesh" &&
+                  reader.ResidentBytes() == bytes,
+              "Mesh reference expanded its payload instead of reading the name prefix.");
+        Check(reader.Mesh(7).Name == "empty mesh" && reader.ResidentBytes() == bytes,
+              "Mesh conversion retained its temporary metadata tree.");
+        const auto &borrowed = reader.Metadata(7);
+        bytes = reader.ResidentBytes();
+        auto mesh = reader.Mesh(7);
+        Check(mesh.Name == "empty mesh" && mesh.VertexCount == 0 && reader.ResidentBytes() == bytes &&
+                  borrowed.Get("unused").Bytes.size() == 1024 * 1024 && borrowed.Get("unused").Bytes.back() == 7,
+              "Mesh conversion invalidated previously borrowed metadata.");
+        NativeGpuAssetStore store({}, {}, {});
+        Check(store.Mesh({path, 0, 7}) == store.Mesh({path, 0, 7}), "Converted mesh was not reused.");
+    }
+
+    void ParallelShaderNames(const std::filesystem::path &root)
+    {
+        std::vector<UnityTypeNode> schema{{"Shader", "Base", -1, 0, 0}};
+        StringSchema(schema, "m_Name", 1);
+        Bytes payload;
+        FieldString(payload, "CaseSensitive/Shader");
+        auto file = ObjectFile({{48, schema}}, {{17, 0, payload}});
+        std::vector<std::filesystem::path> paths;
+        for (int i = 0; i < 70; ++i)
+        {
+            paths.push_back(root / ("shader-" + std::to_string(i) + ".assets"));
+            Write(paths.back(), file);
+        }
+        NativeGpuAssetStore store(paths, {}, {});
+        auto borrowed = store.Reader(paths[0]);
+        auto expected = std::vector<std::string>(paths.size(), "CaseSensitive/Shader");
+        Check(store.ShaderNames() == expected && store.ReaderStats().Loads == paths.size() &&
+                  store.ReaderStats().Evictions > 0,
+              "Parallel shader scan lost names, reopened a resident reader, or ignored the reader budget.");
+        auto loads = store.ReaderStats().Loads;
+        Check(store.ShaderNames() == expected && store.ReaderStats().Loads == loads &&
+                  store.FindShader(paths[0], "casesensitive/shader")->PathId == 17 &&
+                  borrowed->AssetName(17) == expected.front(),
+              "Shader scan did not retain case, lookup aliases, or borrowed readers after eviction.");
+        auto missing = root / "missing-shader.assets";
+        store.AddPath(missing);
+        Reject(
+            [&]
+            {
+                store.ShaderNames();
+            });
+        Write(missing, file);
+        expected.push_back(expected.front());
+        Check(store.ShaderNames() == expected && store.ReaderStats().Loads == loads + 1,
+              "Failed incremental shader scan poisoned its cache or reopened old resources.");
+        // 同批次中前一个成功、后一个失败时，重试也不能重复提交名称。
+        auto missingBatch = root / "missing-batch.assets";
+        NativeGpuAssetStore retry({paths[0], missingBatch, paths[1]}, {}, {});
+        Reject(
+            [&]
+            {
+                retry.ShaderNames();
+            });
+        Write(missingBatch, file);
+        Check(retry.ShaderNames() == std::vector<std::string>(3, expected.front()),
+              "Failed shader batch changed name order or duplicated entries on retry.");
+        std::stop_source stop;
+        NativeGpuAssetStore cancelled(paths, {}, {}, stop.get_token());
+        cancelled.ShaderNames();
+        stop.request_stop();
+        Reject(
+            [&]
+            {
+                cancelled.ShaderNames();
+            });
+    }
+
     void ReaderCacheAndStreams()
     {
         auto root =
@@ -411,6 +512,8 @@ namespace
         } cleanup{root};
 
         ExportAliases(root);
+        TransientMesh(root);
+        ParallelShaderNames(root);
 
         for (bool atEnd : {false, true})
         {

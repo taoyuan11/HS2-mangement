@@ -122,25 +122,29 @@ namespace hs2
 
     std::vector<BodyCatalogEntry> ResolveCharacterBody(const fs::path &game, const fs::path &data,
                                                        const CharacterDocument &document, const Parameter &uncensor,
-                                                       std::stop_token cancellation, PreviewResources resources)
+                                                       std::stop_token cancellation, PreviewResources resources,
+                                                       std::optional<std::span<const ModFileInfo>> selectedMods)
     {
         if (!Plugin(game, L"HS2_UncensorSelector.dll", resources))
             return {};
-        std::vector<ModFileInfo> mods;
+        std::vector<ModFileInfo> loadedMods;
         if (resources)
         {
-            mods = resources->Index.Files;
+            loadedMods = resources->Index.Files;
             // 身体与迁移清单采用后读覆盖，因此从本机、共享到角色目录依次读取。
-            std::reverse(mods.begin(), mods.end());
+            std::reverse(loadedMods.begin(), loadedMods.end());
+            selectedMods = loadedMods;
         }
-        else
+        else if (!selectedMods)
         {
             CardRepository repository(data);
             auto stored = repository.LoadMetadata("mods-v1");
             if (!stored)
                 throw std::runtime_error("MOD index is required for body selection.");
-            mods = NativeModSelection::Select(stored->get<ModIndex>().Files);
+            loadedMods = NativeModSelection::Select(stored->get<ModIndex>().Files);
+            selectedMods = loadedMods;
         }
+        const auto mods = *selectedMods;
         std::vector<BodyCatalogEntry> entries{
             {"Body", "Default.Body.Female", "Default Body F", 1, false, {}, "chara/oo_base.unity3d", "p_cf_body_00"},
             {"Penis", "Default.Penis", "Mosaic Penis", -1, false, {}, "chara/oo_base.unity3d", "p_cm_body_00"},

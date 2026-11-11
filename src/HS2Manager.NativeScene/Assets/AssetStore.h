@@ -15,6 +15,7 @@ namespace hs2
         std::shared_ptr<NativeGpuAssetReader> Reader(const std::filesystem::path &path);
         std::shared_ptr<const GpuPrefabData> Prefab(const std::filesystem::path &path, const std::string &name);
         void IndexShaderNames(const std::shared_ptr<NativeGpuAssetReader> &reader);
+        std::vector<std::string> ShaderNames();
         std::optional<GpuAssetPointer> FindShader(const std::filesystem::path &path, std::string_view name);
         void SetScriptSchema(
             std::function<std::vector<UnityTypeNode>(const GpuAssetPointer &, std::string_view)> resolver);
@@ -63,7 +64,14 @@ namespace hs2
         std::list<std::string> recent_;
         std::unordered_map<std::string, std::vector<std::filesystem::path>> cabs_;
         std::unordered_map<std::string, std::string> cabNames_;
-        std::unordered_map<std::string, NativeGpuAssetReader::NameLookup> shaderNames_;
+
+        struct ShaderIndex
+        {
+            NativeGpuAssetReader::NameLookup Aliases;
+            std::vector<std::string> Names;
+        };
+
+        std::unordered_map<std::string, ShaderIndex> shaderNames_;
         std::unordered_map<std::string, std::shared_ptr<GpuMeshData>> meshes_;
         std::unordered_map<std::string, std::unordered_map<std::string, std::shared_ptr<const GpuPrefabData>>> prefabs_;
         std::unordered_map<std::string, std::shared_ptr<GpuMaterialData>> materials_;

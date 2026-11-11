@@ -1234,7 +1234,11 @@ namespace hs2
     GpuMeshData NativeGpuAssetReader::Mesh(int64_t id)
     {
         Require(AssetClass(id) == 43, "Asset is not a mesh.");
-        auto &p = Metadata(id);
+        // 网格已经在资源存储中按指针缓存；转换后不再保留庞大的形变参数树。
+        // 已借出的元数据仍保持原有寿命，不能从 fields_ 中移除。
+        auto found = fields_.find(id);
+        auto parsed = found == fields_.end() ? file_->Read(id) : Parameter{};
+        const auto &p = found == fields_.end() ? parsed : found->second;
         auto bytes = Bytes(p.Get("m_VertexData").Get("m_DataSize"));
         auto &stream = p.Get("m_StreamData");
         if (bytes.empty() && stream.Int("size") > 0)

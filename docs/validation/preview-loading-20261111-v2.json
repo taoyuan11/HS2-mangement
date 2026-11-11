@@ -1,0 +1,835 @@
+{
+  "Date": "2026-11-11",
+  "BaselineCommit": "fc3919971dd44d6692f3149ff25b27bc254dc031",
+  "ExecutableSHA256": {
+    "before": "c1d5b9b2ada5e801a63f2115764fb41a483e3f9a225d18c6f8f7134342352a3e",
+    "after": "9cd035a4e3c84c0e03f082ecf01ad33e4f5fb337209dd5266a3aeb3cccc86cd1"
+  },
+  "Method": "Release x64; same NAS game and local Data; three independent processes per version and card, alternating order; application caches present; OS/NAS caches not cleared; first frame includes first GPU readback, excludes WinUI presentation and MOD scanning; private bytes sampled about every 30 ms.",
+  "RawResults": "%LOCALAPPDATA%/HS2Manager/Tests/PreviewLoading-v2-20261111",
+  "Cards": {
+    "female": "UserData/chara/navi/navi.png",
+    "male": "UserData/chara/male/HS2_ill_M_000.png"
+  },
+  "Summary": [
+    {
+      "Case": "female",
+      "before": {
+        "Median": {
+          "PrepareSeconds": 2.6891742,
+          "FirstFrameSeconds": 4.2588398,
+          "PipelineSeconds": 0.9202344,
+          "ReaderLoads": 142,
+          "ReaderEvictions": 100,
+          "ShaderConfigSeconds": 0.7435852000000001,
+          "AssemblySeconds": 0.32075140000000024
+        },
+        "PeakPrivateMiB": 2138.8984375
+      },
+      "after": {
+        "Median": {
+          "PrepareSeconds": 2.2389722,
+          "FirstFrameSeconds": 3.6674,
+          "PipelineSeconds": 0.7528014000000001,
+          "ReaderLoads": 118,
+          "ReaderEvictions": 76,
+          "ShaderConfigSeconds": 0.5593005,
+          "AssemblySeconds": 0.2928881000000003
+        },
+        "PeakPrivateMiB": 2165.87890625
+      },
+      "FirstFrameReductionPercent": 13.887345562986408,
+      "PrepareReductionPercent": 16.741273213167073,
+      "FramesIdentical": true
+    },
+    {
+      "Case": "male",
+      "before": {
+        "Median": {
+          "PrepareSeconds": 1.9703087,
+          "FirstFrameSeconds": 3.1429574,
+          "PipelineSeconds": 0.6936520000000002,
+          "ReaderLoads": 96,
+          "ReaderEvictions": 61,
+          "ShaderConfigSeconds": 0.5917950999999999,
+          "AssemblySeconds": 0.20821179999999995
+        },
+        "PeakPrivateMiB": 1662.5234375
+      },
+      "after": {
+        "Median": {
+          "PrepareSeconds": 1.6629575,
+          "FirstFrameSeconds": 2.7030354,
+          "PipelineSeconds": 0.5480640999999999,
+          "ReaderLoads": 78,
+          "ReaderEvictions": 43,
+          "ShaderConfigSeconds": 0.43830459999999993,
+          "AssemblySeconds": 0.1562034000000001
+        },
+        "PeakPrivateMiB": 1690.62109375
+      },
+      "FirstFrameReductionPercent": 13.997071675231732,
+      "PrepareReductionPercent": 15.599139363288595,
+      "FramesIdentical": true
+    }
+  ],
+  "Samples": [
+    {
+      "Case": "female",
+      "Repeat": 0,
+      "Version": "before",
+      "WallSeconds": 6.374332200000026,
+      "PeakPrivateMiB": 2138.8984375,
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 1,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 5.9150311,
+        "PipelineSeconds": 1.2333007999999999,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 1.3866133999999999
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.32075140000000024
+          }
+        ],
+        "PrepareSeconds": 3.5627439,
+        "ReaderEvictions": 100,
+        "ReaderHits": 9039,
+        "ReaderLoadSeconds": 2.0479498,
+        "ReaderLoads": 142,
+        "RuntimeSeconds": 0.05826280000000006
+      }
+    },
+    {
+      "Case": "female",
+      "Repeat": 0,
+      "Version": "after",
+      "WallSeconds": 4.132770899999741,
+      "PeakPrivateMiB": 2118.12890625,
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 0,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 3.6674,
+        "PipelineSeconds": 0.7808632999999996,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.5707346
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.2995766000000002
+          }
+        ],
+        "PrepareSeconds": 2.2271516,
+        "ReaderEvictions": 76,
+        "ReaderHits": 9047,
+        "ReaderLoadSeconds": 0.8761340999999999,
+        "ReaderLoads": 118,
+        "RuntimeSeconds": 0.0632925000000002
+      }
+    },
+    {
+      "Case": "female",
+      "Repeat": 1,
+      "Version": "after",
+      "WallSeconds": 4.2151417000004585,
+      "PeakPrivateMiB": 2165.87890625,
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 0,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 3.7541329,
+        "PipelineSeconds": 0.7528014000000001,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.5370077999999998
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.2928881000000003
+          }
+        ],
+        "PrepareSeconds": 2.3273064,
+        "ReaderEvictions": 76,
+        "ReaderHits": 9047,
+        "ReaderLoadSeconds": 0.8676294000000003,
+        "ReaderLoads": 118,
+        "RuntimeSeconds": 0.05772870000000019
+      }
+    },
+    {
+      "Case": "female",
+      "Repeat": 1,
+      "Version": "before",
+      "WallSeconds": 4.6461443999996845,
+      "PeakPrivateMiB": 2046.40234375,
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 1,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 4.1691342,
+        "PipelineSeconds": 0.9148443000000004,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.7412710999999998
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.32001040000000014
+          }
+        ],
+        "PrepareSeconds": 2.60612,
+        "ReaderEvictions": 100,
+        "ReaderHits": 9039,
+        "ReaderLoadSeconds": 1.0014418000000005,
+        "ReaderLoads": 142,
+        "RuntimeSeconds": 0.0551446999999996
+      }
+    },
+    {
+      "Case": "female",
+      "Repeat": 2,
+      "Version": "before",
+      "WallSeconds": 4.750314700000672,
+      "PeakPrivateMiB": 2074.2734375,
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 1,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 4.2588398,
+        "PipelineSeconds": 0.9202344,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.7435852000000001
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.35081359999999995
+          }
+        ],
+        "PrepareSeconds": 2.6891742,
+        "ReaderEvictions": 100,
+        "ReaderHits": 9039,
+        "ReaderLoadSeconds": 1.0733314,
+        "ReaderLoads": 142,
+        "RuntimeSeconds": 0.05841469999999971
+      }
+    },
+    {
+      "Case": "female",
+      "Repeat": 2,
+      "Version": "after",
+      "WallSeconds": 4.070325800000319,
+      "PeakPrivateMiB": 2130.3984375,
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 0,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 3.6051481,
+        "PipelineSeconds": 0.7162522,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.5593005
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.2878361999999999
+          }
+        ],
+        "PrepareSeconds": 2.2389722,
+        "ReaderEvictions": 76,
+        "ReaderHits": 9047,
+        "ReaderLoadSeconds": 0.8652995000000006,
+        "ReaderLoads": 118,
+        "RuntimeSeconds": 0.0534794999999999
+      }
+    },
+    {
+      "Case": "male",
+      "Repeat": 0,
+      "Version": "before",
+      "WallSeconds": 4.012277200000426,
+      "PeakPrivateMiB": 1662.5234375,
+      "Frames": {
+        "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+        "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 1,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 3.609414,
+        "PipelineSeconds": 0.7778605000000001,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.6939245
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.20470929999999976
+          }
+        ],
+        "PrepareSeconds": 2.148456,
+        "ReaderEvictions": 61,
+        "ReaderHits": 8895,
+        "ReaderLoadSeconds": 0.8632553,
+        "ReaderLoads": 96,
+        "RuntimeSeconds": 0.0518578999999999
+      }
+    },
+    {
+      "Case": "male",
+      "Repeat": 0,
+      "Version": "after",
+      "WallSeconds": 3.0991860000003726,
+      "PeakPrivateMiB": 1690.62109375,
+      "Frames": {
+        "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+        "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 0,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 2.7030354,
+        "PipelineSeconds": 0.5480640999999999,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.44240559999999984
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.1565071
+          }
+        ],
+        "PrepareSeconds": 1.6629575,
+        "ReaderEvictions": 43,
+        "ReaderHits": 8901,
+        "ReaderLoadSeconds": 0.5162905,
+        "ReaderLoads": 78,
+        "RuntimeSeconds": 0.05616209999999988
+      }
+    },
+    {
+      "Case": "male",
+      "Repeat": 1,
+      "Version": "after",
+      "WallSeconds": 3.1258903000007194,
+      "PeakPrivateMiB": 1602.78125,
+      "Frames": {
+        "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+        "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 0,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 2.7120473,
+        "PipelineSeconds": 0.540689,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.43830459999999993
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.1562034000000001
+          }
+        ],
+        "PrepareSeconds": 1.6794855,
+        "ReaderEvictions": 43,
+        "ReaderHits": 8901,
+        "ReaderLoadSeconds": 0.5078729000000001,
+        "ReaderLoads": 78,
+        "RuntimeSeconds": 0.05679790000000007
+      }
+    },
+    {
+      "Case": "male",
+      "Repeat": 1,
+      "Version": "before",
+      "WallSeconds": 3.5232999999998356,
+      "PeakPrivateMiB": 1618.46484375,
+      "Frames": {
+        "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+        "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 1,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 3.0921247,
+        "PipelineSeconds": 0.6935466000000001,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.5917950999999999
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.21374660000000012
+          }
+        ],
+        "PrepareSeconds": 1.9231501,
+        "ReaderEvictions": 61,
+        "ReaderHits": 8895,
+        "ReaderLoadSeconds": 0.6784074,
+        "ReaderLoads": 96,
+        "RuntimeSeconds": 0.057412599999999925
+      }
+    },
+    {
+      "Case": "male",
+      "Repeat": 2,
+      "Version": "before",
+      "WallSeconds": 3.5544067000000723,
+      "PeakPrivateMiB": 1600.48046875,
+      "Frames": {
+        "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+        "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 1,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 3.1429574,
+        "PipelineSeconds": 0.6936520000000002,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.5694912000000001
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.20821179999999995
+          }
+        ],
+        "PrepareSeconds": 1.9703087,
+        "ReaderEvictions": 61,
+        "ReaderHits": 8895,
+        "ReaderLoadSeconds": 0.6544606,
+        "ReaderLoads": 96,
+        "RuntimeSeconds": 0.0565715
+      }
+    },
+    {
+      "Case": "male",
+      "Repeat": 2,
+      "Version": "after",
+      "WallSeconds": 3.0678253000005498,
+      "PeakPrivateMiB": 1611.6875,
+      "Frames": {
+        "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+        "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+      },
+      "Loading": {
+        "BlockDecodes": 0,
+        "BlockDiskHits": 1,
+        "BlockMemoryHits": 0,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 2.6738649,
+        "PipelineSeconds": 0.5550011000000001,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 0.42980030000000014
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.15489229999999998
+          }
+        ],
+        "PrepareSeconds": 1.6219192,
+        "ReaderEvictions": 43,
+        "ReaderHits": 8901,
+        "ReaderLoadSeconds": 0.5007586999999999,
+        "ReaderLoads": 78,
+        "RuntimeSeconds": 0.05133450000000006
+      }
+    }
+  ],
+  "Sequence": {
+    "before": [
+      {
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 1,
+          "BlockResidentBytes": 134372236,
+          "CabIndexLoads": 0,
+          "CabIndexSeconds": 0.0,
+          "FirstFrameSeconds": 5.8025831,
+          "PipelineSeconds": 1.1482976000000003,
+          "PreparationPhases": [
+            {
+              "Phase": "读取材质编辑器着色器配置",
+              "Seconds": 1.3730523000000001
+            },
+            {
+              "Phase": "组装角色网格与骨骼",
+              "Seconds": 0.3209879
+            }
+          ],
+          "PrepareSeconds": 3.572183,
+          "ReaderEvictions": 100,
+          "ReaderHits": 9039,
+          "ReaderLoadSeconds": 2.080467599999999,
+          "ReaderLoads": 142,
+          "RuntimeSeconds": 0.05474289999999993
+        },
+        "Frames": {
+          "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+          "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+        }
+      },
+      {
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 3,
+          "BlockResidentBytes": 134372236,
+          "CabIndexLoads": 0,
+          "CabIndexSeconds": 0.0,
+          "FirstFrameSeconds": 2.7465205,
+          "PipelineSeconds": 0.6656890999999998,
+          "PreparationPhases": [
+            {
+              "Phase": "读取材质编辑器着色器配置",
+              "Seconds": 0.5398448
+            },
+            {
+              "Phase": "组装角色网格与骨骼",
+              "Seconds": 0.18551530000000005
+            }
+          ],
+          "PrepareSeconds": 1.3894894,
+          "ReaderEvictions": 61,
+          "ReaderHits": 8895,
+          "ReaderLoadSeconds": 0.7207455000000003,
+          "ReaderLoads": 96,
+          "RuntimeSeconds": 0.037238400000000116
+        },
+        "Frames": {
+          "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+          "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+        }
+      },
+      {
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 5,
+          "BlockResidentBytes": 134372236,
+          "CabIndexLoads": 0,
+          "CabIndexSeconds": 0.0,
+          "FirstFrameSeconds": 3.0879708,
+          "PipelineSeconds": 0.7617640999999999,
+          "PreparationPhases": [
+            {
+              "Phase": "读取材质编辑器着色器配置",
+              "Seconds": 0.5615147999999999
+            },
+            {
+              "Phase": "组装角色网格与骨骼",
+              "Seconds": 0.2918778000000002
+            }
+          ],
+          "PrepareSeconds": 1.6574245,
+          "ReaderEvictions": 100,
+          "ReaderHits": 9039,
+          "ReaderLoadSeconds": 0.8879005999999997,
+          "ReaderLoads": 142,
+          "RuntimeSeconds": 0.04061009999999987
+        },
+        "Frames": {
+          "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+          "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+        }
+      }
+    ],
+    "after": [
+      {
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 0,
+          "BlockResidentBytes": 134372236,
+          "CabIndexLoads": 0,
+          "CabIndexSeconds": 0.0,
+          "FirstFrameSeconds": 5.3654814,
+          "PipelineSeconds": 0.9474776000000005,
+          "PreparationPhases": [
+            {
+              "Phase": "读取材质编辑器着色器配置",
+              "Seconds": 1.1338593999999997
+            },
+            {
+              "Phase": "组装角色网格与骨骼",
+              "Seconds": 0.2868654000000004
+            }
+          ],
+          "PrepareSeconds": 3.2379631,
+          "ReaderEvictions": 76,
+          "ReaderHits": 9047,
+          "ReaderLoadSeconds": 2.0716921,
+          "ReaderLoads": 118,
+          "RuntimeSeconds": 0.05536189999999985
+        },
+        "Frames": {
+          "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+          "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+        }
+      },
+      {
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 1,
+          "BlockResidentBytes": 134372236,
+          "CabIndexLoads": 0,
+          "CabIndexSeconds": 0.0,
+          "FirstFrameSeconds": 2.3776014,
+          "PipelineSeconds": 0.5208931000000001,
+          "PreparationPhases": [
+            {
+              "Phase": "读取材质编辑器着色器配置",
+              "Seconds": 0.38962169999999996
+            },
+            {
+              "Phase": "组装角色网格与骨骼",
+              "Seconds": 0.13810830000000007
+            }
+          ],
+          "PrepareSeconds": 1.131363,
+          "ReaderEvictions": 43,
+          "ReaderHits": 8901,
+          "ReaderLoadSeconds": 0.6189664000000004,
+          "ReaderLoads": 78,
+          "RuntimeSeconds": 0.04066980000000009
+        },
+        "Frames": {
+          "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+          "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+        }
+      },
+      {
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 2,
+          "BlockResidentBytes": 134372236,
+          "CabIndexLoads": 0,
+          "CabIndexSeconds": 0.0,
+          "FirstFrameSeconds": 2.7551174,
+          "PipelineSeconds": 0.6448009000000001,
+          "PreparationPhases": [
+            {
+              "Phase": "读取材质编辑器着色器配置",
+              "Seconds": 0.3863035
+            },
+            {
+              "Phase": "组装角色网格与骨骼",
+              "Seconds": 0.27939610000000004
+            }
+          ],
+          "PrepareSeconds": 1.448695,
+          "ReaderEvictions": 76,
+          "ReaderHits": 9047,
+          "ReaderLoadSeconds": 0.7431044000000003,
+          "ReaderLoads": 118,
+          "RuntimeSeconds": 0.04392629999999986
+        },
+        "Frames": {
+          "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+          "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+        }
+      }
+    ]
+  },
+  "SequenceMethod": "One service instance, female/male/female, old scene and GPU pipeline destroyed between cards; one run per version.",
+  "Cold": {
+    "before": {
+      "Loading": {
+        "BlockDecodes": 1,
+        "BlockDiskHits": 0,
+        "BlockMemoryHits": 1,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 16.2589718,
+        "PipelineSeconds": 1.1061333999999992,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 4.440297899999999
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.3130632000000002
+          }
+        ],
+        "PrepareSeconds": 14.009308,
+        "ReaderEvictions": 100,
+        "ReaderHits": 9039,
+        "ReaderLoadSeconds": 5.039729900000003,
+        "ReaderLoads": 142,
+        "RuntimeSeconds": 0.056351199999999935
+      },
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      }
+    },
+    "after": {
+      "Loading": {
+        "BlockDecodes": 1,
+        "BlockDiskHits": 0,
+        "BlockMemoryHits": 0,
+        "BlockResidentBytes": 134372236,
+        "CabIndexLoads": 0,
+        "CabIndexSeconds": 0.0,
+        "FirstFrameSeconds": 12.6558314,
+        "PipelineSeconds": 0.986343699999999,
+        "PreparationPhases": [
+          {
+            "Phase": "读取材质编辑器着色器配置",
+            "Seconds": 4.2081322
+          },
+          {
+            "Phase": "组装角色网格与骨骼",
+            "Seconds": 0.2839660000000013
+          }
+        ],
+        "PrepareSeconds": 10.4698928,
+        "ReaderEvictions": 76,
+        "ReaderHits": 9047,
+        "ReaderLoadSeconds": 5.077817,
+        "ReaderLoads": 118,
+        "RuntimeSeconds": 0.05708590000000058
+      },
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      }
+    }
+  },
+  "ColdMethod": "One independent Data directory per version, existing MOD index only; preview caches initially absent; OS/NAS caches not cleared; one female run per version.",
+  "ManifestFilesIdentical": {
+    "body-v1-A859AED9B363C482AA54481E7C985942F6D2CAA925FF6B7DE7997402C1620F74.json": true,
+    "list-v1-0728D9412A2B531CE2D6F3667AF64F309319EE21C45B166DAB4CACA2529CA8FB.json": true,
+    "list-v1-1182E9EDBC81FC846E541DA627AC299CE02DD51DE05BD3E35F4061724BFE7465.json": true,
+    "list-v1-12BBD9A69D657FC9DDB8254C54F1C9508AD5AE42BA722047327B735A9E6CEFFC.json": true,
+    "list-v1-2230B69EC1B03CD3F7808EDC1A3428375BC0BF4F4D7F636B1EBB60853D3C7734.json": true,
+    "list-v1-2598749EBD321E2D423B58DE569B01354027FC0205844ADBE901D27B62BAD009.json": true,
+    "list-v1-2D8D6A157D2EE80268DC32070B786BB8C2B1A19F4FD6326932225F861CEDB57E.json": true,
+    "list-v1-45E95FEE50C46A422E5BD7A7A2EA8B8355C95FD4438A2E25F6AB7712F1634B8B.json": true,
+    "list-v1-4D1595842570953D64529BD264E8269970C994F56DBC6E75BF1A46DEB559C12C.json": true,
+    "list-v1-4FC04E8654A4C10F61FB9127F429AF30A1044135872FA4AC5D6BB2F46DA3DFB5.json": true,
+    "list-v1-5029FF814050AFC4D47D2A9CBA3CDDA1CE08659E80291DA61AE411201917F2F8.json": true,
+    "list-v1-507C652B60B3513E00A1CD214FC58E48D7B0F07ACB8D680769A76DC219A36208.json": true,
+    "list-v1-58E97CFB78C3DB93B74DBC632DA8722E1E032D86E024CDF180274B8F7CD9A4CD.json": true,
+    "list-v1-6A7B16EF6C11266A1B123AB0A3C9F6F73470D45FA2D9E117181EC67940DECE4A.json": true,
+    "list-v1-75B9CDB27EA4BFEBA4F09A647846518E132640B0390EDD6B1EFF2058EEA2156A.json": true,
+    "list-v1-7EE5D6D0469D3184FAD8B1163EF18636AADA61C8DE6BFF187D5A1CA176FCBFF4.json": true,
+    "list-v1-808F926E8BD29840D5B1378505B8D806FB0BDC5EA391190447817128964CCADA.json": true,
+    "list-v1-84CED4F54E5E5E3BB2D5DD1D6BABF9AD0228CFB30CE2A4908C4C9F213C3B57DE.json": true,
+    "list-v1-85B8E45255D72F9B8E3A9BBBBC6BA465988805514CACA6365775F012920EDDCE.json": true,
+    "list-v1-89FFD4DE9A0E66CD9CE6ED840999D724B072FF06152A5BF86F949688D325D594.json": true,
+    "list-v1-9CE0D44632D501DC28B51FA7D175902A6109DD802038DB090F1B33B7BBDA0530.json": true,
+    "list-v1-A21CBA336F5ED3DCE3F2ADF5C412FE54814794C4F26321F11CD85EFBED142B0D.json": true,
+    "list-v1-AEF9967445582B2282AC9BB0A4896F5D671B9F429522AB247877044091C10E7B.json": true,
+    "list-v1-B0D1D0F5B536AF90B39586E2658E4EB88E204A103B9525B24986D7EAF369C30F.json": true,
+    "list-v1-B3ACB8D292B69829979399BD8E58989B6BBDF31C300BC60A1AB2C9895F4EB399.json": true,
+    "list-v1-BACBEC7F645D2903B2589F9E0F468A71C69DEA620DD5C43265C378D0259A99DC.json": true,
+    "list-v1-BD2913DD360CDF3DA087FC8BAE92D98D52217F5E383D7E327774C1D5035317DE.json": true,
+    "list-v1-BE3D85D50CD5010F31F93BB1B788BACAE766309BAFD168A34D1058885A22C477.json": true,
+    "list-v1-CDFD0ECA443BB644F28F19A18BBC2DE4A463B2876D8251080E33BB4EB87D9B38.json": true,
+    "list-v1-E6315C2FCD2608AD1968A0A1CDF7F1F5BB388E805309FB64B6700D2CD412DAB0.json": true,
+    "list-v1-E7796B0320722DC10EB8659501CEA55E5A26D9B6DBC3A87EAAEB2ECDA6F2253D.json": true,
+    "list-v1-EB0C0D2214FE45D0F270231E2423EF586E03B2A3FCF4FFA02DFB68D9ECA584F9.json": true,
+    "list-v1-F03294CDFB104359027AD9DE6EB785A1F562B66E556746BE46D47741A8B24E15.json": true,
+    "list-v1-F8A6E11F7B9427E674BDA744FE04A98D97D7A7F649317B1FF9DDF44378CC1E98.json": true,
+    "shaders-v1-C0A494E3E392F0C7BE5E22A10C5D40D267BE941461C224B1064B318236B1F9C8.json": true
+  },
+  "Validation": {
+    "CTestPassed": 14,
+    "CTestFailed": 0,
+    "ReleaseCMakeAndWinUIBuildPassed": true,
+    "NativePackageAuditPEFiles": 72,
+    "GUIWindowTestsRun": false,
+    "WarmFramePairsIdentical": 12,
+    "SequenceFramePairsIdentical": 6,
+    "ColdFramePairsIdentical": 2
+  }
+}

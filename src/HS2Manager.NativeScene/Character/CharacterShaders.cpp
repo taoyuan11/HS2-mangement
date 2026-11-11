@@ -90,22 +90,16 @@ namespace hs2
 
         std::map<std::string, Entry> Catalog(const fs::path &data, const std::vector<fs::path> &plugins,
                                              std::stop_token cancellation, const PreviewResources &resources,
-                                             EmbeddedResources &embedded)
+                                             EmbeddedResources &embedded, const CharacterCatalog &catalog)
         {
-            std::vector<ModFileInfo> mods;
+            // 与人物素材使用同一份已选择的 MOD 快照，避免再次读取并反序列化完整索引。
+            std::span<const ModFileInfo> mods = catalog.SelectedMods();
+            std::vector<ModFileInfo> orderedMods;
             if (resources)
             {
-                mods = resources->Index.Files;
+                orderedMods.assign(mods.rbegin(), mods.rend());
                 // Shader 清单按名称覆盖，低优先级先读，让包内清单最后生效。
-                std::reverse(mods.begin(), mods.end());
-            }
-            else
-            {
-                CardRepository repository(data);
-                auto index = repository.LoadMetadata("mods-v1");
-                if (!index)
-                    throw std::runtime_error("MOD index is required for shader manifests.");
-                mods = NativeModSelection::Select(index->get<ModIndex>().Files);
+                mods = orderedMods;
             }
             std::string stamp;
             for (auto &mod : mods)
@@ -242,24 +236,12 @@ namespace hs2
             if (edit.Kind == "shader" && !edit.Text.empty())
                 wanted.insert(edit.Text);
         if (optimization)
-            for (auto &path : assets.Paths())
-            {
-                CheckCancelled(cancellation);
-                auto reader = assets.Reader(path);
-                assets.IndexShaderNames(reader);
-                for (auto &object : reader->AssetIndex())
-                    if (object.ClassId == 48)
-                    {
-                        // 自动替换只需要名称，完整着色器参数和程序在实际使用时再解析。
-                        auto name = reader->AssetName(object.PathId);
-                        if (!name.empty())
-                            automatic.insert(std::move(name));
-                    }
-            }
+            for (auto &name : assets.ShaderNames())
+                automatic.insert(std::move(name));
         if (wanted.empty() && automatic.empty())
             return;
         EmbeddedResources embedded;
-        auto entries = Catalog(data, plugins, cancellation, resources, embedded);
+        auto entries = Catalog(data, plugins, cancellation, resources, embedded, catalog);
         auto names = wanted;
         names.insert(automatic.begin(), automatic.end());
         auto reference = [&](const std::string &bundle, const std::string &asset, const fs::path &source)

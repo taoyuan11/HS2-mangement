@@ -16,7 +16,8 @@ namespace hs2
     std::vector<BodyCatalogEntry> ResolveCharacterBody(const fs::path &game, const fs::path &data,
                                                        const CharacterDocument &document, const Parameter &uncensor,
                                                        std::stop_token cancellation = {},
-                                                       PreviewResources resources = {});
+                                                       PreviewResources resources = {},
+                                                       std::optional<std::span<const ModFileInfo>> selectedMods = {});
     HeelDefinition ReadCharacterHeels(const NativeAssetEntry *shoe, std::vector<std::string> &diagnostics);
     std::optional<ColliderSupportDefinition> ReadCharacterColliders(const fs::path &game,
                                                                     PreviewResources resources = {});

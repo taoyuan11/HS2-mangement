@@ -375,6 +375,16 @@ namespace
         };
         check(resolve());
         check(resolve());
+        // 普通预览复用已选择的 MOD 快照，即使测试资料库没有保存索引也能读取身体清单。
+        fs::create_directories(Path(plugin.Path).parent_path());
+        WriteAtomic(Path(plugin.Path), Bytes{0});
+        auto selectedMods = resources->Index.Files;
+        std::reverse(selectedMods.begin(), selectedMods.end());
+        check(ResolveCharacterBody(resources->Game, root / "body-snapshot", document, selection, {}, {}, selectedMods));
+        auto defaults = ResolveCharacterBody(resources->Game, root / "body-empty", document, selection, {}, {},
+                                             std::span<const ModFileInfo>{});
+        Check(defaults.size() == 3 && defaults[0].Guid == "Default.Body.Female",
+              "empty selected MOD snapshot was confused with an absent index");
         resources->Data = root / "body-cancelled";
         std::stop_source stop;
         stop.request_stop();

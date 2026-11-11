@@ -906,6 +906,11 @@ namespace hs2
         p.Loaded = true;
     }
 
+    const std::vector<ModFileInfo> &CharacterCatalog::SelectedMods() const
+    {
+        return impl_->Mods;
+    }
+
     const std::vector<NativeAssetEntry> &CharacterCatalog::Entries() const
     {
         return impl_->Entries;

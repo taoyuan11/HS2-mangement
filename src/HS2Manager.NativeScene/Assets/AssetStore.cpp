@@ -188,7 +188,91 @@ namespace hs2
         Cancel();
         auto key = Key(reader->Path);
         if (!shaderNames_.contains(key))
-            shaderNames_.emplace(key, reader->ShaderNames());
+        {
+            ShaderIndex index;
+            index.Aliases = reader->ShaderNames();
+            for (auto &asset : reader->AssetIndex())
+                if (asset.ClassId == 48)
+                {
+                    auto name = reader->AssetName(asset.PathId);
+                    if (!name.empty())
+                        index.Names.push_back(std::move(name));
+                }
+            shaderNames_.emplace(key, std::move(index));
+        }
+    }
+
+    std::vector<std::string> NativeGpuAssetStore::ShaderNames()
+    {
+        Cancel();
+        using Loaded = std::pair<std::shared_ptr<NativeGpuAssetReader>, double>;
+
+        struct Pending
+        {
+            std::string Key;
+            std::shared_ptr<NativeGpuAssetReader> Reader;
+            std::future<Loaded> Future;
+        };
+
+        std::vector<std::string> names;
+        const auto workers = std::clamp(std::thread::hardware_concurrency(), 1u, 4u);
+        for (size_t begin = 0; begin < paths_.size(); begin += workers)
+        {
+            Cancel();
+            std::vector<Pending> pending;
+            // 只并行构造独立读取器；名称解析、脚本回调和 LRU 提交仍在调用线程。
+            // 每批至多四个，异常或取消时 future 会等待所有读取结束。
+            for (size_t i = begin; i < std::min(paths_.size(), begin + workers); ++i)
+            {
+                Pending item;
+                item.Key = Key(paths_[i]);
+                if (!shaderNames_.contains(item.Key))
+                {
+                    if (auto found = readers_.find(item.Key); found != readers_.end())
+                        item.Reader = found->second;
+                    else
+                        item.Future = std::async(
+                            std::launch::async,
+                            [path = paths_[i], database = database_, cache = blockCache_, cancellation = cancellation_]
+                            {
+                                auto started = std::chrono::steady_clock::now();
+                                auto reader =
+                                    std::make_shared<NativeGpuAssetReader>(path, database.get(), cache, cancellation);
+                                return Loaded{
+                                    std::move(reader),
+                                    std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count()};
+                            });
+                }
+                pending.push_back(std::move(item));
+            }
+            for (auto &item : pending)
+            {
+                Cancel();
+                if (item.Future.valid())
+                {
+                    auto [reader, seconds] = item.Future.get();
+                    item.Reader = std::move(reader);
+                    RememberReader(item.Key, item.Reader, seconds);
+                }
+                else if (item.Reader)
+                {
+                    ++readerStats_.Hits;
+                    if (readers_.contains(item.Key))
+                    {
+                        recent_.remove(item.Key);
+                        recent_.push_front(item.Key);
+                    }
+                }
+                if (!shaderNames_.contains(item.Key))
+                    IndexShaderNames(item.Reader);
+                const auto &indexed = shaderNames_.at(item.Key).Names;
+                names.insert(names.end(), indexed.begin(), indexed.end());
+                // 不让本批已处理的大包一直持有到批次末尾。
+                item.Reader.reset();
+            }
+            TrimReaders({});
+        }
+        return names;
     }
 
     std::optional<GpuAssetPointer> NativeGpuAssetStore::FindShader(const std::filesystem::path &path,
@@ -198,7 +282,7 @@ namespace hs2
         auto key = Key(path);
         if (!shaderNames_.contains(key))
             IndexShaderNames(Reader(path));
-        auto &names = shaderNames_.at(key);
+        auto &names = shaderNames_.at(key).Aliases;
         auto found = names.find(Lower(std::string(name)));
         if (found == names.end() || found->second.empty())
             return {};

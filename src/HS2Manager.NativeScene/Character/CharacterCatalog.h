@@ -27,6 +27,7 @@ namespace hs2
         void Load(Progress progress = {}, std::stop_token cancellation = {});
         const std::vector<NativeAssetEntry> &Entries() const;
         const std::vector<NativeAssetEntry> &StockEntries() const;
+        const std::vector<ModFileInfo> &SelectedMods() const;
         const std::vector<std::string> &Warnings() const;
         std::vector<NativeAssetEntry> Query(int category, std::string_view text = {}, int source = 0) const;
         std::optional<NativeAssetEntry> Selected(const CharacterDocument &document, std::string_view path) const;

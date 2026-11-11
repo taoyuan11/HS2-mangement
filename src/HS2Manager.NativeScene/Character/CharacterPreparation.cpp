@@ -249,8 +249,8 @@ namespace hs2
         applyShape(*rig, "ShapeBodyInfoFemale", bodyAnimation, bodyCategories, definition->Body.Get("shapeValueBody"));
         ApplyBoneModifiers(*rig, definition->BoneModifiers);
         read("chara/oo_base.unity3d", definition->Sex == 0 ? "p_cm_body_00" : "p_cf_body_00", {}, "body", 0);
-        for (auto &supplement :
-             ResolveCharacterBody(game_, data_, document, extensions.Uncensor, cancellation, resources_))
+        for (auto &supplement : ResolveCharacterBody(game_, data_, document, extensions.Uncensor, cancellation,
+                                                     resources_, catalog_.SelectedMods()))
         {
             auto part = read(supplement.Bundle, supplement.Asset, supplement.Archive, "supplement",
                              supplement.Kind == "Body"    ? 0

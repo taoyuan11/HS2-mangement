@@ -104,6 +104,14 @@ namespace hs2
                     result.Text = "external:" + std::to_string(file) + ":" + std::to_string(id);
                     return result;
                 }
+                // 网格、材质和贴图引用只需名称；它们不是挂在 GameObject 上的组件。
+                // 直接读取名称前缀，避免为一个引用展开整棵网格形变或贴图参数树。
+                auto type = reader.AssetClass(id);
+                if (type == 43 || type == 21 || type == 28 || type == 89 || type == 49)
+                {
+                    result.Text = reader.AssetName(id);
+                    return result;
+                }
                 auto *target = &reader.Metadata(id);
                 if (target->Has("m_GameObject"))
                 {
