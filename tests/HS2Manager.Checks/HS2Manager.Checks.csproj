@@ -5,4 +5,6 @@
   <!-- Independent WPF codec fixtures verify the production Windows Imaging decoder. -->
   <ItemGroup><FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" /></ItemGroup>
   <ItemGroup><Compile Include="../../src/HS2Manager.App/DataLocation.cs" Link="DataLocation.cs" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Export/HS2Manager.Export.csproj" /></ItemGroup>
+  <ItemGroup><Compile Remove="CharacterEditPreviewChecks.cs;ModelExportCatalogChecks.cs;ModelExportLifecycleChecks.cs;NativeModelExportChecks.cs;UnityCompatibilityAudit.cs;UnitySessionChecks.cs" /></ItemGroup>
 </Project>

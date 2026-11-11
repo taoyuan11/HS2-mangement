@@ -114,7 +114,7 @@ internal sealed class NativeModelExporter(ModelExportOptions options, string exe
             foreach (string name in new[] { "Saved", "Intermediate", "DerivedDataCache" }) DeleteOwnedDirectory(output, Path.Combine(output, name));
             string configPath = Path.Combine(output, "Config", "DefaultEngine.ini");
             if (!string.IsNullOrEmpty(cacheDirectory))
-                File.WriteAllText(configPath, File.ReadAllText(configPath).Replace(Path.GetFullPath(cacheDirectory).Replace('\\', '/'), "%GAMEDIR%DerivedDataCache", StringComparison.Ordinal));
+                File.WriteAllText(configPath, File.ReadAllText(configPath).Replace(Path.GetFullPath(cacheDirectory).Replace('\\', '/'), "%ENGINEVERSIONAGNOSTICUSERDIR%DerivedDataCache/HS2Manager", StringComparison.Ordinal));
         }
         string instructions = options.Target == ModelExportTarget.Blender
             ? "打开 character.blend。贴图和环境资源已打包；默认使用 Eevee 和场景灯光。角色、骨架与预览场景分组，可单独隐藏灯光和相机。材质节点、骨架和表情均可编辑。\n"
@@ -176,7 +176,7 @@ internal sealed class NativeModelExporter(ModelExportOptions options, string exe
             AutoLaunch=False
             [DerivedDataBackendGraph]
             Root=(Type=KeyLength, Length=120, Inner=Local)
-            Local=(Type=FileSystem, ReadOnly=false, Clean=false, Flush=false, Path="%GAMEDIR%DerivedDataCache")
+            Local=(Type=FileSystem, ReadOnly=false, Clean=false, Flush=false, Path="%ENGINEVERSIONAGNOSTICUSERDIR%DerivedDataCache/HS2Manager")
             """;
         // A local cache avoids rebuilding engine shaders for every character. It is never
         // shipped in the project, and no external cache service is launched.
@@ -185,7 +185,7 @@ internal sealed class NativeModelExporter(ModelExportOptions options, string exe
             string cache = Path.GetFullPath(cacheDirectory).Replace('\\', '/');
             if (cache.IndexOfAny(['"', '\r', '\n']) >= 0) throw new IOException("无效的原生导出缓存路径。");
             Directory.CreateDirectory(cache);
-            config = config.Replace("%GAMEDIR%DerivedDataCache", cache, StringComparison.Ordinal);
+            config = config.Replace("%ENGINEVERSIONAGNOSTICUSERDIR%DerivedDataCache/HS2Manager", cache, StringComparison.Ordinal);
         }
         File.WriteAllText(Path.Combine(directory, "Config", "DefaultEngine.ini"), config);
     }

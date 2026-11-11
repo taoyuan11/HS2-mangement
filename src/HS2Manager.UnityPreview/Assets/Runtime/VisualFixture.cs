@@ -12,6 +12,16 @@ namespace HS2Manager.UnityPreview
     public static class VisualFixture
     {
         public const int Width=1280,Height=720,WarmFrames=48;
+        public static int GraphicsWarmFrame
+        {
+            get
+            {
+                int frame;string requested=Environment.GetEnvironmentVariable("HS2_CAPTURE_WARM_FRAME");
+                if(string.IsNullOrEmpty(requested))return WarmFrames-3;
+                if(!int.TryParse(requested,out frame)||frame<0||frame>=WarmFrames)throw new ArgumentOutOfRangeException("HS2_CAPTURE_WARM_FRAME");
+                return frame;
+            }
+        }
         // Optional native GPU diagnostics. The debugger must already have been
         // injected by the test launcher; normal previews never load it.
         public static IDisposable GraphicsCapture(string view)

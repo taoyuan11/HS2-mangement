@@ -13,13 +13,13 @@ public sealed record CharacterAsset(int Category, int Id, string Name, string Gu
 /// <summary>Shared source lists and lazy thumbnails; no game or plugin code is executed.</summary>
 public sealed class CharacterAssetCatalog
 {
-    private readonly string game, data, cache;
+    private readonly string game, data, cache, cacheNamespace;
     private readonly SemaphoreSlim gate = new(1, 1);
     private CharacterAsset[]? assets;
     private readonly List<string> warnings = [];
     public IReadOnlyList<string> Warnings => warnings;
-    public CharacterAssetCatalog(string gamePath, string dataDirectory)
-    { game = gamePath; data = dataDirectory; cache = Path.Combine(data, "UnityPreview", "definitions-v1"); }
+    public CharacterAssetCatalog(string gamePath, string dataDirectory, string cacheNamespace = NativeCharacterService.CacheNamespace)
+    { game = gamePath; data = dataDirectory; this.cacheNamespace = cacheNamespace; cache = Path.Combine(data, cacheNamespace, "definitions-v1"); }
     public async Task<IReadOnlyList<CharacterAsset>> LoadAsync(IProgress<string>? progress, CancellationToken cancellation)
     {
         await gate.WaitAsync(cancellation).ConfigureAwait(false);
@@ -32,7 +32,7 @@ public sealed class CharacterAssetCatalog
                 var result = new List<CharacterAsset>();
                 foreach (var entry in NativePreviewService.LoadIndex(Path.Combine(game, "abdata"), cache, progress, warnings, cancellation))
                     result.Add(new(entry.Category, entry.Id, entry.Get("Name"), "", "原版", entry));
-                var mods = new NativeModResolver(game, data, cache, progress, cancellation);
+                var mods = new NativeModResolver(game, data, cache, progress, cancellation, cacheNamespace);
                 var installed = mods.InstalledMods().ToArray();
                 for (int i = 0; i < installed.Length; i++)
                 {
@@ -94,8 +94,8 @@ public sealed class CharacterAssetCatalog
                 if (!path.EndsWith(".id", StringComparison.Ordinal) || !path.StartsWith("hair.", StringComparison.Ordinal) && !path.StartsWith("accessory.", StringComparison.Ordinal)) return next;
                 var entry = asset.Entry; string name = document.Sex == 0 && entry.MaleAsset is not ("" or "0") ? entry.MaleAsset : entry.Asset;
                 if (entry.Bundle is "" or "0" || name is "" or "0" or "p_dummy") return next;
-                var mods = new NativeModResolver(game, data, cache, null, cancellation);
-                using var resources = new UnityPreparationResources(new PreviewMetadataCache(game, data), cancellation);
+                var mods = new NativeModResolver(game, data, cache, null, cancellation, cacheNamespace);
+                using var resources = new UnityPreparationResources(new PreviewMetadataCache(game, data, cacheNamespace: cacheNamespace), cancellation);
                 var prefab = resources.Prefab(mods.AssetBundle(entry.Bundle, name, entry.Archive).Path, name);
                 return CharacterEditRules.InitializeAsset(next, path, prefab.Components);
             }, cancellation).ConfigureAwait(false);
@@ -109,7 +109,7 @@ public sealed class CharacterAssetCatalog
         {
             await Task.Run(() =>
             {
-                var mods = new NativeModResolver(game, data, cache, null, cancellation);
+                var mods = new NativeModResolver(game, data, cache, null, cancellation, cacheNamespace);
                 string bundle = asset.Entry.Bundle;
                 if (bundle is not ("" or "0")) _ = mods.Bundle(bundle, asset.Entry.Archive);
                 foreach (string key in new[] { "MainTexAB", "TexAB" })
@@ -125,7 +125,7 @@ public sealed class CharacterAssetCatalog
         await gate.WaitAsync(cancellation).ConfigureAwait(false);
         try
         {
-            var mods = new NativeModResolver(game, data, cache, null, cancellation);
+            var mods = new NativeModResolver(game, data, cache, null, cancellation, cacheNamespace);
             string stamp = asset.Entry.Archive.Length == 0 ? bundle : PreviewMetadataCache.Stamp(asset.Entry.Archive);
             string folder = Path.Combine(data, "Editor", "Thumbnails"); Directory.CreateDirectory(folder);
             string target = Path.Combine(folder, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(asset.Key + "|" + stamp + "|" + bundle + "|" + name))) + ".png");

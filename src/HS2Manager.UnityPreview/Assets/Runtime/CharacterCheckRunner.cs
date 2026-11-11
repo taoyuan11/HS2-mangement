@@ -197,10 +197,16 @@ namespace HS2Manager.UnityPreview
                 VisualFixture.Set(environmentCamera,view);
                 if(fixture.TemporalPhaseVersion>=1)environment.ResetHistory();
                 if(fixture.TemporalPhaseVersion>=2)VisualFixture.ResetDithering(environmentCamera);
+                string temporalTrace=Environment.GetEnvironmentVariable("HS2_TAA_PIXEL_TRACE");
+                int temporalFrame=0;
+                if(temporal!=null&&view.Name=="side"&&!string.IsNullOrEmpty(temporalTrace))
+                    temporal.DiagnosticTrace=(source,sharp,priorHistory,currentHistory)=>TemporalPixelDiagnostics.Write(temporalTrace,temporalFrame++,source,sharp,priorHistory,currentHistory);
                 for(int i=0;i<VisualFixture.WarmFrames;i++)
-                    using(i==VisualFixture.WarmFrames-3?VisualFixture.GraphicsCapture(view.Name):null)
+                    using(i==VisualFixture.GraphicsWarmFrame?VisualFixture.GraphicsCapture(view.Name):null)
                     {character.UpdateMotion(1f/30,0);character.PoseFace(1);yield return new WaitForEndOfFrame();}
+                if(temporal!=null)temporal.DiagnosticTrace=null;
                 VisualFixture.Pixels(target,Path.Combine(output,view.Name+".png"));
+                if(!string.IsNullOrEmpty(temporalTrace))TemporalPixelDiagnostics.WriteBounds(temporalTrace,view.Name,character.Root);
                 CharacterDiagnostics.WritePose(character.Root,Path.Combine(output,view.Name+"-pose.json"),0);
                 character.WritePhysicsDiagnostics(Path.Combine(output,view.Name+"-dynamics.json"));
                 if(view.Name=="face")VisualFixture.FaceBounds(environmentCamera,character.Root,Path.Combine(output,"face-region.json"));
@@ -230,13 +236,26 @@ namespace HS2Manager.UnityPreview
             var blinkStates=new System.Collections.Generic.List<string>();
             for(int frame=1;frame<=360;frame++)
             {
+                string dynamicTrace=Environment.GetEnvironmentVariable("HS2_TAA_PIXEL_TRACE");
+                if(temporal!=null&&Environment.GetEnvironmentVariable("HS2_TAA_TRACE_SCOPE")=="dynamic"&&!string.IsNullOrEmpty(dynamicTrace)&&frame>=270&&frame<=300)
+                {
+                    int diagnosticFrame=frame;
+                    temporal.DiagnosticTrace=(source,sharp,priorHistory,currentHistory)=>
+                    {TemporalPixelDiagnostics.Write(dynamicTrace+".dynamic.csv",diagnosticFrame,source,sharp,priorHistory,currentHistory);TemporalPixelDiagnostics.WriteCamera(dynamicTrace+".dynamic.camera.csv",diagnosticFrame,environmentCamera);if(diagnosticFrame==300)TemporalPixelDiagnostics.WriteRoots(dynamicTrace+".dynamic.roots.csv",character.Root);};
+                }
+                else if(temporal!=null)temporal.DiagnosticTrace=null;
+                using(VisualFixture.GraphicsCapture("dynamic-"+frame.ToString("D3")))
+                {
                 VisualFixture.Set(environmentCamera,fixture.Views[frame<=180?0:3]);
                 shaderClock.Set(frame/30f,1f/30);
                 character.UpdateMotion(1f/30,frame/30f);
                 blinkStates.Add(frame+" "+character.BlinkDiagnostic);
                 yield return new WaitForEndOfFrame();
                 if(frame%15==0){VisualFixture.Pixels(target,Path.Combine(dynamicDirectory,"frame-"+frame.ToString("D3")+".png"));CharacterDiagnostics.WritePose(character.Root,Path.Combine(dynamicDirectory,"pose-"+frame.ToString("D3")+".json"),frame/30f);}
+                if(frame==300&&Environment.GetEnvironmentVariable("HS2_PHYSICS_TRACE")=="1")character.WritePhysicsDiagnostics(Path.Combine(dynamicDirectory,"dynamics-300.json"));
+                }
             }
+            if(temporal!=null)temporal.DiagnosticTrace=null;
             File.WriteAllText(Path.Combine(dynamicDirectory,"complete.txt"),"360 fixed 1/30 steps; seed 1979; front then face.");
             File.WriteAllLines(Path.Combine(dynamicDirectory,"blink.txt"),blinkStates);
             var previous=RenderTexture.active;var image=new Texture2D(1280,720,TextureFormat.RGBA32,false);

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([Parameter(Mandatory = $true)][string]$Executable)
 $ErrorActionPreference = 'Stop'
 $exe = (Resolve-Path -LiteralPath $Executable).Path
@@ -20,6 +20,8 @@ try {
     } while ((!$owned.MainWindowHandle -or $owned.MainWindowTitle -ne 'HS2 Manager') -and [DateTime]::UtcNow -lt $deadline)
     if (!$owned.MainWindowHandle -or $owned.MainWindowTitle -ne 'HS2 Manager') { throw 'WinUI main window did not appear.' }
     if (!(Test-Path -LiteralPath (Join-Path $output 'library.db'))) { throw 'Startup did not create the isolated library.' }
+    $engineModules=@($owned.Modules | Where-Object {$_.ModuleName -match '^(Unity|mono-2\.0)'})
+    if($engineModules.Count){throw ('Published app loaded an engine runtime: '+($engineModules.ModuleName -join ', '))}
     Start-Sleep -Milliseconds 750
     if (!$owned.CloseMainWindow()) { throw 'Native close request failed.' }
     if (!$owned.WaitForExit(30000)) { throw 'WinUI process did not exit after closing.' }

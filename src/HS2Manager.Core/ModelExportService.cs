@@ -21,9 +21,10 @@ public sealed class ModelExportReport
 
 public sealed class ModelExportService
 {
+    private readonly Func<IModelExportBackend> backendFactory;
+    public ModelExportService(Func<IModelExportBackend> backendFactory)=>this.backendFactory=backendFactory??throw new ArgumentNullException(nameof(backendFactory));
     public async Task<ModelExportReport> ExportAsync(IEnumerable<ModelExportSource> sources, string game, string data,
-        string output, ModelExportOptions options, IProgress<WorkProgress>? progress, CancellationToken cancellation,
-        string? player = null)
+        string output, ModelExportOptions options, IProgress<WorkProgress>? progress, CancellationToken cancellation)
     {
         if (options.Clothing is < 0 or > 2) throw new ArgumentOutOfRangeException(nameof(options));
         if (!Enum.IsDefined(options.Target) || options.ToolTimeoutSeconds is < 30 or > 7200) throw new ArgumentOutOfRangeException(nameof(options));
@@ -38,8 +39,7 @@ public sealed class ModelExportService
         var items = sources.DistinctBy(s => Path.GetFullPath(s.Card.Path), StringComparer.OrdinalIgnoreCase).ToArray();
         if (items.Length == 0) throw new ArgumentException("请先选择人物卡。");
         var report = new ModelExportReport { Requested = items.Length };
-        var characters = new UnityCharacterService();
-        UnityPreviewSession? session = null;
+        await using var backend=backendFactory.Invoke();
         string workspace = Path.Combine(data, "ModelExport", "sessions", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workspace);
         try
@@ -65,19 +65,10 @@ public sealed class ModelExportService
                     IProgress<string> stageProgress = new Progress<string>(text => progress?.Report(new(itemNumber, items.Length, source.Card.FileName + " · " + text)));
                     var visibility = new CharacterPreviewVisibility { Clothing = options.Clothing, Accessories = options.Accessories };
                     var snapshot = source.Snapshot ?? new CharacterEditSnapshot(CharacterDocument.Open(card.Path, cancellation), 0);
-                    var definition = await characters.PrepareAsync(game, data, card, snapshot, stageProgress, cancellation, index + 1, visibility);
-                    string resources = Path.Combine(workspace, "resources");
-                    await Task.Run(() => ModelExportResources.Prepare(definition, resources, cancellation), cancellation);
+                    var definition = await backend.PrepareAsync(game, data, card, snapshot, stageProgress, cancellation, index + 1, visibility);
                     Directory.CreateDirectory(staging);
                     Directory.CreateDirectory(intermediate);
-                    string definitionPath = Path.Combine(workspace, "definition.json"), requestPath = Path.Combine(workspace, "request.json");
-                    await File.WriteAllTextAsync(definitionPath, JsonSerializer.Serialize(definition, UnityCharacterService.JsonOptions), cancellation);
-                    await File.WriteAllTextAsync(requestPath, JsonSerializer.Serialize(new ModelExportRequest { DefinitionPath = definitionPath, OutputDirectory = intermediate, EditRevision = snapshot.Revision, IncludeScene = native != null, View = view }, UnityCharacterService.JsonOptions), cancellation);
-                    session = new();
-                    session.Progress += message => stageProgress.Report(message.Text);
-                    await session.StartAsync(player ?? UnityPreviewSession.DefaultPlayer, data, cancellation);
-                    await session.ExportModelAsync(requestPath, cancellation);
-                    session.Dispose(); session = null;
+                    await backend.ExportAsync(definition,workspace,intermediate,snapshot.Revision,native!=null,view,stageProgress,cancellation);
                     var result = JsonSerializer.Deserialize<ModelExportResult>(await File.ReadAllTextAsync(Path.Combine(intermediate, "model-result.json"), cancellation), UnityCharacterService.JsonOptions)
                         ?? throw new IOException("模型导出结果为空。");
                     if (result.Meshes < 1 || result.Bones < 1 || result.Vertices < 1 || new FileInfo(Path.Combine(intermediate, "character.fbx")).Length < 100) throw new IOException("模型结构校验失败。");
@@ -111,7 +102,6 @@ public sealed class ModelExportService
                 { report.Items.Add(new(source.Card.Path, "", ModelExportStatus.Failed, error.Message)); }
                 finally
                 {
-                    session?.Dispose(); session = null;
                     if (Directory.Exists(staging)) Directory.Delete(staging, true);
                     if (native != null) NativeModelExporter.DeleteOwnedDirectory(workspace, intermediate);
                     string resources = Path.Combine(workspace, "resources");
@@ -122,7 +112,6 @@ public sealed class ModelExportService
         }
         finally
         {
-            session?.Dispose(); characters.ReleaseEditSources();
             if (Directory.Exists(workspace)) Directory.Delete(workspace, true);
         }
         report.ReportPath = Path.Combine(output, "模型导出报告-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6] + ".txt");

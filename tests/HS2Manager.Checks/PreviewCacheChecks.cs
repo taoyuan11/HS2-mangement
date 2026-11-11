@@ -18,6 +18,11 @@ internal static class PreviewCacheChecks
         PreviewMetadataCache.ClearMemory();
         Check(Read()["bones"][0] == 1 && builds == 1, "Persistent metadata survives a fresh memory cache");
         string entry = Directory.GetFiles(Path.Combine(root, "Data/UnityPreview/metadata-v1"), "*.cache").Single();
+        byte[] legacyEntry=File.ReadAllBytes(entry);
+        var nativeCache=new PreviewMetadataCache(root,Path.Combine(root,"Data"),cacheNamespace:NativeCharacterService.CacheNamespace);
+        var nativeValue=nativeCache.Get("test",PreviewMetadataCache.Stamp(source),()=>new Dictionary<string,int[]>{{"bones",[4,5,6]}},default);
+        Check(nativeValue["bones"][0]==4&&Read()["bones"][0]==1&&File.ReadAllBytes(entry).SequenceEqual(legacyEntry),
+            "Native metadata uses its new namespace and preserves the legacy cache without reusing it");
         File.WriteAllBytes(entry, new byte[128]); PreviewMetadataCache.ClearMemory();
         Check(Read()["bones"][0] == 1 && builds == 2, "Corrupt metadata rebuilds from source");
         File.AppendAllText(source, "changed"); Read();

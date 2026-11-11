@@ -21,7 +21,7 @@
    <Grid Grid.Column="1" RowSpacing="10"><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Border CornerRadius="10" Background="#292C30" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1">
      <Grid x:Name="EditorViewport" Background="Transparent" SizeChanged="Viewport_SizeChanged" PointerPressed="Viewport_Pressed" PointerMoved="Viewport_Moved" PointerReleased="Viewport_Released" PointerCanceled="Viewport_Released" PointerCaptureLost="Viewport_Released" PointerWheelChanged="Viewport_Wheel" DoubleTapped="Viewport_DoubleTapped">
-      <local:UnityPreviewViewport x:Name="EditorNativeViewport" Session="{Binding UnitySession}" IsHitTestVisible="False"/>
+      <local:NativePreviewViewport x:Name="EditorCompositionViewport" Session="{Binding NativeSession}" IsHitTestVisible="False"/>
       <Border Background="#B8292C30" VerticalAlignment="Bottom" Padding="12" Visibility="{Binding PreviewBusy, Converter={StaticResource BoolVisible}}"><StackPanel Spacing="6"><ProgressBar IsIndeterminate="True" Height="3"/><TextBlock Text="{Binding PreviewStatus}" Foreground="White" FontSize="12" TextWrapping="Wrap"/></StackPanel></Border>
      </Grid>
     </Border>

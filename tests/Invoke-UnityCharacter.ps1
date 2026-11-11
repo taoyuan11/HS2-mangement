@@ -7,7 +7,8 @@ param(
     [string]$PrimeDefinition='',
     [ValidateRange(1,900)][int]$TimeoutSeconds=180,
     [switch]$ProbeAA,
-    [switch]$CheckEnvironmentControls
+    [switch]$CheckEnvironmentControls,
+    [switch]$ValidateExisting
 )
 $ErrorActionPreference='Stop'
 $workspace=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -17,21 +18,31 @@ if (!$Definition) {
     $Definition = Join-Path $testRoot 'artifacts\checks\unity-character.json'
 }
 $player=(Resolve-Path -LiteralPath $PlayerDirectory).Path
-$definitionPath=(Resolve-Path -LiteralPath $Definition).Path
+$definitionPath=(Resolve-Path -LiteralPath $Definition).ProviderPath
 if(!$OutputPath){$OutputPath=Join-Path $player 'character-check'}
 $output=[IO.Path]::GetFullPath($OutputPath)
-if(Test-Path -LiteralPath $output){throw 'Use a fresh output directory for each validation.'}
+if((Test-Path -LiteralPath $output) -and !$ValidateExisting){throw 'Use a fresh output directory for each validation.'}
 if(!('HS2Manager.BuildTools.OwnedToolProcess' -as [type])){Add-Type -Path (Join-Path $workspace 'scripts\OwnedToolProcess.cs')}
 $arguments=@('-force-d3d11','-screen-fullscreen','0','--character',$definitionPath,'--output',$output,'-logFile',($output+'.log'))
-if($Fixture){$arguments+=@('--fixture',(Resolve-Path -LiteralPath $Fixture).Path)}
-if($PrimeDefinition){$arguments+=@('--prime-character',(Resolve-Path -LiteralPath $PrimeDefinition).Path)}
+if($Fixture){
+    if(!(Test-Path -LiteralPath $Fixture -PathType Leaf)){throw 'Fixture must name the frozen fixture.json file.'}
+    $arguments+=@('--fixture',(Resolve-Path -LiteralPath $Fixture).ProviderPath)
+}
+if($PrimeDefinition){$arguments+=@('--prime-character',(Resolve-Path -LiteralPath $PrimeDefinition).ProviderPath)}
 if($ProbeAA){$arguments+='--probe-aa'}
 if($CheckEnvironmentControls){$arguments+='--check-environment-controls'}
 $launch=Join-Path $player 'HS2Manager.UnityPreview.exe'
 if($env:HS2_RENDERDOC){$arguments=@('capture','-w','-d',$player,'-c',(Join-Path $output 'graphics'),$launch)+$arguments;$launch=(Resolve-Path -LiteralPath $env:HS2_RENDERDOC).Path}
-$exitCode=[HS2Manager.BuildTools.OwnedToolProcess]::Run($launch,$arguments,$player,$TimeoutSeconds,$null)
+if(!$ValidateExisting){$exitCode=[HS2Manager.BuildTools.OwnedToolProcess]::Run($launch,$arguments,$player,$TimeoutSeconds,$null)}else{$exitCode=0}
 if($exitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $output 'state.json'))){throw "Independent character validation failed ($exitCode): $output"}
-$state=Get-Content -LiteralPath (Join-Path $output 'state.json') -Raw|ConvertFrom-Json
+if(Test-Path -LiteralPath (Join-Path $output 'error.txt')){throw ('Independent character validation reported an error: '+[IO.File]::ReadAllText((Join-Path $output 'error.txt')))}
+if($Fixture){
+    $expected=@('front.png','side.png','back.png','face.png','fixture.json','dynamic/complete.txt')
+    $expected+=@(15..360|Where-Object {$_%15 -eq 0}|ForEach-Object {'dynamic/frame-'+$_.ToString('D3')+'.png'})
+    foreach($name in $expected){if(!(Test-Path -LiteralPath (Join-Path $output $name) -PathType Leaf)){throw ('Frozen reference capture is incomplete: '+$name)}}
+}
+if(!('HS2Manager.BuildTools.DiagnosticJson' -as [type])){Add-Type -Path (Join-Path $workspace 'scripts\DiagnosticJson.cs')}
+$state=[HS2Manager.BuildTools.DiagnosticJson]::QuoteNonFinite([IO.File]::ReadAllText((Join-Path $output 'state.json')))|ConvertFrom-Json
 if($state.Renderers.Count -eq 0){throw 'Empty independent renderer snapshot.'}
 if($state.Assemblies|Where-Object {$_ -match '^(Assembly-CSharp|IL|BepInEx|HS2_)'}){throw 'Game/plugin CLR assembly was loaded in the independent renderer.'}
 $definitionData=Get-Content -LiteralPath $definitionPath -Raw|ConvertFrom-Json

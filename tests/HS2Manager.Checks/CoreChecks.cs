@@ -22,8 +22,10 @@ internal static class CoreChecks
         try
         {
             Check(typeof(CardParser).Assembly.GetType("HS2Manager.Core.PreviewSessionService") == null
-                && typeof(CardParser).Assembly.GetType("HS2Manager.Protocol.BridgeWire") == null,
-                "Production core excludes Studio launcher and legacy bridge protocol");
+                && typeof(CardParser).Assembly.GetType("HS2Manager.Protocol.BridgeWire") == null
+                && typeof(CardParser).Assembly.GetType("HS2Manager.Core.UnityPreviewSession") == null
+                && typeof(CardParser).Assembly.GetType("HS2Manager.Core.UnityModelExportBackend") == null,
+                "Production core excludes engine hosts, Studio launcher and legacy transport");
             var parser = new CardParser();
             var source = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara", "male"), "*.png", SearchOption.AllDirectories).First();
             var originals = Directory.EnumerateFiles(Path.Combine(game, "UserData", "chara"), "*.png", SearchOption.AllDirectories).Select(p => new FileInfo(p)).ToList();

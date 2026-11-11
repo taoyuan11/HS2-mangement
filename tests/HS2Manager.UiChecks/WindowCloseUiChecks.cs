@@ -30,7 +30,7 @@ internal static class WindowCloseUiChecks
             var handle = WinRT.Interop.WindowNative.GetWindowHandle(window);
             SendMessage(handle, 0x0112, 0xF060, 0);
             if (closed != 0) throw new Exception(scenario + ": closed before cleanup returned");
-            if (model.IsPreview || model.UnitySession != null || model.PreviewBusy) throw new Exception(scenario + ": retained preview state");
+            if (model.IsPreview || model.NativeSession != null || model.PreviewBusy) throw new Exception(scenario + ": retained preview state");
             if (pendingWork)
             {
                 if (!workCancellation.IsCancellationRequested) throw new Exception(scenario + ": work not cancelled");

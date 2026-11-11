@@ -10,16 +10,21 @@ namespace HS2Manager.UnityPreview
     public static class CharacterDiagnostics
     {
         [Serializable] public sealed class Snapshot { public RendererState[] Renderers; public BoneState[] Bones; public string[] Assemblies; }
-        [Serializable] public sealed class BoneState { public string Name,Path; public int Id;public string Parent; public Vector3 Position; public Quaternion Rotation; public Vector3 Scale; public Vector3 World; }
+        [Serializable] public sealed class BoneState { public string Name,Path; public int Id;public string Parent; public Vector3 Position; public Quaternion Rotation; public Vector3 Scale; public Vector3 World; public float[] Matrix; }
+        private static float[] TraceMatrix(Transform transform)
+        {
+            if(Environment.GetEnvironmentVariable("HS2_MATRIX_TRACE")!="1")return null;
+            var m=transform.localToWorldMatrix;var values=new float[16];for(int i=0;i<16;i++)values[i]=m[i];return values;
+        }
         [Serializable] public sealed class PoseSnapshot {public float Time;public BoneState[] Bones;public RendererState[] Faces;}
         public static void WritePose(GameObject root,string path,float time)
         {
-            var value=new PoseSnapshot{Time=time,Bones=root.GetComponentsInChildren<Transform>(true).Select(t=>new BoneState{Id=t.GetInstanceID(),Name=t.name,Path=TransformPath(t,root.transform),Parent=t.parent==null?"":t.parent.name,Position=t.localPosition,Rotation=t.localRotation,Scale=t.localScale,World=t.position}).ToArray(),
+            var value=new PoseSnapshot{Time=time,Bones=root.GetComponentsInChildren<Transform>(true).Select(t=>new BoneState{Id=t.GetInstanceID(),Name=t.name,Path=TransformPath(t,root.transform),Parent=t.parent==null?"":t.parent.name,Position=t.localPosition,Rotation=t.localRotation,Scale=t.localScale,World=t.position,Matrix=TraceMatrix(t)}).ToArray(),
                 Faces=root.GetComponentsInChildren<SkinnedMeshRenderer>().Where(r=>r.name=="o_head"||r.name.Contains("eyebase")||r.name.Contains("eyelash")).Select(r=>new RendererState{Name=r.name,Active=r.enabled,BlendWeights=Enumerable.Range(0,r.sharedMesh.blendShapeCount).Select(i=>r.GetBlendShapeWeight(i)).ToArray()}).ToArray()};
             VisualFixture.Save(path,value);
         }
-        [Serializable] public sealed class RendererState { public string Name,Path,RootBone; public int[] BoneIds; public Vector3 World,Scale; public bool Active,SkinnedMotion,UpdateOffscreen,Cloth,ReceiveShadows,Occlusion;public int MotionMode,SortingLayer,SortingOrder,SkinQuality,Layer,Casting,LightProbe,ReflectionProbe;public Bounds Bounds; public MaterialState[] Materials; public string[] Bones,BonePaths; public float[] BlendWeights; }
-        [Serializable] public sealed class MaterialState { public string Name; public string Shader; public bool MotionPass,Instancing,DoubleSidedGI;public string[] Keywords,Passes,Tags; public int Queue; public Property[] Properties; public TextureState[] Textures; }
+        [Serializable] public sealed class RendererState { public string Name,Path,RootBone; public int Id;public uint[] SubmeshIndices;public int[] BoneIds; public Vector3 World,Scale; public bool Active,Visible,SkinnedMotion,UpdateOffscreen,Cloth,ReceiveShadows,Occlusion;public int MotionMode,SortingLayer,SortingOrder,SkinQuality,Layer,Casting,LightProbe,ReflectionProbe;public Bounds Bounds,LocalBounds; public MaterialState[] Materials; public string[] Bones,BonePaths; public float[] BlendWeights; }
+        [Serializable] public sealed class MaterialState { public string Name; public int Id;public string Shader; public bool MotionPass,Instancing,DoubleSidedGI;public string[] Keywords,Passes,Tags; public int Queue; public Property[] Properties; public TextureState[] Textures; }
         [Serializable] public sealed class Property { public string Name; public Color Color; public float Number; }
         [Serializable] public sealed class TextureState { public string Property; public string Name; public int Width; public int Height; }
         [Serializable] public sealed class ExtraProperties {public string[] Float=new string[0],Color=new string[0],Texture=new string[0];}
@@ -65,8 +70,8 @@ namespace HS2Manager.UnityPreview
                 Bones = root.GetComponentsInChildren<Transform>(true).Select(t => new BoneState { Id=t.GetInstanceID(),Name=t.name,Path=TransformPath(t,root.transform),Parent=t.parent == null ? "" : t.parent.name,Position=t.localPosition,Rotation=t.localRotation,Scale=t.localScale,World=t.position }).ToArray(),
                 Renderers = root.GetComponentsInChildren<Renderer>(true).Select(r => new RendererState
                 {
-                    Name=r.name,Path=TransformPath(r.transform,root.transform),World=r.transform.position,Scale=r.transform.lossyScale,Active=r.enabled && r.gameObject.activeInHierarchy,
-                    SortingLayer=r.sortingLayerID,SortingOrder=r.sortingOrder,Bounds=SafeBounds(r),
+                    Name=r.name,Id=r.GetInstanceID(),SubmeshIndices=r is SkinnedMeshRenderer&&((SkinnedMeshRenderer)r).sharedMesh!=null?Enumerable.Range(0,((SkinnedMeshRenderer)r).sharedMesh.subMeshCount).Select(i=>((SkinnedMeshRenderer)r).sharedMesh.GetIndexCount(i)).ToArray():new uint[0],Path=TransformPath(r.transform,root.transform),World=r.transform.position,Scale=r.transform.lossyScale,Active=r.enabled && r.gameObject.activeInHierarchy,Visible=r.isVisible,
+                    SortingLayer=r.sortingLayerID,SortingOrder=r.sortingOrder,Bounds=SafeBounds(r),LocalBounds=r is SkinnedMeshRenderer?((SkinnedMeshRenderer)r).localBounds:new Bounds(),
                     Layer=r.gameObject.layer,Casting=(int)r.shadowCastingMode,ReceiveShadows=r.receiveShadows,LightProbe=(int)r.lightProbeUsage,ReflectionProbe=(int)r.reflectionProbeUsage,Occlusion=r.allowOcclusionWhenDynamic,
                     MotionMode=(int)r.motionVectorGenerationMode,SkinnedMotion=r is SkinnedMeshRenderer&&((SkinnedMeshRenderer)r).skinnedMotionVectors,UpdateOffscreen=r is SkinnedMeshRenderer&&((SkinnedMeshRenderer)r).updateWhenOffscreen,
                     RootBone=r is SkinnedMeshRenderer&&((SkinnedMeshRenderer)r).rootBone!=null?TransformPath(((SkinnedMeshRenderer)r).rootBone,root.transform):"",SkinQuality=r is SkinnedMeshRenderer?(int)((SkinnedMeshRenderer)r).quality:0,Cloth=r.GetComponent("Cloth")!=null,
@@ -76,7 +81,7 @@ namespace HS2Manager.UnityPreview
                     BlendWeights = r is SkinnedMeshRenderer && ((SkinnedMeshRenderer)r).sharedMesh != null ? Enumerable.Range(0,((SkinnedMeshRenderer)r).sharedMesh.blendShapeCount).Select(i => ((SkinnedMeshRenderer)r).GetBlendShapeWeight(i)).ToArray() : new float[0],
                     Materials = r.sharedMaterials.Select(m => m == null ? new MaterialState { Name="MISSING" } : new MaterialState
                     {
-                        Name=m.name,Shader=m.shader.name,Keywords=m.shaderKeywords,Queue=m.renderQueue,MotionPass=m.GetShaderPassEnabled("MOTIONVECTORS"),
+                        Name=m.name,Id=m.GetInstanceID(),Shader=m.shader.name,Keywords=m.shaderKeywords,Queue=m.renderQueue,MotionPass=m.GetShaderPassEnabled("MOTIONVECTORS"),
                         Instancing=m.enableInstancing,DoubleSidedGI=m.doubleSidedGI,
                         Passes=Enumerable.Range(0,m.passCount).Select(i=>m.GetPassName(i)+"="+m.GetShaderPassEnabled(m.GetPassName(i))).ToArray(),
                         Tags=new[]{"RenderType","Queue","DisableBatching","IgnoreProjector","ForceNoShadowCasting","PreviewType"}.Select(n=>n+"="+m.GetTag(n,false,"")).ToArray(),

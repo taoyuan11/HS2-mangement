@@ -8,6 +8,9 @@ namespace HS2Manager.Core;
 public sealed class UnityCharacterService
 {
     public static readonly JsonSerializerOptions JsonOptions = new() { IncludeFields = true };
+    private readonly string cacheNamespace;
+    public UnityCharacterService():this("UnityPreview"){}
+    internal UnityCharacterService(string cacheNamespace){this.cacheNamespace=cacheNamespace;}
 
     private readonly SemaphoreSlim preparation = new(1);
     private readonly Dictionary<string, string> editSources = new(StringComparer.Ordinal);
@@ -34,7 +37,7 @@ public sealed class UnityCharacterService
                 using var metrics = new PreviewPerformance(data, load);
                 if (!editSources.TryGetValue(snapshot.Document.SourceHash, out string? backing))
                 {
-                    string folder = Path.Combine(data, "UnityPreview", "edit-sources", editWorkspaceId); Directory.CreateDirectory(folder);
+                    string folder = Path.Combine(data, cacheNamespace, "edit-sources", editWorkspaceId); Directory.CreateDirectory(folder);
                     backing = Path.Combine(folder, snapshot.Document.SourceHash + ".png");
                     using (var output = new FileStream(backing, FileMode.CreateNew, FileAccess.Write, FileShare.Read)) output.Write(snapshot.Document.SourceBytes.Span);
                     editSources.Add(snapshot.Document.SourceHash, backing);
@@ -75,9 +78,9 @@ public sealed class UnityCharacterService
             if (snapshot == null) appearance = CardAppearanceReader.Read(card, cancellation, originalMaterials: true);
             else { using var source = snapshot.Document.OpenSource(); appearance = CardAppearanceReader.Read(card, source, snapshot.Document, cancellation, originalMaterials: true); }
         }
-        var metadata = new PreviewMetadataCache(game, data);
+        var metadata = new PreviewMetadataCache(game, data,cacheNamespace:cacheNamespace);
         using var resources = new UnityPreparationResources(metadata, cancellation);
-        string cache = Path.Combine(data, "UnityPreview", "definitions-v1");
+        string cache = Path.Combine(data, cacheNamespace, "definitions-v1");
         Directory.CreateDirectory(cache);
         var warnings = new List<string>(appearance.Warnings);
         var unknown = card.PluginDataIds.Where(id => !appearance.HandledExtensions.Contains(id) && id is not ("com.bepis.sideloader.universalautoresolver" or "EC.Core.Sideloader.UniversalAutoResolver")).ToArray();
@@ -89,11 +92,11 @@ public sealed class UnityCharacterService
         if(snapshot!=null)
         {
             string scope=Path.GetFullPath(game)+"|"+Path.GetFullPath(data);
-            if(editingMods==null||editingModScope!=scope){editingMods=new(game,data,cache,progress,cancellation);editingModScope=scope;}
+            if(editingMods==null||editingModScope!=scope){editingMods=new(game,data,cache,progress,cancellation,cacheNamespace);editingModScope=scope;}
             else editingMods.BeginRequest(progress,cancellation);
             mods=editingMods;
         }
-        else mods=new(game,data,cache,progress,cancellation);
+        else mods=new(game,data,cache,progress,cancellation,cacheNamespace);
         var dependencies = new NativeResourceDependencies(game, mods, cancellation, metadata);
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var selections = new List<AssetSelection>();

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Rendering/HS2Manager.Rendering.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Export/HS2Manager.Export.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Fixtures/native-math-reference.json" LogicalName="native-math-reference.json" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Fixtures/native-curve-reference.json" LogicalName="native-curve-reference.json" /></ItemGroup>
+  <PropertyGroup>
+    <NativeFbxDirectory Condition="'$(NativeFbxDirectory)'==''">$(LOCALAPPDATA)\HS2Manager\NativeBuild\Fbx-2020.3.7\Release</NativeFbxDirectory>
+    <NativePhysicsDirectory Condition="'$(NativePhysicsDirectory)'==''">$(LOCALAPPDATA)\HS2Manager\NativeBuild\PhysX-3.4.2\bridge\Release</NativePhysicsDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(NativeFbxDirectory)\HS2Manager.FbxBridge.dll;$(NativeFbxDirectory)\libfbxsdk.dll" Condition="Exists('$(NativeFbxDirectory)\HS2Manager.FbxBridge.dll')" Link="native\win-x64\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(NativePhysicsDirectory)\*.dll" Condition="Exists('$(NativePhysicsDirectory)')" Link="native\win-x64\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

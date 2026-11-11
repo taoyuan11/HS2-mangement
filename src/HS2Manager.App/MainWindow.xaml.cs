@@ -89,7 +89,7 @@ public partial class MainWindow : Window
             }
             try { ViewModel.Settings.Save(ViewModel.DataDirectory); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ViewModel.Status = ex.Message; }
-            ViewModel.BeginShutdown(); await ViewModel.ClosePreviewAsync(); await NativeViewport.StopAsync(); await ViewModel.WaitForOperationAsync();
+            ViewModel.BeginShutdown(); await ViewModel.ClosePreviewAsync(); await CompositionViewport.StopAsync(); await ViewModel.WaitForOperationAsync();
         }
         finally
         {
@@ -298,7 +298,7 @@ public partial class MainWindow : Window
     private void Playback_Click(object sender, RoutedEventArgs e) => ViewModel.TogglePlayback();
     private async void Screenshot_Click(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.UnitySession == null || ViewModel.PreviewBusy) return;
+        if (!ViewModel.HasPreviewSession || ViewModel.PreviewBusy) return;
         string safeName = string.Concat(ViewModel.PreviewName.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
         var path = await FilePickers.Save(this, safeName + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png", "PNG 图片", ".png");
         if (path != null)

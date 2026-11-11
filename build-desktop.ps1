@@ -4,7 +4,8 @@ param(
     [switch]$SkipTests,
     [switch]$PreviewTest,
     [string]$PreviewCard = '',
-    [string]$UnityPlayerDirectory = ''
+    [string]$FbxSdkRoot = '',
+    [string]$PhysXSource = ''
 )
 $ErrorActionPreference = 'Stop'
 $desktop = [Environment]::GetFolderPath('DesktopDirectory')

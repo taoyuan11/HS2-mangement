@@ -25,7 +25,7 @@ public sealed partial class SettingsView : UserControl
         roots.CollectionChanged += (_, _) => UpdateRoots();
         UpdateRoots();
         DataPathText.Text = model.DataDirectory;
-        CachePathText.Text = Path.Combine(model.DataDirectory, "UnityPreview");
+        CachePathText.Text = Path.Combine(model.DataDirectory, HS2Manager.Core.NativeCharacterService.CacheNamespace);
         (model.Settings.Theme == "Dark" ? DarkTheme : model.Settings.Theme == "Light" ? LightTheme : SystemTheme).IsChecked = true;
         SettingsNavigation.SelectedIndex = 0;
     }

@@ -28,10 +28,10 @@ internal sealed class PreviewMetadataCache
     private readonly string scope;
     private readonly long diskLimit;
 
-    internal PreviewMetadataCache(string game, string data, long diskLimit = DiskLimit)
+    internal PreviewMetadataCache(string game, string data, long diskLimit = DiskLimit,string cacheNamespace="UnityPreview")
     {
         scope = Path.GetFullPath(game).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant();
-        directory = Path.Combine(Path.GetFullPath(data), "UnityPreview", "metadata-v1");
+        directory = Path.Combine(Path.GetFullPath(data), cacheNamespace, "metadata-v1");
         this.diskLimit = diskLimit;
     }
     internal static string Stamp(string path)

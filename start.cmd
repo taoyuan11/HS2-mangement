@@ -14,7 +14,7 @@ if errorlevel 1 goto missing_sdk
 set "HS2_DOTNET=dotnet"
 
 :launch
-echo Building and starting HS2 Manager (WinUI 3)...
+echo Building and starting HS2 Manager (WinUI 3, native GPU)...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Start-Source.ps1" %*
 set "HS2_EXIT_CODE=%ERRORLEVEL%"
 popd

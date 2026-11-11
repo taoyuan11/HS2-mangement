@@ -14,7 +14,7 @@
 
 在 **设置 → 模型导出** 中选择 `blender.exe` 或 `UnrealEditor-Cmd.exe`；选择 `UnrealEditor.exe` 时自动使用同目录的命令行程序。自动检测常见安装目录、注册信息和 PATH，Blender 也检测桌面或下载目录中的便携版。导出弹窗允许调整并保存路径。
 
-导出前运行软件能力检查。工具缺失、必要接口不可用或转换失败时明确报错，不将中间 FBX 当作原生结果发布。通用 FBX 无需安装目标软件。实际测试版本见[验证记录](MODEL-EXPORT-VALIDATION.md)，其他版本不默认视为兼容。
+导出前运行软件能力检查。工具缺失、必要接口不可用或转换失败时明确报错，不将中间 FBX 当作原生结果发布。通用 FBX 无需安装目标软件。实际测试版本见[迁移验收](NATIVE-MIGRATION-RESULTS.md)，其他版本不默认视为兼容。
 
 Blender 打开 `character.blend`，使用 Rendered 视图或 F12 查看。模型与预览场景分组，灯光、相机和材质可编辑；贴图及环境资源已打包，环境光探针可重新烘焙。
 
@@ -24,9 +24,9 @@ Unreal 打开项目后默认进入 `/Game/HS2Character/Preview`。角色资产�
 
 预览和编辑页冻结点击时的相机、画幅、背景与灯光调整；列表使用默认游戏环境和自动取景。所有目标沿用同一份草稿、服装和配饰配置。角色使用参考姿态及默认表情，不捕获待机动画、物理或点击瞬间的姿态。
 
-独立内核重建实际预览环境，捕获有效灯光、环境照明、反射及求值后的调色 LUT，并将环境贴图和 LUT 转为可携带资源。纯色背景与环境照明分开处理。原生材质保留皮肤散射、头发渐变、UV1 挑染、各向异性、眼睛高光、眼周乘色、泪线、睫毛和透明遮罩的可编辑实现。
+原生场景重建实际预览环境，捕获有效灯光、环境照明、反射及求值后的调色 LUT，并将环境贴图和 LUT 转为可携带资源。纯色背景与环境照明分开处理。原生材质保留皮肤散射、头发渐变、UV1 挑染、各向异性、眼睛高光、眼周乘色、泪线、睫毛和透明遮罩的可编辑实现。
 
-跨引擎 BRDF、散射、环境响应、透明排序与屏幕空间效果仍有差异。Bloom、AO、暗角以目标软件参数近似；无法迁移的折射、MOD Shader、SSR、色差等逐项记录在报告中。原生包附 Unity 的 `预览参考.png`，Blender 还输出回读渲染的 `预览.png`。旧预览或 FBX 验收不等于新原生场景的画面一致性验收。
+跨引擎 BRDF、散射、环境响应、透明排序与屏幕空间效果仍有差异。Bloom、AO、暗角以目标软件参数近似；无法迁移的折射、MOD Shader、SSR、色差等逐项记录在报告中。原生包附同一原生 GPU 渲染结果生成的 `预览参考.png`，Blender 还输出回读渲染的 `预览.png`。旧预览或 FBX 验收不等于新原生场景的画面一致性验收。
 
 ## 骨架、尺寸与表情
 
@@ -54,16 +54,16 @@ Unreal 打开项目后默认进入 `/Game/HS2Character/Preview`。角色资产�
 
 ## 构建与验证
 
-内核协议升级为 v4，应用与 Player 必须一起更新。`build-unity-preview.ps1` 获取并校验 Autodesk FBX SDK 4.2.0；运行时无需 Unity 编辑器。
+通用 FBX 由独立 Autodesk FBX SDK 2020.3.7 适配层直接从共享场景生成。Blender 与 Unreal 的转换、独立重开和事务发布继续使用同一流程；没有 Unity Player、编辑器或 UnityEngine 依赖。转换脚本嵌入 `Core/ModelExport`，不再从历史工程路径取用。
+
+本机四组男女、复杂材质及布料样本已比较完整几何、蒙皮、表情、材质清单、489 张贴图及环境资源，并验证 Blender 5.3.0 Release Candidate、Unreal 5.8.4 的转换及搬移后独立重开。这里验证的是延续旧导出语义，不代表 Blender/Unreal 画面与预览逐像素相同。逐项差异与证据见 [迁移验收](NATIVE-MIGRATION-RESULTS.md)。
 
 ```powershell
-.\build-unity-preview.ps1
-.tools\dotnet\dotnet.exe build tests\HS2Manager.UnitySourceChecks -c Release --disable-build-servers
-.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export --player '<Player.exe>' --card '<人物卡.png>' --target Blender --tool '<blender.exe>' --draft --output '<输出目录>'
-.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --native-model-export --player '<Player.exe>' --definition '<角色定义.json>' --target Unreal --tool '<UnrealEditor-Cmd.exe>' --output '<新检查目录>'
-.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export-lifecycle --player '<Player.exe>' --definition '<角色定义.json>' --output '<新检查目录>'
+.\scripts\Build-NativeFbx.ps1
+.\scripts\Build-NativePhysics.ps1
+.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export --card '<人物卡.png>' --target Blender --tool '<blender.exe>' --draft --output '<输出目录>'
+.tools\dotnet\dotnet.exe run --project tests\HS2Manager.NativeChecks -c Release -- --session-check '<角色定义.json>' --output '<新检查目录>'
+.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --native-export-lifecycle --output '<新检查目录>'
 ```
 
-`--model-export` 支持 GenericFbx、Blender、Unreal，覆盖服务及原卡校验。`--native-model-export` 从定义生成原生文件，搬移到中文路径并使内部源目录不可访问，再次独立回读；`--view` 可提供 ModelExportView JSON 以生成同机位对照。旧 Test-BlenderExport / Test-UnrealExport 脚本用于内部材质构建器回归，不代表新的原生发布流程。
-
-结构检查沿用最大 2 毫米的参考形态抽样阈值。实际版本、样本、截图及未覆盖范围记录在[验证记录](MODEL-EXPORT-VALIDATION.md)。
+测试和转换启动的工具通过 Windows Job Object 登记所有权，正常结束、失败、超时、取消和宿主退出均回收本次启动的进程及后代，不终止用户已有程序。

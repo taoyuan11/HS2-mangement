@@ -3,10 +3,13 @@
     <Project Path="src/HS2Manager.App/HS2Manager.App.csproj" />
     <Project Path="src/HS2Manager.Core/HS2Manager.Core.csproj" />
     <Project Path="src/HS2Manager.Preview.Contracts/HS2Manager.Preview.Contracts.csproj" />
+    <Project Path="src/HS2Manager.Rendering/HS2Manager.Rendering.csproj" />
+    <Project Path="src/HS2Manager.Export/HS2Manager.Export.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/HS2Manager.Checks/HS2Manager.Checks.csproj" />
     <Project Path="tests/HS2Manager.UiChecks/HS2Manager.UiChecks.csproj" />
-    <Project Path="tests/HS2Manager.LegacyRendering/HS2Manager.LegacyRendering.csproj" />
+    <Project Path="tests/HS2Manager.NativeChecks/HS2Manager.NativeChecks.csproj" />
+    <Project Path="tests/HS2Manager.PackageChecks/HS2Manager.PackageChecks.csproj" />
   </Folder>
 </Solution>

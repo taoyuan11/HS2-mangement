@@ -37,7 +37,7 @@ namespace HS2Manager.UnityPreview
         internal ModelMaterialExporter(FbxScene target,string output,List<string> diagnostics,List<string> missing)
         {
             scene=target;directory=output;warnings=diagnostics;issues=missing;
-            var shader=Shader.Find("Hidden/HS2Manager/ModelExportBake");
+            var shader=Resources.Load<Shader>("ModelExportBake")??Shader.Find("Hidden/HS2Manager/ModelExportBake");
             if(shader==null||!shader.isSupported)throw new IOException("PBR 贴图烘焙 Shader 不可用。");
             baker=new Material(shader);defaults=new Material(shader);Directory.CreateDirectory(Path.Combine(output,"Textures"));
         }

@@ -5,7 +5,7 @@ using HS2Manager.Preview.Contracts;
 
 internal static class ModelExportChecks
 {
-    internal static async Task Run(string game,string data,string player,string output,string? cardPath,string? catalog,int count,bool draft,int clothing=0,bool accessories=true,ModelExportTarget target=ModelExportTarget.GenericFbx,string tool="")
+    internal static async Task Run(string game,string data,string output,string? cardPath,string? catalog,int count,bool draft,int clothing=0,bool accessories=true,ModelExportTarget target=ModelExportTarget.GenericFbx,string tool="")
     {
         Directory.CreateDirectory(output);
         string[] cards;
@@ -25,7 +25,7 @@ internal static class ModelExportChecks
             session.SetValue("body.shapeValueBody[0]",.67f);
             sources[0]=new(sources[0].Card,session.Snapshot());
         }
-        var report=await new ModelExportService().ExportAsync(sources,game,Path.Combine(data,"model-export"),output,new(clothing,accessories,target,target==ModelExportTarget.Blender?tool:"",target==ModelExportTarget.Unreal?tool:""),new Progress<WorkProgress>(p=>Console.WriteLine(p.Message)),default,player);
+        var report=await new ModelExportService(()=>new HS2Manager.Export.NativeModelExportBackend()).ExportAsync(sources,game,Path.Combine(data,"model-export"),output,new(clothing,accessories,target,target==ModelExportTarget.Blender?tool:"",target==ModelExportTarget.Unreal?tool:""),new Progress<WorkProgress>(p=>Console.WriteLine(p.Message)),default);
         Console.WriteLine(report.Summary);
         foreach(var item in report.Items)
         {

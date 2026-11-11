@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <Hs2ProductionProject Condition="'$(MSBuildProjectName)'=='HS2Manager.App' Or '$(MSBuildProjectName)'=='HS2Manager.Core' Or '$(MSBuildProjectName)'=='HS2Manager.Rendering' Or '$(MSBuildProjectName)'=='HS2Manager.Export' Or '$(MSBuildProjectName)'=='HS2Manager.Preview.Contracts'">true</Hs2ProductionProject>
+  </PropertyGroup>
+  <Target Name="RejectEngineRuntimeReferences" AfterTargets="ResolveReferences" Condition="'$(Hs2ProductionProject)'=='true'">
+    <ItemGroup>
+      <_ForbiddenEngineReference Include="@(ReferencePath)" Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(ReferencePath.Filename)', '^(UnityEngine|UnityEditor|UnityPlayer|HS2Manager\.(UnityPreview|Legacy[^.]*|Bridge|GameReference))($|\.)'))" />
+      <_ForbiddenEngineProject Include="@(ProjectReference)" Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(ProjectReference.Filename)', '^HS2Manager\.(UnityPreview|Legacy[^.]*|Bridge|GameReference)($|\.)'))" />
+    </ItemGroup>
+    <Error Condition="'@(_ForbiddenEngineReference)'!=''" Text="Production projects cannot reference engine or historical runtime assemblies: @(_ForbiddenEngineReference)" />
+    <Error Condition="'@(_ForbiddenEngineProject)'!=''" Text="Historical preview projects must remain isolated from production: @(_ForbiddenEngineProject)" />
+  </Target>
+</Project>

@@ -6,13 +6,13 @@ namespace HS2Manager.Core;
 // Windows Imaging Component codecs, usable without WPF or a UI dispatcher.
 public static class ImageCodec
 {
-    public static async Task<NativeTexture> DecodeTextureAsync(byte[] encoded, CancellationToken cancellation)
+    public static async Task<NativeTexture> DecodeTextureAsync(byte[] encoded, CancellationToken cancellation, bool preserveResolution = false)
     {
         using var stream = new MemoryStream(encoded, false).AsRandomAccessStream();
         var decoder = await BitmapDecoder.CreateAsync(stream).AsTask(cancellation).ConfigureAwait(false);
         if (decoder.PixelWidth is < 1 or > 8192 || decoder.PixelHeight is < 1 or > 8192 || (long)decoder.PixelWidth * decoder.PixelHeight > 64 * 1024 * 1024)
             throw new InvalidDataException("内嵌贴图尺寸超限。");
-        double scale = Math.Min(1, 1024d / Math.Max(decoder.PixelWidth, decoder.PixelHeight));
+        double scale = preserveResolution ? 1 : Math.Min(1, 1024d / Math.Max(decoder.PixelWidth, decoder.PixelHeight));
         uint width = Math.Max(1, (uint)Math.Round(decoder.PixelWidth * scale)), height = Math.Max(1, (uint)Math.Round(decoder.PixelHeight * scale));
         var transform = new BitmapTransform { ScaledWidth = width, ScaledHeight = height, InterpolationMode = BitmapInterpolationMode.Fant };
         var data = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Straight, transform,

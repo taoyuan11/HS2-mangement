@@ -11,7 +11,7 @@ internal static class ModelExportSafetyChecks
         string a=Path.Combine(folder,"损坏甲.png"),b=Path.Combine(folder,"损坏乙.png");
         File.WriteAllBytes(a,[1,2,3]);File.WriteAllBytes(b,[4,5,6]);
         var sources=new[]{new ModelExportSource(new CardRecord{Path=a}),new ModelExportSource(new CardRecord{Path=b})};
-        var service=new ModelExportService();
+        var service=new ModelExportService(()=>new HS2Manager.Export.NativeModelExportBackend());
         bool refused=false;
         try{await service.ExportAsync(sources,game,data,Path.Combine(game,"out"),new(),null,default);}
         catch(ArgumentException){refused=true;}

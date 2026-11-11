@@ -11,7 +11,7 @@ internal static class DataLocationChecks
         CheckSourceContext(root);
         CheckMigration(root);
         CheckNetworkAliases(root);
-        Console.WriteLine("PASS data location: source/portable NAS fallback, mapped/UNC aliases, overrides, WAL and edit-backup migration, failure recovery and relocated Unity player");
+        Console.WriteLine("PASS data location: source/portable NAS fallback, mapped/UNC aliases, overrides, WAL and edit-backup migration, failure recovery");
         Console.WriteLine("Data location fixtures: " + root);
     }
 
@@ -132,23 +132,6 @@ internal static class DataLocationChecks
         {
             Environment.SetEnvironmentVariable("HS2MANAGER_SOURCE_OUTPUT", sourceOutput);
             Require(DataLocation.Resolve(localBuild, []) == Path.Combine(sourceOutput, "Data"), "Local build lost the source library context");
-            File.WriteAllText(Path.Combine(sourceRoot, "HS2Manager.slnx"), "fixture");
-            string player = Path.Combine(sourceRoot, "fixture-player.exe");
-            File.WriteAllText(player, "fixture");
-            string marker = Path.Combine(sourceRoot, "artifacts", "unity-preview", "current-player.txt");
-            Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
-            File.WriteAllText(marker, player);
-            Environment.SetEnvironmentVariable("HS2MANAGER_SOURCE_ROOT", sourceRoot);
-            Require(HS2Manager.Core.UnityPreviewSession.DefaultPlayer == player, "Local build lost the source Unity player");
-            string relative = Path.Combine("artifacts", "unity-preview", "relocated-player", "HS2Manager.UnityPreview.exe");
-            string relocated = Path.Combine(sourceRoot, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(relocated)!);
-            File.WriteAllText(relocated, "fixture");
-            File.WriteAllText(marker, relative);
-            Require(HS2Manager.Core.UnityPreviewSession.DefaultPlayer == relocated, "Relative Unity player marker was ignored");
-            File.WriteAllText(marker, Path.Combine(root, "previous-checkout", relative));
-            Require(HS2Manager.Core.UnityPreviewSession.DefaultPlayer == relocated, "Moved checkout lost its Unity player");
-            Require(HS2Manager.Core.UnityPreviewSession.ResolveSourcePlayer(sourceRoot, @"..\fixture-player.exe") == null, "Relative player escaped the artifact directory");
         }
         finally
         {

@@ -39,20 +39,29 @@ internal sealed class CheckApplication(string[] args) : App
         try
         {
             string Arg(string key, string fallback) => Array.IndexOf(args, key) is int i && i >= 0 ? args[i + 1] : fallback;
-            if (args.Contains("--character-editor")) await CharacterEditorUiChecks.RunAsync(root,Arg("--game",@"Z:\games\hs2\HS two DX - TSYMQ"),Arg("--player",UnityPreviewSession.DefaultPlayer));
+            if(args.Contains("--gpu-counter-probe"))
+            {
+                using var counters=new GpuPerformanceCounters();await Task.Delay(1100);
+                var result=counters.Sample(new HashSet<int>{Environment.ProcessId});
+                File.WriteAllText(Arg("--output","gpu-counters.json"),System.Text.Json.JsonSerializer.Serialize(result,new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
+                if(counters.Errors.Count>0)throw new Exception("GPU counters are unavailable: "+string.Join(", ",counters.Errors.Values));
+            }
+            else if(args.Contains("--migration-performance"))await NativeMigrationPerformanceChecks.RunAsync(args);
+            else if(args.Contains("--native-migration-ui"))await NativePreviewUiChecks.RunAsync(root,Arg("--game",@"Z:\games\hs2\HS two DX - TSYMQ"));
+            else if (args.Contains("--character-editor")) await CharacterEditorUiChecks.RunAsync(root,Arg("--game",@"Z:\games\hs2\HS two DX - TSYMQ"),args.Contains("--editor-data")?Arg("--editor-data",""):null);
             else if (args.Contains("--preview-rail")) await PreviewRailUiChecks.RunAsync(root);
             else if (args.Contains("--card-delete")) await CardDeletionUiChecks.RunAsync(root);
-            else if (args.Contains("--unity-interaction")) await UnityInteractionChecks.RunAsync(args);
             else if (args.Contains("--card-export")) await LayoutChecks.RunAsync(root);
-            else if (args.Contains("--unity-performance")) await UnityPerformanceChecks.RunAsync(args);
-            else if (args.Contains("--unity-preview") || args.Contains("--native-preview"))
-                await UnityPreviewUiChecks.RunAsync(this, root, Arg("--game", @"Z:\games\hs2\HS two DX - TSYMQ"), Arg("--player", UnityPreviewSession.DefaultPlayer), Arg("--card", "") is { Length: > 0 } card ? card : null);
             else
             {
                 await WindowCloseUiChecks.RunAsync(root);
                 if (!args.Contains("--window-close")) { await PreviewRailUiChecks.RunAsync(root); await CardDeletionUiChecks.RunAsync(root); await LayoutChecks.RunAsync(root); }
             }
             if (UiTest.BindingErrors.Count > 0) throw new Exception("XAML binding errors:\n" + string.Join("\n", UiTest.BindingErrors.Distinct()));
+            var engineModules=System.Diagnostics.Process.GetCurrentProcess().Modules.Cast<System.Diagnostics.ProcessModule>()
+                .Select(module=>module.ModuleName).Where(name=>name.StartsWith("Unity",StringComparison.OrdinalIgnoreCase)||name.StartsWith("mono-2.0",StringComparison.OrdinalIgnoreCase)).ToArray();
+            if(engineModules.Length>0)throw new Exception("Engine modules loaded by the native UI: "+string.Join(", ",engineModules));
+            Console.WriteLine("EngineModules=[]");
             Console.WriteLine("ALL WINUI 3 CHECKS PASSED");
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }

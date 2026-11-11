@@ -1,6 +1,6 @@
 # 角色编辑
 
-实现采用 `CharacterDocument`、`CharacterEditSession`、`CardEditService`，与协议 v2 独立 Unity Player 配套使用。2026-11-09 已完成本机固定基线验收：81 张原始样本无损往返、1,467 条编辑路径、保存事务、实际界面、3 张编辑副本的游戏读取，以及 84/84 张卡的静态、动态画面对照和视觉复核均通过。构建与证据位置见 [验收结果](UNITY-VALIDATION-RESULTS.md)。
+实现采用 `CharacterDocument`、`CharacterEditSession`、`CardEditService` 和类型化 `IPreviewSession`，预览与导出共用原生人物场景。保存沿用无损卡片编码和事务规则；原版/MOD 素材切换、实时修订、撤销重做、显隐、重连、保存失败保留草稿及关闭清理已完成实际界面回归。固定 84 张卡的画面结果见 [原生迁移验收](NATIVE-MIGRATION-RESULTS.md)。历史字段往返与游戏读取证据继续保留。
 
 ## 操作
 

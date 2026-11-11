@@ -62,6 +62,7 @@ namespace HS2Manager.UnityPreview
             foreach(var renderer in renderers)
             {
                 Check();progress("写入网格、蒙皮和表情 "+(++index)+"/"+renderers.Length+" · "+renderer.name);
+                VisualFixture.GraphicsCapture("export-"+index);
                 ExportMesh(renderer,index);
                 yield return null;
             }

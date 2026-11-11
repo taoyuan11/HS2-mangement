@@ -7,9 +7,9 @@ namespace HS2Manager.Core;
 
 internal sealed class NativeModResolutionException(string message) : FileNotFoundException(message);
 
-internal sealed class NativeModResolver(string game, string data, string cache, IProgress<string>? progress, CancellationToken cancellation)
+internal sealed class NativeModResolver(string game, string data, string cache, IProgress<string>? progress, CancellationToken cancellation,string cacheNamespace="UnityPreview")
 {
-    private readonly PreviewMetadataCache metadata = new(game, data);
+    private readonly PreviewMetadataCache metadata = new(game, data,cacheNamespace:cacheNamespace);
     private readonly Dictionary<string, (string Stamp, ModArchiveEntry[] Entries)> directories = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object refreshLock = new();
     private sealed class RefreshState

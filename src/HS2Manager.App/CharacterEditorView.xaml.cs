@@ -40,7 +40,7 @@ public sealed partial class CharacterEditorView : UserControl
         EditorTitle.Text="编辑角色 · "+card.Name;EditorMessage.Text="正在读取角色参数和本机素材…";
         var document=await Task.Run(()=>CharacterDocument.Open(card.Path,lifetime.Token),lifetime.Token);
         Session=new(card,document);Session.Changed+=DraftChanged;
-        limits=CharacterSliderLimits.Read(model.Settings.GamePath);catalog=new(model.Settings.GamePath,model.DataDirectory);
+        limits=CharacterSliderLimits.Read(model.Settings.GamePath);catalog=new(model.Settings.GamePath,model.DataDirectory,NativeCharacterService.CacheNamespace);
         Categories.ItemsSource=CharacterEditSchema.Categories.Select(c=>new CategoryItem(c.Id,c.Label)).ToArray();
         Categories.SelectedIndex=0;RefreshFields();UpdateState();
         QueuePreview(true);
@@ -287,7 +287,7 @@ public sealed partial class CharacterEditorView : UserControl
     public async Task StopAsync()
     {
         if(disposed)return;disposed=true;lifetime.Cancel();previewDelay?.Cancel();if(Session!=null)Session.Changed-=DraftChanged;model.PropertyChanged-=PreviewChanged;
-        await model.ClosePreviewAsync();await Task.WhenAll(tasks.ToArray());await EditorNativeViewport.StopAsync();lifetime.Dispose();
+        await model.ClosePreviewAsync();await Task.WhenAll(tasks.ToArray());await EditorCompositionViewport.StopAsync();lifetime.Dispose();
     }
     public async Task HandleKeyAsync(VirtualKey key,bool control)
     {

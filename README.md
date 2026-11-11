@@ -1,10 +1,10 @@
 # HS2 Manager
 
-中文 Windows 11 人物卡管理器。C# / WinUI 3 / .NET 10，便携部署。采用独立 Unity 2018.4.11f1 内核预览人物，读取本机游戏和 MOD 的原始资源；日常预览不启动游戏或 Studio，不执行游戏及插件 DLL。
+中文 Windows 11 人物卡管理器。C# / WinUI 3 / .NET 10，便携部署。采用进程内 Direct3D 11 原生 GPU 视口，读取本机游戏和 MOD 的原始资源；预览、角色编辑、模型导出与正式构建均无需 Unity Editor、Player 或 UnityEngine 程序集，不执行游戏及插件 DLL。
 
 ## 开始使用
 
-1. 将 `HS2Manager-1.2.0-preview2-winui3-win-x64*.zip` 解压到本机磁盘，例如 `D:\Apps\HS2Manager`。请完整解压，保持程序与其他文件相对位置。
+1. 将 `HS2Manager-1.3.0-native-win-x64*.zip` 解压到本机磁盘，例如 `D:\Apps\HS2Manager`。请完整解压，保持程序与其他文件相对位置。
 2. 双击 `HS2Manager.exe`。已包含 .NET 运行时，无需另行安装。
 3. 默认游戏目录为 `Z:\games\hs2\HS two DX - TSYMQ`。在左下角“设置与连接”可修改，也可添加其他人物卡目录。
 4. 首次启动默认仅扫描女性人物卡目录 `UserData\chara\female` 的当前层，建立本地封面和元数据索引，再读取 MOD 清单。在“设置与连接”可开启“递归检索人物卡（包含子目录）”，该开关默认关闭，同时适用于默认目录和额外人物卡目录。关闭递归后，已索引的子目录内容仍会保留。NAS 首次扫描需要一些时间；底部显示进度并提供取消。
@@ -74,40 +74,27 @@ Ctrl+S 默认在原目录另存“原文件名-编辑.png”，重名自动编�
 
 已通过 81 张原始样本的无损往返、1,467 条字段路径读写、保存事务和实际界面检查；3 张编辑副本的参数与资源选择也通过游戏实际读取验证。完整画面对照 84/84 张通过，操作、保留规则、字段清单与验证入口见 [角色编辑说明](docs/CHARACTER-EDITOR.md)。
 
-## 独立 3D 预览
+## 原生 GPU 3D 预览
 
-首次打开预览时，管理器同时启动便携包中的自有 Unity 内核和准备人物数据；预览内切换人物卡通过命名管道替换角色，复用同一进程及未变化的公共资源。界面显示共享内存中的最终 BGRA 帧。内核使用原始网格、蒙皮、Shader、材质与完整纹理；人物定义只包含数据，不执行游戏或插件脚本。
+双击有效人物卡，或点击详情中的“打开 3D 预览”。GPU 在管理器进程内直接绘制到 WinUI `SwapChainPanel`，截图仅在保存时回读同一渲染结果。预览与编辑共用场景、原始几何、材质、动画和独立物理实现。无需启动游戏或 Studio。
 
-已接入 ABMX、扩展配饰、SkinnedAccessory、KSOX/KCOX、MaterialEditor、PushUp、EyeControl，以及当前整合包的超范围体形和发束滑条规则，读取捏人场景灯光、DHH 与 BetterAA 设置；待机动画、眨眼、前向视线、头发、衣物及身体动态由独立控制器计算。PushUp 仅在本机存在对应插件时应用保存参数。MOD 内直接存储的 PNG 纹理也按 Sideloader 路径解析。缺失资源、无法读取的组件与尚未实现的效果显示具体诊断。
+固定 84 张卡采用四视角、种子 1979、30 Hz、360 帧及 24 个动态采样验证。人物和适用的面部区域要求 SSIM ≥ 0.99、平均通道误差 ≤ 2/255，并逐卡完成局部视觉复核。结论限定于冻结的卡片和资源配置，不表示逐像素相同。逐卡数值和差异见 [迁移验收](docs/NATIVE-MIGRATION-RESULTS.md)，架构及复现见 [原生 GPU 预览](docs/NATIVE-GPU-PREVIEW.md)，性能变化见 [性能测量](docs/NATIVE-PERFORMANCE.md)。
 
-兼容性说明已按女性目录当前层的全部 79 张卡检查，修复嵌套骨骼、贴图别名、服装资源路径和未使用参数的误报；检查范围及逐卡记录位置见 [兼容性说明修复](docs/UNITY-COMPATIBILITY.md)。
-
-2026-11-09，本机固定整合包的 84 张卡（当前女性目录 79 张、原版男女样本和 3 张编辑副本）全部通过四视角静态、30Hz/360 帧/24 采样动态及局部视觉复核。人物和面部区域均满足 SSIM ≥ 0.99、平均通道误差 ≤ 2/255。该结论限定于本次卡片、MOD 与插件配置；不推定未经验证的其他整合包也通过。标准、报告与复现步骤见 [独立 Unity 预览说明](docs/UNITY-PREVIEW.md)及 [验收结果](docs/UNITY-VALIDATION-RESULTS.md)。
-
-预览持续播放，可暂停或继续。调整灯光或背景后标记为“自定义环境”，点击“恢复游戏环境”恢复原始配置。加载失败提供原因和重试，不自动切换旧渲染器。关闭预览或管理器时，Windows Job Object 回收本次启动的内核及子进程。
-
-灯光滑条以游戏原始强度为基准（1 倍），调整时保留当前背景；背景菜单可选择“游戏背景”或纯色背景，纯色背景仍保留原环境反射。恢复环境或切卡会同步复位控件。预览标题和人物列表显示文件名，悬停查看完整路径，便于区分同名卡的不同材质版本。银色服装的检查与对照见 [预览材质与环境检查](docs/PREVIEW-MATERIAL-QUALITY.md)。
-
-旋转、平移或缩放时暂时停用会积累拖影的效果，停止操作后恢复原环境画质。预览目标帧率为 60 FPS，实际速度取决于模型和硬件；实测及验证方法见 [预览交互优化](docs/PREVIEW-INTERACTION.md)。
-
-提取资源缓存在 `Data\UnityPreview\definitions-v1`，缓存键包含 MOD 文件大小、修改时间及归档内路径；每次打开重新解析人物和环境设置。关闭管理器后可删除 `Data\UnityPreview` 释放空间。游戏资源和用于读取元数据的游戏程序集仍须可访问；发布包不包含游戏、MOD、人物卡或提取缓存。用户无需安装 Unity 编辑器。
-
-原始骨架、组件、形变基础数据和环境数据另存于 `Data\UnityPreview\metadata-v1`，序列化内存缓存上限 128 MiB、磁盘上限 512 MiB，按最近使用淘汰；这些上限不包括已提取资源和当前角色的纹理/显存。MOD 扫描同时记录归档目录，缓存命中时不再打开全部 MOD 包。源文件变化自动失效，缓存损坏会重建，手动更新 MOD 索引会清除缺失查询结果。加载阶段和首帧耗时记录在 `Data\Logs\preview-performance.jsonl`。性能测量与画面对照见 [加载性能验证](docs/PREVIEW-PERFORMANCE.md)。
-
-| 操作 | 效果 |
+| 操作 | 功能 |
 | --- | --- |
-| 左键拖动 | 环绕模型旋转 |
+| 左键拖动 | 旋转 |
 | 滚轮 | 缩放 |
 | 右键或中键拖动 | 平移 |
-| 正面 / 侧面 / 背面 | 预设镜头 |
-| 面部 | 拉近并对准人物面部 |
-| 复位镜头 / 双击预览 | 按模型尺寸重新取景 |
-| 灯光 / 背景 / 恢复游戏环境 | 自定义环境及恢复 |
+| 正面 / 侧面 / 背面 / 面部 | 预设镜头与面部取景 |
+| 复位镜头 / 双击预览 | 按人物尺寸重新取景 |
+| 灯光 / 背景 / 恢复游戏环境 | 调整环境；纯色背景仍保留环境反射 |
 | 暂停 / 继续 | 控制人物动态 |
-| 保存截图 / Ctrl+S | 保存当前内核完成后处理的画面，不含人物卡尾部数据 |
-| Esc / 返回箭头 | 取消加载并释放当前模型 |
+| 保存截图 / Ctrl+S | 保存当前完成后处理的 GPU 画面 |
+| Esc / 返回箭头 | 取消加载并释放当前人物 |
 
-快速切换以最新选择为准，包括内核仍在启动时的切换。人物资源加载失败后重试继续复用内核；内核退出或连接中断后重试才重新启动。关闭预览取消未完成加载并结束内核进程。部分资源缺失不影响其它管理功能。预览只读游戏和人物卡；编辑保存按上述另存或备份覆盖规则执行。
+快速切卡和连续编辑仅提交最新加载与修订。隐藏视口停止绘制；缩放、DPI 变化和页面切换会更新视口。设备恢复从当前场景快照重建，失败时保留编辑草稿并提供重试；资源或效果诊断显示在预览提示中。不存在自动切回历史渲染器的入口。
+
+预览缓存位于 `Data/NativePreview-v1`。数据库、设置、封面、备份及旧缓存保留，旧缓存不会作为新格式直接复用。首次解析本机游戏和 MOD 清单可能较慢，界面显示阶段进度。旧版依赖诊断中已存在的缺失资源继续报告，不会据此伪称资源齐全。
 
 ## MOD 诊断
 
@@ -136,39 +123,25 @@ Ctrl+S 默认在原目录另存“原文件名-编辑.png”，重名自动编�
 
 ## 源码构建
 
-独立 Unity 内核和管理器视口已接入。源码构建 Unity Player 需要已激活的 Unity 2018.4.11f1；便携发布不需要编辑器。构建及视觉验收见 [独立 Unity 预览说明](docs/UNITY-PREVIEW.md)。
-
-Windows 10 2004（19041）及以上 / Windows 11 x64，.NET 10 SDK。可先执行 `bootstrap-dotnet.ps1` 下载到项目 `.tools`；脚本从微软官方发布清单选取 SDK 并核验 SHA-512。
-
-日常从源码启动可直接双击根目录的 `start.cmd`：优先使用 `.tools\dotnet` 中的 SDK，否则使用系统 `dotnet`，以 Release 配置增量构建并启动当前源码。预览使用最近一次成功构建的本机 Unity Player（先运行 `build-unity-preview.ps1`）；便携包始终使用自身附带的 Player。WinUI 3 使用 NuGet 提供的 XAML 编译工具，无需安装 Visual Studio。首次运行需要联网还原依赖；失败时窗口会保留错误信息。源码在本机磁盘时，数据默认位于构建输出目录旁的 `Data`；源码在 NAS / 网络映射盘时，自动使用 `%LOCALAPPDATA%\HS2Manager\Source\<项目与配置标识>\Data`。首次使用本机目录会复制原有数据库、设置、封面、操作记录与日志，保留原目录，预览缓存重新生成；已有本机数据不会被覆盖。也可在命令行通过 `start.cmd --data "D:\HS2ManagerData"` 指定本机目录。
+正式构建使用 Windows x64、.NET 10 SDK、Windows App SDK 1.8、Direct3D 11 与 Vortice。编译 C++ 适配层需要 Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake；脚本通过 Visual Studio Installer 定位已安装的 C++ 工具，使用已安装的默认 Windows SDK。独立布料适配层使用 PhysX 3.4.2 源码；FBX 适配层使用 Autodesk FBX SDK 2020.3.7。将按各自许可取得的 SDK 放入 `.tools/physx-3.4` 和 `.tools/fbx-native-2020.3.7`，或向 `build.ps1` / `build-desktop.ps1` 传入 `-PhysXSource` / `-FbxSdkRoot` 指定外部目录。单独运行适配层构建脚本时，分别使用 `-Source` / `-SdkRoot`。原生 DLL 在本机缓存中构建，发布包含必要的 VC143 运行库及许可文本。
 
 ```powershell
 .\bootstrap-dotnet.ps1
 .\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ'
-# 同时运行 Unity 内核通信、异常清理与 WinUI 3 预览检查（不启动游戏）
+# 追加真实资源的原生会话及 WinUI 预览检查
 .\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ' -PreviewTest
 ```
 
-WinUI 3 采用未打包（`WindowsPackageType=None`）部署，发布时同时携带 .NET 和 Windows App SDK 运行时，不需要安装 MSIX 或单独安装 Windows App Runtime。迁移细节和验证命令见 [WinUI 3 迁移说明](docs/WINUI3-MIGRATION.md)。本机源码启动时若新输出位置没有 `Data`，会继续使用同一配置下旧 `bin/<配置>/net10.0-windows/Data` 中的数据库和设置；网络盘源码会将该库复制到上述本机数据目录。`start.cmd` 也将网络盘源码的编译产物放入同一标识目录下的 `Build`，避免 NAS 上旧 EXE 的文件占用阻止重建；仍从原项目查找 Unity Player。`--data` 始终优先。
+`build.ps1` 编译独立 FBX/物理适配层、运行核心与界面检查，然后发布自带 .NET 和 Windows App SDK 运行时的便携目录及 ZIP，写入 SHA-256。输出位于 `artifacts/release`；同名目录已有时创建新目录，保留原资料。`-SkipTests` 跳过核心和界面检查，发布包依赖审计与原生运行库检查始终执行。直接 `dotnet publish` 应用项目也执行依赖审计，拒绝引擎程序集、原生导入和旧通信端点。无需构建或下载 Unity。
 
-构建脚本默认运行核心与布局检查，然后发布自带运行时的便携目录和 ZIP，写入 SHA-256。输出在 `artifacts\release`；若已有同名目录，创建带时间的新目录，不覆盖旧 `Data`。`-SkipTests` 可跳过核心与布局检查。
+日常可双击 `start.cmd`，以 Release 配置构建并运行；首次启动前先构建原生适配层。源码在 NAS 时，编译产物和资料库放在 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
 
-仅需未压缩的桌面版本时，运行：
+`build-desktop.ps1` 创建当前用户桌面的 `HS2Manager` 目录，不生成 ZIP；若已有安装，完整构建成功后替换程序并保留 `Data`，失败则保留或恢复旧目录。支持 `-GamePath`、`-SkipTests`、`-PreviewTest` 和 `-PreviewCard`。更新前关闭该安装的程序。
 
-```powershell
-.\build-desktop.ps1
-```
-
-输出为当前 Windows 用户桌面的 `HS2Manager` 文件夹，包含程序、运行时和 Unity 预览内核，可直接运行其中的 `HS2Manager.exe`；不生成 ZIP 或压缩包校验文件。脚本支持与 `build.ps1` 相同的 `-GamePath`、`-SkipTests`、`-PreviewTest`、`-PreviewCard` 和 `-UnityPlayerDirectory` 参数。若桌面已有 `HS2Manager`，构建成功后自动替换程序文件并保留原有 `Data`（数据库、设置、收藏等）；旧版多余文件会清理。构建失败时保留旧版本，替换失败时恢复旧目录。更新前请先关闭正在运行的桌面版程序。
-
-NAS 项目通过映射盘或 UNC 路径启动时会复用同一资料库，包括已有的本机资料目录。迁移包含编辑备份 `CardBackups`，并修正操作记录中的备份路径，支持继续恢复原卡。`build.ps1` 将 .NET 中间文件和发布暂存放在本机；`build-unity-preview.ps1` 将 Unity 源文件同步到 `%LOCALAPPDATA%\HS2Manager\UnityBuild` 后构建，`Library`、`Temp` 不在 NAS 上生成。成功的 Player 复制回项目，使用相对路径记录，项目移动后仍可找到。独立运行核心/UI 检查时，NAS 项目的测试资料默认写入 `%LOCALAPPDATA%\HS2Manager\Tests\artifacts`。
-
-默认构建不依赖任何游戏程序集；桌面端为 .NET 10、WinUI 3（Windows App SDK 1.8）、SQLite 与 AssetsTools.NET。真实资源测试需要本机游戏数据。构建脚本禁用构建服务器。旧桥接源码保留在 `src/HS2Manager.Bridge`，已移出默认解决方案和发布流程；旧 Studio 启动器和协议也不再编入生产 Core 程序集，旧 `--preview` 检查入口已禁用。
-
-目录：`src/HS2Manager.App`（WinUI 3 / MVVM 界面与 Unity 帧视口）、`src/HS2Manager.Core`（人物/模型解析、缓存、索引、文件与依赖）、`src/HS2Manager.Bridge`（历史桥接源码）、`src/Shared`（旧桥接协议）、`tests`（核心、布局与独立预览检查）。
+生产项目为 `src/HS2Manager.App`（WinUI 与 SwapChainPanel）、`Core`（原始资源、场景、编辑和事务）、`Rendering`（D3D11 材质与呈现）及 `Export`（独立 FBX 生成）。`tests/HS2Manager.Legacy*`、原 Unity 工程和旧桥接仅作为显式选择的离线历史参考；它们不在正式构建、启动、发布链路中，也不提供自动回退。
 
 ## 范围与兼容性
 
-此版提供人物管理、角色外观编辑及独立 Unity 动态预览，编辑入口为已有男女角色卡，支持原版和本机已安装 MOD 素材。性别转换、游戏玩法属性、姿势编辑、插件专属面板与扩展配饰槽的专属编辑不在范围内；未知数据和扩展槽继续保留。当前固定基线已通过全部 84 张卡的视觉一致性验收，逐卡静态、动态与独立性验证见 [独立 Unity 预览说明](docs/UNITY-PREVIEW.md)；`docs/NATIVE-PREVIEW.md` 和 `docs/VALIDATION.md` 为此前渲染架构的历史记录。
+此版提供人物管理、角色外观编辑及原生 GPU 动态预览，编辑入口为已有男女角色卡，支持原版和本机已安装 MOD 素材。性别转换、游戏玩法属性、姿势编辑、插件专属面板与扩展配饰槽的专属编辑不在范围内；未知数据和扩展槽继续保留。一致性范围及剩余差异见 [原生迁移验收](docs/NATIVE-MIGRATION-RESULTS.md)。Blender、Unreal 材质延续原有导出格式与转换行为，跨引擎画面仍有各自边界，见 [模型导出](docs/MODEL-EXPORT.md)。
 
-若曾使用旧版本，遗留的桥接插件不会被新版启用；在游戏退出后可手动移除游戏 `BepInEx\plugins\HS2Manager` 子目录。程序没有安装系统服务或计划任务。
+若曾使用旧桥接版本，遗留桥接插件不会被新版启用；可在游戏退出后手动移除游戏 `BepInEx/plugins/HS2Manager` 子目录。程序没有安装系统服务或计划任务。

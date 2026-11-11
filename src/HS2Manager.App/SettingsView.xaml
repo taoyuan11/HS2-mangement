@@ -160,7 +160,7 @@
       <Border Style="{StaticResource SettingCard}">
        <StackPanel Spacing="10">
         <TextBlock Text="独立 3D 人物预览" Style="{StaticResource SettingLabel}"/>
-        <TextBlock Text="使用独立 Unity 内核读取原始模型、材质和纹理，无需启动游戏或 Studio。首次读取后建立本地缓存，切换人物时复用公共资源。" Style="{StaticResource SettingHint}"/>
+        <TextBlock Text="使用原生 GPU 读取本机模型、材质和纹理。首次读取后建立新版本地缓存；旧缓存与资料库继续保留。" Style="{StaticResource SettingHint}"/>
         <Border Background="{ThemeResource SidebarBrush}" CornerRadius="6" Padding="12"><StackPanel Spacing="5"><TextBlock Text="预览缓存位置" FontSize="12" FontWeight="SemiBold"/><TextBlock x:Name="CachePathText" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontSize="12"/></StackPanel></Border>
         <TextBlock Text="关闭管理器后可删除预览缓存以释放空间。当前预览尚未达到完整 1:1 还原，缺失资源和未支持的效果会显示具体说明。" Style="{StaticResource SettingHint}"/>
        </StackPanel>

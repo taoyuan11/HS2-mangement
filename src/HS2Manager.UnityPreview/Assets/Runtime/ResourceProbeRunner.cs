@@ -25,6 +25,8 @@ namespace HS2Manager.UnityPreview
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "--export-reference-request") >= 0)
+            { new GameObject("Offline model export reference").AddComponent<ExportReferenceRunner>(); return; }
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "--session") >= 0)
             { new GameObject("Independent preview session").AddComponent<KernelRunner>(); return; }
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "--character") >= 0)

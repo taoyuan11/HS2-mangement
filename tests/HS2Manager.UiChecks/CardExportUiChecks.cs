@@ -20,7 +20,7 @@ internal static class CardExportUiChecks
         second.IsSelected = false; Require(model.SelectionCount == 1, "Grid container deselection removes only the second card");
         InvokeGesture("SelectContextCard", second); Require(model.SelectionCount == 2, "Right click adds an unselected card in multi-select");
         await (Task)InvokeGesture("PreviewDoubleTappedCardAsync", second)!;
-        Require(!model.IsPreview && model.UnitySession == null, "Double tap in multi-select does not launch preview");
+        Require(!model.IsPreview && model.NativeSession == null, "Double tap in multi-select does not launch preview");
         UiTest.Invoke(toggle); Require(!model.IsMultiSelectMode && list.SelectionMode == ListViewSelectionMode.Extended && model.SelectionCount == 2, "Exiting multi-select preserves batch selection and restores Extended mode");
         InvokeGesture("SelectContextCard", (GridViewItem)list.ContainerFromIndex(2)); Require(model.SelectionCount == 1, "Normal right click selects the pointed card");
         UiTest.Invoke(toggle); UiTest.Invoke(all); Require(model.SelectionCount == model.VisibleCards.Count && model.SelectionCount == 80, "Select all includes virtualized current results");

@@ -11,8 +11,7 @@ internal static class PreviewRailUiChecks
     {
         string output = Path.Combine(root, "artifacts", "preview-rail-checks", Guid.NewGuid().ToString("N"));
         using var model = new MainViewModel(Path.Combine(output, "Data"), new AppSettings { GamePath = Path.Combine(output, "NoGame") });
-        // Exercise navigation without launching a Unity process or accessing game data.
-        model.UnityPlayerPath = Path.Combine(output, "NoPlayer.exe");
+        // Exercise navigation with isolated, unavailable resource fixtures.
         var window = new MainWindow(model); window.Activate();
         try
         {

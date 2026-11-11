@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <UseWinUI>true</UseWinUI><WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSDKDeploymentManagerInitialize>false</WindowsAppSDKDeploymentManagerInitialize>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier><PlatformTarget>x64</PlatformTarget><SelfContained>true</SelfContained>
+    <AssemblyName>HS2Manager.UiChecks</AssemblyName><IsPublishable>false</IsPublishable><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>../../src/HS2Manager.App/app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../HS2Manager.LegacyApp/HS2Manager.LegacyApp.csproj" /></ItemGroup>
+  <ItemGroup><Compile Include="../HS2Manager.Checks/CardExportFixtures.cs" Link="CardExportFixtures.cs" /></ItemGroup>
+</Project>

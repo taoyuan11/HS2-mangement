@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$PackageDirectory,
     [Parameter(Mandatory)][string]$OutputDirectory,
@@ -14,7 +14,7 @@ $report=Join-Path $OutputDirectory 'validation.json'
 if(Test-Path -LiteralPath $report){throw 'Use a new output directory for Blender validation.'}
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $importer=Join-Path $PackageDirectory 'Blender导入.py'
-if(!(Test-Path -LiteralPath $importer)){$importer=Join-Path $repo 'src/HS2Manager.UnityPreview/Assets/Resources/BlenderImport.py.txt'}
+if(!(Test-Path -LiteralPath $importer)){$importer=Join-Path $repo 'src/HS2Manager.Core/ModelExport/BlenderImport.py'}
 if(!('HS2Manager.BuildTools.OwnedToolProcess' -as [type])){Add-Type -Path (Join-Path $repo 'scripts/OwnedToolProcess.cs')}
 $arguments=@('--background','--factory-startup','--python-exit-code','1','--log-file',(Join-Path $OutputDirectory 'blender.log'),'--python',(Join-Path $repo 'tests/Test-BlenderExport.py'),'--',$PackageDirectory,$OutputDirectory,$importer)
 $code=[HS2Manager.BuildTools.OwnedToolProcess]::Run($BlenderPath,$arguments,$repo,$TimeoutSeconds,$null)

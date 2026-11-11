@@ -1,3 +1,5 @@
+> 当前正式入口为原生 GPU。历史路径和旧版测量仅用于解释已有数据的迁移；原生架构见 [原生 GPU 预览](NATIVE-GPU-PREVIEW.md)。
+
 # NAS 迁移与验证
 
 项目可以保留在映射盘或 UNC 共享目录中。源码入口为根目录 `start.cmd`；发布入口为完整解压后的 `HS2Manager.exe`。
@@ -11,9 +13,9 @@
 | NAS 发布包的数据库与资料 | `%LOCALAPPDATA%\HS2Manager\Portable\<标识>\Data` |
 | `start.cmd` / `build.ps1` 的 .NET 中间文件 | 对应 Source 标识下的 `Build` |
 | 发布暂存 | `%LOCALAPPDATA%\HS2Manager\Publish` |
-| Unity 构建项目、Library、Temp | `%LOCALAPPDATA%\HS2Manager\UnityBuild` |
+| 原生 FBX / PhysX 编译产物 | `%LOCALAPPDATA%\HS2Manager\NativeBuild` |
 | 默认核心/UI 检查资料 | `%LOCALAPPDATA%\HS2Manager\Tests\artifacts` |
-| 成功的 Unity Player、便携目录与 ZIP | 项目的 `artifacts` |
+| 原生便携目录、ZIP 与离线验收报告 | 项目的 `artifacts` |
 
 同一台电脑上，映射盘与其 UNC 路径复用同一资料库。已有旧版 Source 标识目录中的资料继续使用，不会被新资料覆盖。`--data` 可显式选择本机资料目录。实际使用的位置见“设置与连接 → 数据与维护”。
 
@@ -26,10 +28,10 @@ NAS 程序与本机资料库需要分别备份。更换电脑、改变项目的�
 在 `Z:\project\HS2-mangement`（映射到 `\\nas\nas`）完成：
 
 - Z 盘和 UNC 路径的 `start.cmd` 启动、主窗口显示及正常关闭。
-- 源码/便携包本地目录选择、映射路径别名、WAL 与编辑备份迁移、迁移失败重试、旧 Unity 绝对路径重定位。
+- 源码/便携包本地目录选择、映射路径别名、WAL 与编辑备份迁移、迁移失败重试。
 - NAS 测试卡的扫描、覆盖保存、另存、迁移后恢复备份、重命名、本机与 UNC 之间移动、隔离/恢复、导出和永久删除。仅操作生成的独立测试卡。
 - 核心检查与全部 WinUI 默认检查。
-- Unity 2018.4.11f1 在本机镜像项目中完成构建，Player 复制回 NAS；实际人物加载、IPC、取消、资源替换、异常重试和进程回收通过。
+- 原生人物加载、取消、资源替换、失败重试、设备恢复和关闭清理使用本机缓存；正式构建不含 Unity 工程或 Player。历史测试证据单独保留。
 - `build.ps1` 本机发布暂存、跨卷复制回 NAS、ZIP/SHA-256、解压后启动通过。
 - NAS 便携包不传 `--data`，通过映射盘和 UNC 启动均使用同一本机数据库，原 NAS 设置保持不变。
 
@@ -50,4 +52,4 @@ $build = Join-Path $env:LOCALAPPDATA 'HS2Manager\Tests\NasBuild'
 .\.tools\dotnet\dotnet.exe run --project tests/HS2Manager.Checks -c NasValidation --artifacts-path $build --disable-build-servers -p:UseSharedCompilation=false -- --nas-files --workspace (Get-Location).Path
 ```
 
-测试进程均在完成后退出；失败路径也会回收测试启动的应用和 Unity 子进程。
+测试进程均在完成后退出；失败路径也会回收测试启动的应用和模型转换子进程。

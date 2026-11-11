@@ -28,15 +28,26 @@ internal sealed partial class NativeAssetBundle : IDisposable
     private readonly Func<string, long, NativeTexture>? externalTexture;
     private readonly Func<string, long, Matrix4x4, NativeMesh>? externalMesh;
     public NativeAssetBundle(string path, Func<string, long, NativeTexture>? externalTexture = null,
-        Func<string, long, Matrix4x4, NativeMesh>? externalMesh = null)
+        Func<string, long, Matrix4x4, NativeMesh>? externalMesh = null, bool serializedFile = false)
     {
         this.externalTexture = externalTexture;
         this.externalMesh = externalMesh;
         try
         {
             PreviewPerformance.Count("bundleOpens");
-            bundle = manager.LoadBundleFile(path, true);
-            file = manager.LoadAssetsFileFromBundle(bundle, 0, false);
+            if (serializedFile)
+            {
+                bundle = null!;
+                file = manager.LoadAssetsFile(path, false);
+                using var schema = typeof(NativeAssetBundle).Assembly.GetManifestResourceStream("HS2Manager.Core.Resources.classdata.tpk")!;
+                manager.LoadClassPackage(schema);
+                manager.LoadClassDatabaseFromPackage(file.file.Metadata.UnityVersion);
+            }
+            else
+            {
+                bundle = manager.LoadBundleFile(path, true);
+                file = manager.LoadAssetsFileFromBundle(bundle, 0, false);
+            }
             if (!file.file.Metadata.UnityVersion.StartsWith("2018.", StringComparison.Ordinal))
                 throw new NotSupportedException("独立预览支持 Unity 2018 游戏资源；当前资源包版本不匹配。");
         }

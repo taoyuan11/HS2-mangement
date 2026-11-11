@@ -16,21 +16,12 @@ var data = Path.Combine(root, "artifacts", "checks");
 Directory.CreateDirectory(data);
 if (args.Contains("--data-location")) { DataLocationChecks.Run(); return; }
 if (args.Contains("--nas-files")) { await NasFileChecks.Run(args[Array.IndexOf(args, "--workspace") + 1], data); return; }
-if (args.Contains("--native-model-export"))
-{
-    string Arg(string name,string fallback="") => Array.IndexOf(args,name) is int i && i>=0 ? args[i+1] : fallback;
-    await NativeModelExportChecks.Run(Arg("--player"),Arg("--definition"),Arg("--output"),Enum.Parse<ModelExportTarget>(Arg("--target","Blender"),true),Arg("--tool"),args.Contains("--package")?Arg("--package"):null,args.Contains("--verify-only"),args.Contains("--view")?Arg("--view"):null);
-}
-else if (args.Contains("--model-export-lifecycle")) await ModelExportLifecycleChecks.Run(args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--definition")+1],args[Array.IndexOf(args,"--output")+1]);
-else if (args.Contains("--model-export-catalog")) await ModelExportCatalogChecks.Run(args[Array.IndexOf(args,"--catalog")+1],args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1],args.Contains("--keep-assets"));
-else if (args.Contains("--model-export")) await ModelExportChecks.Run(game,data,args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1],args.Contains("--card")?args[Array.IndexOf(args,"--card")+1]:null,args.Contains("--catalog")?args[Array.IndexOf(args,"--catalog")+1]:null,args.Contains("--count")?int.Parse(args[Array.IndexOf(args,"--count")+1]):1,args.Contains("--draft"),args.Contains("--clothing")?int.Parse(args[Array.IndexOf(args,"--clothing")+1]):0,!args.Contains("--no-accessories"),args.Contains("--target")?Enum.Parse<ModelExportTarget>(args[Array.IndexOf(args,"--target")+1],true):ModelExportTarget.GenericFbx,args.Contains("--tool")?args[Array.IndexOf(args,"--tool")+1]:"");
+if (args.Contains("--model-export")) await ModelExportChecks.Run(game,data,args[Array.IndexOf(args,"--output")+1],args.Contains("--card")?args[Array.IndexOf(args,"--card")+1]:null,args.Contains("--catalog")?args[Array.IndexOf(args,"--catalog")+1]:null,args.Contains("--count")?int.Parse(args[Array.IndexOf(args,"--count")+1]):1,args.Contains("--draft"),args.Contains("--clothing")?int.Parse(args[Array.IndexOf(args,"--clothing")+1]):0,!args.Contains("--no-accessories"),args.Contains("--target")?Enum.Parse<ModelExportTarget>(args[Array.IndexOf(args,"--target")+1],true):ModelExportTarget.GenericFbx,args.Contains("--tool")?args[Array.IndexOf(args,"--tool")+1]:"");
 else if (args.Contains("--prepare-edit-game")) await CharacterEditGameChecks.Prepare(game,args[Array.IndexOf(args,"--output")+1]);
-else if (args.Contains("--edit-preview")) await CharacterEditPreviewChecks.Run(game,data,args[Array.IndexOf(args,"--player")+1]);
 else if (args.Contains("--card-edit")) await CharacterEditChecks.Run(data, args.Contains("--real-edit") ? game : null);
 else if (args.Contains("--card-delete")) await CardDeletionChecks.Run(data);
 else if (args.Contains("--preview-cache")) await PreviewCacheChecks.Run(data);
 else if (args.Contains("--card-export")) await CardExportChecks.Run(data, args.Contains("--real-export") ? game : null);
-else if (args.Contains("--audit-unity-compatibility")) await UnityCompatibilityAudit.Run(args[Array.IndexOf(args,"--catalog")+1],args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--output")+1]);
 else if (args.Contains("--prepare-unity-catalog")) await UnityCatalogChecks.Prepare(game,data,args[Array.IndexOf(args,"--output")+1],args.Contains("--female-only"),args.Contains("--catalog")?args[Array.IndexOf(args,"--catalog")+1]:null);
 else if (args.Contains("--asset-overrides")) await NativeAssetOverrideChecks.Run(game,data);
 else if (args.Contains("--body-selection"))
@@ -79,13 +70,12 @@ else if(args.Contains("--material-values"))
 }
 else if (args.Contains("--normalize-unity-catalog")) UnityCatalogChecks.Normalize(args[Array.IndexOf(args,"--catalog")+1],game,data,args[Array.IndexOf(args,"--output")+1]);
 else if (args.Contains("--unity-bundle-identities")) UnityBundleIdentityChecks.Run(args[Array.IndexOf(args,"--definition")+1],Path.Combine(data,"cab-check-"+Guid.NewGuid().ToString("N")));
-else if (args.Contains("--unity-session")) await UnitySessionChecks.Run(args[Array.IndexOf(args,"--player")+1],args[Array.IndexOf(args,"--definition")+1],Path.Combine(data,"unity-session"));
-else if (args.Contains("--prepare-unity-character"))
+else if (args.Contains("--prepare-native-character"))
 {
     int cardIndex = Array.IndexOf(args, "--card");
     string cardPath = cardIndex >= 0 ? args[cardIndex + 1] : Directory.EnumerateFiles(Path.Combine(game,"UserData","chara","navi"),"*.png").First();
-    var definition = await new UnityCharacterService().PrepareAsync(game,data,new CardParser().Parse(cardPath),new Progress<string>(Console.WriteLine),default);
-    string target = Array.IndexOf(args,"--output") is int outputIndex&&outputIndex>=0?Path.GetFullPath(args[outputIndex+1]):Path.Combine(data,"unity-character.json");
+    var definition = await new NativeCharacterService().PrepareAsync(game,data,new CardParser().Parse(cardPath),new Progress<string>(Console.WriteLine),default);
+    string target = Array.IndexOf(args,"--output") is int outputIndex&&outputIndex>=0?Path.GetFullPath(args[outputIndex+1]):Path.Combine(data,"native-character.json");
     File.WriteAllText(target,System.Text.Json.JsonSerializer.Serialize(definition,UnityCharacterService.JsonOptions));
     Console.WriteLine($"Prepared {definition.Parts.Length} original parts and {definition.Selections.Length} selections: {target}");
     foreach (string warning in definition.Diagnostics) Console.WriteLine(warning);

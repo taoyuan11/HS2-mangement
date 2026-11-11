@@ -21,6 +21,7 @@ public sealed class UnityPreviewViewport : Grid
     public string? RenderError { get; private set; }
     public bool HasFrame => frame != null;
     public int FrameWidth => frame?.PixelWidth ?? 0;
+    internal Action<long>? FrameReadyDiagnostic {get;set;}
     public UnityPreviewViewport()
     {
         Children.Add(image);
@@ -84,6 +85,7 @@ public sealed class UnityPreviewViewport : Grid
             { frame = new WriteableBitmap(next.Width, next.Height); image.Source = frame; }
             using (var buffer = frame.PixelBuffer.AsStream()) buffer.Write(next.Pixels, 0, checked(next.Width * next.Height * 4));
             frame.Invalidate(); RenderError = null; Session?.ReportFramePresented(next.Load);
+            FrameReadyDiagnostic?.Invoke(System.Diagnostics.Stopwatch.GetTimestamp());
         }
         catch (Exception ex) { RenderError = ex.Message; Unsubscribe(); }
     }

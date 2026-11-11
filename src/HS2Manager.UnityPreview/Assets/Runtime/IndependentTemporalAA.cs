@@ -13,6 +13,7 @@ namespace HS2Manager.UnityPreview
         private int sample;
         public Vector2 ReferenceResolution;
         public bool Bypass {get;set;}
+        public System.Action<RenderTexture,RenderTexture,RenderTexture,RenderTexture> DiagnosticTrace;
         private static readonly float[] Horizontal={.5f,-.25f,.75f,-.125f,.625f,.575f,-.875f,.0625f,-.3f,.75f,-.25f,-.625f,.325f,.975f,-.075f,.625f};
         private static readonly float[] Vertical={.33f,-.66f,.51f,.44f,-.77f,.12f,-.55f,.88f,-.83f,.14f,.71f,-.34f,.87f,-.12f,.75f,.08f};
         public void Configure(Shader resolveShader,Shader enhanceShader,float[] parameters,Vector2 referenceResolution)
@@ -51,7 +52,9 @@ namespace HS2Manager.UnityPreview
             else Graphics.Blit(source,sharpened);
             if(!initialized){Graphics.Blit(sharpened,previous);initialized=true;}
             resolve.SetFloat("_AdaptiveResolve",3000);resolve.SetVector("_ControlParams",new Vector4(settings[5],settings[0],settings[1],settings[4]));resolve.SetTexture("_Accum",previous);
-            Graphics.Blit(sharpened,current,resolve);Graphics.Blit(current,destination);var swap=previous;previous=current;current=swap;
+            Graphics.Blit(sharpened,current,resolve);
+            if(DiagnosticTrace!=null)DiagnosticTrace(source,sharpened,previous,current);
+            Graphics.Blit(current,destination);var swap=previous;previous=current;current=swap;
         }
         private static RenderTexture Buffer(RenderTexture source){var texture=new RenderTexture(source.width,source.height,0,source.format){filterMode=FilterMode.Bilinear,wrapMode=TextureWrapMode.Clamp};texture.Create();return texture;}
         private void Release(){foreach(var texture in new[]{previous,current,sharpened})if(texture!=null){texture.Release();Destroy(texture);}previous=current=sharpened=null;}

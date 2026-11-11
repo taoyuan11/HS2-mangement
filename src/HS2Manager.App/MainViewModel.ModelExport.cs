@@ -11,14 +11,14 @@ public sealed partial class MainViewModel
     {
         var camera = PreviewCamera;
         var target = camera.Position + camera.LookDirection;
-        var frame = UnitySession?.LatestFrame;
+        var nativeSize=NativeSession?.ViewportSize;
         return new ModelExportView
         {
-            HasCamera = UnitySession != null && !previewBounds.IsEmpty,
+            HasCamera = HasPreviewSession && !previewBounds.IsEmpty,
             Position = [camera.Position.X, camera.Position.Y, camera.Position.Z],
             Target = [target.X, target.Y, target.Z], Up = [camera.UpDirection.X, camera.UpDirection.Y, camera.UpDirection.Z],
             FieldOfView = (float)camera.FieldOfView,
-            Width = frame?.Width ?? 1280, Height = frame?.Height ?? 960,
+            Width = nativeSize?.Width ?? 1280, Height = nativeSize?.Height ?? 960,
             UseGameBackground = exportEnvironment.UseGameBackground, Background = exportEnvironment.Background.ToArray(),
             KeyLightMultiplier = exportEnvironment.KeyLightMultiplier
         };
@@ -29,7 +29,8 @@ public sealed partial class MainViewModel
         LastModelExportReport = null;
         return RunWork("导出 " + ModelExportTools.Name(options.Target), async (ct, progress) =>
         {
-            var report = await new ModelExportService().ExportAsync(captured, Settings.GamePath, DataDirectory, directory, options, progress, ct, UnityPlayerPath);
+            var service=new ModelExportService(()=>new HS2Manager.Export.NativeModelExportBackend());
+            var report = await service.ExportAsync(captured, Settings.GamePath, DataDirectory, directory, options, progress, ct);
             LastModelExportReport = report;
             string text = report.Summary + "\n\n报告：" + report.ReportPath + "\n\n" +
                 string.Join("\n\n", report.Items.Select(i => i.Source + "\n" + i.Directory + "\n" + i.Message));

@@ -40,7 +40,8 @@ namespace HS2Manager.UnityPreview
         {
             public Transform Bone;
             public int Parent;
-            public Vector3 Position,Previous,Local,End,RestPosition,SetupPosition;
+            public Vector3 Position,Previous,Local,End,RestPosition,SetupPosition,LastFrom,LastTo;
+            public Quaternion LastBefore,LastDelta;
             public Quaternion RestRotation;
             public Matrix4x4 Matrix;
             public float Distance,Length,Damping,Elasticity,Stiffness,Inert,Radius;
@@ -62,10 +63,10 @@ namespace HS2Manager.UnityPreview
         private Vector3[] resetPositions;
         [Serializable] internal sealed class ColliderDiagnostic {public string Name;public Vector3 Center,World,Scale;public float Radius,Height;public int Axis,Bound;}
         [Serializable] internal sealed class ChainDiagnostic {public string Host,Root;public int RootId;public bool Enabled;public Vector3 LocalGravity;public Vector3[] ResetPositions;public ParticleDiagnostic[] Particles;public ColliderDiagnostic[] Colliders;}
-        [Serializable] internal sealed class ParticleDiagnostic {public string Name;public int Parent;public Vector3 RestPosition,End,Position;public Quaternion RestRotation;public float Distance,Radius,Damping,Elasticity,Stiffness,Inert;}
+        [Serializable] internal sealed class ParticleDiagnostic {public string Name;public int Parent;public Vector3 RestPosition,End,Position,From,To;public Quaternion RestRotation,Before,Delta;public float Length,Distance,Radius,Damping,Elasticity,Stiffness,Inert;}
         internal ChainDiagnostic Describe()
         {
-            return new ChainDiagnostic{Host=host.name,Root=root.name,RootId=root.GetInstanceID(),Enabled=visible,LocalGravity=localGravity,ResetPositions=resetPositions,Particles=particles.Select(p=>new ParticleDiagnostic{Name=p.Bone==null?"<end>":p.Bone.name,Parent=p.Parent,Distance=p.Distance,RestPosition=p.RestPosition,RestRotation=p.RestRotation,End=p.End,Position=p.Position,Radius=p.Radius,Damping=p.Damping,Elasticity=p.Elasticity,Stiffness=p.Stiffness,Inert=p.Inert}).ToArray(),
+            return new ChainDiagnostic{Host=host.name,Root=root.name,RootId=root.GetInstanceID(),Enabled=visible,LocalGravity=localGravity,ResetPositions=resetPositions,Particles=particles.Select(p=>new ParticleDiagnostic{Name=p.Bone==null?"<end>":p.Bone.name,Parent=p.Parent,Distance=p.Distance,RestPosition=p.RestPosition,RestRotation=p.RestRotation,End=p.End,Position=p.Position,From=p.LastFrom,To=p.LastTo,Before=p.LastBefore,Delta=p.LastDelta,Length=p.Length,Radius=p.Radius,Damping=p.Damping,Elasticity=p.Elasticity,Stiffness=p.Stiffness,Inert=p.Inert}).ToArray(),
                 Colliders=colliders.Select(c=>new ColliderDiagnostic{Name=c.Transform.name,Center=c.Center,World=c.Transform.position,Scale=c.Transform.lossyScale,Radius=c.Radius,Height=c.Height,Axis=c.Axis,Bound=c.Bound}).ToArray()};
         }
         public IndependentBoneChain(Transform host,Transform root,Parameter settings,Collider[] colliders,Renderer[] visibility=null,Dictionary<Transform,Matrix4x4> setupTransforms=null,Dictionary<Transform,Quaternion> setupRotations=null)
@@ -201,7 +202,11 @@ namespace HS2Manager.UnityPreview
             {
                 var p=particles[i];var parent=particles[p.Parent];
                 if(parent.Bone.childCount<=1)
-                    parent.Bone.rotation=Quaternion.FromToRotation(parent.Bone.TransformDirection(p.Bone!=null?p.Bone.localPosition:p.End),p.Position-parent.Position)*parent.Bone.rotation;
+                {
+                    p.LastFrom=parent.Bone.TransformDirection(p.Bone!=null?p.Bone.localPosition:p.End);p.LastTo=p.Position-parent.Position;
+                    p.LastDelta=Quaternion.FromToRotation(p.LastFrom,p.LastTo);p.LastBefore=parent.Bone.rotation;
+                    parent.Bone.rotation=p.LastDelta*p.LastBefore;
+                }
                 if(p.Bone!=null)p.Bone.position=p.Position;
             }
         }

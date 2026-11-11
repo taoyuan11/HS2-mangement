@@ -120,7 +120,7 @@ namespace HS2Manager.UnityPreview
                     Shadows=l.shadows!=LightShadows.None,ShadowStrength=l.shadowStrength
                 }).ToArray()
             };
-            var shader=Shader.Find("Hidden/HS2Manager/ModelSceneBake");
+            var shader=Resources.Load<Shader>("ModelSceneBake")??Shader.Find("Hidden/HS2Manager/ModelSceneBake");
             if(shader==null||!shader.isSupported)throw new IOException("预览场景烘焙 Shader 不可用。");
             var bake=new Material(shader);
             try
