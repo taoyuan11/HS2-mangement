@@ -12,6 +12,8 @@ if (!(Test-Path -LiteralPath $packagePath -PathType Container)) {
 }
 $native = Join-Path $packagePath 'native/win-x64'
 New-Item -ItemType Directory -Path $native -Force | Out-Null
+$archiveLibrary = & (Join-Path $PSScriptRoot '../build/Build-NativeArchive.ps1')
+Copy-Item -LiteralPath $archiveLibrary -Destination (Join-Path $native '7z.dll')
 foreach ($name in @('HS2Manager.Physics.dll', 'PhysX3_x64.dll', 'PhysX3Common_x64.dll', 'PxFoundation_x64.dll', 'PxPvdSDK_x64.dll')) {
     $source = Join-Path $PhysicsDirectory $name
     if (!(Test-Path -LiteralPath $source -PathType Leaf)) {
@@ -68,6 +70,6 @@ foreach ($name in @('BlenderImport.py', 'BlenderNative.py', 'UnrealImport.py', '
 }
 $licenses = Join-Path $packagePath 'licenses'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
-foreach ($name in @('AssetRipper-Tpk.txt', 'Autodesk-FBX-SDK-2020.3.7.rtf', 'CppWinRT-LICENSE.txt', 'LZMA-PUBLIC-DOMAIN.txt', 'miniz-LICENSE.txt', 'nlohmann-json-LICENSE.txt', 'NVIDIA-PhysX-3.4.txt', 'sqlite-LICENSE.txt', 'Unity-PostProcessing.md', 'WindowsAppSDK-LICENSE.txt', 'WindowsAppSDK-NOTICE.txt')) {
+foreach ($name in @('7zip-LICENSE.txt', '7zip-LGPL.txt', '7zip-unRAR.txt', 'AssetRipper-Tpk.txt', 'Autodesk-FBX-SDK-2020.3.7.rtf', 'CppWinRT-LICENSE.txt', 'LZMA-PUBLIC-DOMAIN.txt', 'miniz-LICENSE.txt', 'nlohmann-json-LICENSE.txt', 'NVIDIA-PhysX-3.4.txt', 'sqlite-LICENSE.txt', 'Unity-PostProcessing.md', 'WindowsAppSDK-LICENSE.txt', 'WindowsAppSDK-NOTICE.txt')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../../licenses/' + $name)) -Destination (Join-Path $licenses $name)
 }

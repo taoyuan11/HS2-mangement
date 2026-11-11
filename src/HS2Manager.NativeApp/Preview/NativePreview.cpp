@@ -54,7 +54,7 @@ namespace hs2::ui
         callbacks.Ready = [weak, queue, epoch](PreviewReady result)
         {
             queue.TryEnqueue(
-                [weak, epoch, result = std::move(result)]
+                [weak, epoch, result = std::move(result)]() mutable
                 {
                     if (auto self = weak.lock())
                         if (auto owner = self->owner_.lock())
@@ -77,9 +77,15 @@ namespace hs2::ui
                                         self->Camera();
                                     owner->model_->Put(L"PreviewBusy", false);
                                     owner->model_->Put(L"CanControlPreview", true);
+                                    if (owner->temporaryPreview_)
+                                        result.Diagnostics.insert(result.Diagnostics.end(),
+                                                                  owner->temporaryPreview_->Warnings.begin(),
+                                                                  owner->temporaryPreview_->Warnings.end());
                                     owner->model_->Text(L"PreviewWarnings", JoinLines(result.Diagnostics));
                                     owner->model_->Put(L"HasPreviewWarnings", !result.Diagnostics.empty());
-                                    owner->model_->Put(L"PreviewStatus", L"原生 Direct3D 11 · 游戏环境");
+                                    owner->model_->Put(L"PreviewStatus", self->resources_
+                                                                             ? L"临时预览 · 包内资源优先 · Direct3D 11"
+                                                                             : L"原生 Direct3D 11 · 游戏环境");
                                 }
                                 catch (hresult_error const &e)
                                 {
@@ -293,10 +299,11 @@ namespace hs2::ui
 
     void NativePreview::Load(CardRecord card, FrameworkElement view, bool editor,
                              std::optional<CharacterDocument> draft, CharacterPreviewVisibility visibility,
-                             bool preserveView)
+                             bool preserveView, PreviewResources resources)
     {
         auto owner = owner_.lock();
         card_ = std::move(card);
+        resources_ = std::move(resources);
         draft_ = std::move(draft);
         visibility_ = visibility;
         if (!preserveView)
@@ -325,7 +332,7 @@ namespace hs2::ui
         Attach(view, editor);
         Environment();
         worker_->Paused(!playing_);
-        generation_ = worker_->Load(card_, draft_, visibility_);
+        generation_ = worker_->Load(card_, draft_, visibility_, false, resources_);
         // 切卡时只同步选中项，保留用户当前浏览位置。
         SyncRail();
     }
@@ -373,7 +380,7 @@ namespace hs2::ui
             owner->model_->Put(L"PreviewBusy", true);
             owner->model_->Put(L"HasPreviewError", false);
         }
-        generation_ = worker_->Load(card_, draft_, visibility_, true);
+        generation_ = worker_->Load(card_, draft_, visibility_, true, resources_);
     }
 
     void NativePreview::Stop()
@@ -504,7 +511,7 @@ namespace hs2::ui
             auto visibility = visibility_;
             Stop();
             Initialize();
-            Load(card, view, editor, draft, visibility, true);
+            Load(card, view, editor, draft, visibility, true, resources_);
         }
         else if (name == L"Screenshot_Click")
             Screenshot();

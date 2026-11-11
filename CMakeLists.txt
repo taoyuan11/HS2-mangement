@@ -19,6 +19,21 @@ target_include_directories(hs2_startup PUBLIC src/HS2Manager.NativeApp)
 target_compile_options(hs2_startup PRIVATE /utf-8 /W4 /EHsc)
 target_compile_definitions(hs2_startup PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 if(BUILD_TESTING)
+    add_executable(hs2_temporary_preview_checks tests/HS2Manager.CppCoreChecks/TemporaryPreviewChecks.cpp)
+    target_link_libraries(hs2_temporary_preview_checks PRIVATE hs2_character)
+    target_compile_options(hs2_temporary_preview_checks PRIVATE /utf-8 /W4 /EHsc)
+    target_link_options(
+        hs2_temporary_preview_checks PRIVATE "/MANIFEST:EMBED"
+        "/MANIFESTINPUT:${CMAKE_SOURCE_DIR}/tests/HS2Manager.CppCoreChecks/LongPaths.manifest"
+    )
+    add_test(
+        NAME temporary_preview
+        COMMAND
+            hs2_temporary_preview_checks "${HS2_SEVENZIP_ROOT}/source/CPP/7zip/Bundles/Format7zF/x64/7z.dll"
+            "${CMAKE_SOURCE_DIR}/tests/fixtures/temporary-preview"
+            "${CMAKE_SOURCE_DIR}/src/HS2Manager.NativeApp/Assets/Brand/hs2-manager.png"
+            "${CMAKE_SOURCE_DIR}/src/HS2Manager.NativeScene/Resources/classdata.tpk"
+    )
     add_subdirectory(tests/HS2Manager.CppToolChecks)
     add_executable(hs2_startup_checks tests/HS2Manager.CppUiChecks/DataLocationChecks.cpp)
     target_link_libraries(hs2_startup_checks PRIVATE hs2_startup)

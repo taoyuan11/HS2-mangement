@@ -2,6 +2,8 @@
 
 ## C++ application and portable package
 
+- 7-Zip 26.06 complete format library (`7z.dll`): Igor Pavlov and contributors; GNU LGPL 2.1 or later, BSD components and the unRAR restriction. Built from the unmodified official source at https://github.com/ip7z/7zip/releases/tag/26.06 (source archive https://github.com/ip7z/7zip/releases/download/26.06/7z2606-src.tar.xz). Used only to read temporary ZIP, 7Z and RAR packages. See `licenses/7zip-LICENSE.txt`, `licenses/7zip-LGPL.txt` and `licenses/7zip-unRAR.txt`. Source checksum and reproducible build entry: `scripts/build/Build-NativeArchive.ps1`.
+
 - C++/WinRT 3.0.260818.1: Microsoft, MIT. See `licenses/CppWinRT-LICENSE.txt`. Source: https://github.com/microsoft/cppwinrt. Used to project the Windows and WinUI APIs into native C++; no C#/WinRT runtime is loaded.
 - Windows App SDK 1.8, including WinUI 3: Microsoft. See `licenses/WindowsAppSDK-LICENSE.txt` and `licenses/WindowsAppSDK-NOTICE.txt`. Source: https://github.com/microsoft/WindowsAppSDK and https://github.com/microsoft/microsoft-ui-xaml.
 - nlohmann/json 3.12.0: Niels Lohmann and contributors, MIT. See `licenses/nlohmann-json-LICENSE.txt`. Source: https://github.com/nlohmann/json/tree/v3.12.0.

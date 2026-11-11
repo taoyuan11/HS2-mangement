@@ -17,6 +17,7 @@ $required = @(
     'native/win-x64/HS2Manager.Physics.dll', 'native/win-x64/PhysX3_x64.dll', 'native/win-x64/PhysX3Common_x64.dll',
     'native/win-x64/PxFoundation_x64.dll', 'native/win-x64/PxPvdSDK_x64.dll',
     'native/win-x64/HS2Manager.FbxBridge.dll', 'native/win-x64/libfbxsdk.dll',
+    'native/win-x64/7z.dll', 'licenses/7zip-LICENSE.txt', 'licenses/7zip-LGPL.txt', 'licenses/7zip-unRAR.txt',
     'native/win-x64/msvcp140.dll', 'native/win-x64/vcruntime140.dll', 'native/win-x64/vcruntime140_1.dll',
     'Resources/ModelExport/BlenderImport.py', 'Resources/ModelExport/BlenderNative.py',
     'Resources/ModelExport/UnrealImport.py', 'Resources/ModelExport/UnrealNative.py',

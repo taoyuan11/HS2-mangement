@@ -678,10 +678,10 @@ namespace hs2
             }
         };
 
-        Parameter PushSettings(const MP *saved, const fs::path &game)
+        Parameter PushSettings(const MP *saved, const fs::path &game, const PreviewResources &resources)
         {
             std::map<std::string, std::string> settings;
-            auto config = game / L"BepInEx" / L"config" / L"mikke.pushUpAI.cfg";
+            auto config = PreviewResourceFile(game, resources, "BepInEx/config/mikke.pushUpAI.cfg");
             if (fs::exists(config))
             {
                 auto bytes = ReadFile(config, 4 * 1024 * 1024);
@@ -760,8 +760,10 @@ namespace hs2
         }
 
         bool PushInstalled(const fs::path &data, const fs::path &game, std::vector<std::string> &warnings,
-                           std::stop_token token)
+                           std::stop_token token, const PreviewResources &resources)
         {
+            if (resources)
+                return resources->Index.Plugins.contains("mikke.pushUpAI");
             try
             {
                 CardRepository repository(data);
@@ -810,7 +812,7 @@ namespace hs2
 
     CharacterExtensionState ReadCharacterExtensions(const CharacterDocument &document, CharacterDefinition &definition,
                                                     const fs::path &dataCache, const fs::path &game,
-                                                    std::stop_token token)
+                                                    std::stop_token token, PreviewResources resources)
     {
         Reader reader{definition, {}, document, dataCache / L"NativeCpp" / L"embedded", token};
         std::optional<MP> pushSaved;
@@ -1003,8 +1005,8 @@ namespace hs2
         {
             try
             {
-                if (PushInstalled(dataCache, game, definition.Diagnostics, token))
-                    reader.State.PushUp = PushSettings(pushSaved ? &*pushSaved : nullptr, game);
+                if (PushInstalled(dataCache, game, definition.Diagnostics, token, resources))
+                    reader.State.PushUp = PushSettings(pushSaved ? &*pushSaved : nullptr, game, resources);
                 else if (pushSaved &&
                          (Flag(Get(*pushSaved, "ENABLE_PUSHUP")) || Flag(Get(*pushSaved, "TOP_ENABLE_PUSHUP"))))
                     reader.Warning("PushUp：卡片保存了参数，但本机没有安装该插件；与游戏一致，不应用这些参数。");

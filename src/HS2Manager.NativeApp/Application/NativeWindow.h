@@ -4,6 +4,7 @@
 #include "Model/ModelExport.h"
 #include "Common/Core.h"
 #include "Mods/ModIndex.h"
+#include "Preview/TemporaryPreviewSession.h"
 #include "Infrastructure/Observable.h"
 #include <set>
 #include <thread>
@@ -56,6 +57,11 @@ namespace hs2::ui
         void Work(std::string label, std::function<std::string(std::stop_token, Progress)> operation);
         void SetBusy(bool value);
         void Report(std::string message);
+        void ClosePreview();
+        void CancelTemporaryPreview();
+        void BindTemporaryPreviewDrop(xaml::FrameworkElement const &target);
+        void LoadTemporaryCard(const std::string &id);
+        winrt::fire_and_forget OpenTemporaryPreview(fs::path source = {});
         winrt::fire_and_forget Action(std::wstring name, Object sender);
         winrt::Windows::Foundation::IAsyncOperation<bool> Confirm(winrt::hstring title, winrt::hstring message,
                                                                   bool destructive = false);
@@ -70,7 +76,8 @@ namespace hs2::ui
         winrt::fire_and_forget OpenEditor(CardRecord card);
         winrt::Windows::Foundation::IAsyncOperation<bool> CloseEditor();
         winrt::fire_and_forget RequestClose();
-        winrt::fire_and_forget LoadCover(winrt::com_ptr<Observable> item, CardRecord card);
+        winrt::fire_and_forget LoadCover(winrt::com_ptr<Observable> item, CardRecord card,
+                                         std::shared_ptr<TemporaryPreviewStorage> storage = {});
         std::vector<CardRecord> Selected() const;
         std::vector<std::string> SelectedIds() const;
 
@@ -96,6 +103,11 @@ namespace hs2::ui
         std::jthread work_;
         std::shared_ptr<NativeEditor> editor_;
         std::shared_ptr<NativePreview> preview_;
+        std::shared_ptr<TemporaryPreviewSession> temporaryPreview_;
+        std::stop_source temporaryCancellation_;
+        uint64_t temporaryGeneration_ = 0;
+        bool temporaryOpening_ = false;
+        controls::ContentDialog temporaryPasswordDialog_{nullptr};
         bool closePrompt_ = false;
         bool busy_ = false, closing_ = false, dialogOpen_ = false, updating_ = false;
         winrt::Windows::UI::ViewManagement::UISettings preferences_;

@@ -405,6 +405,15 @@ namespace hs2
 
     ModIndex ModDependencyService::Scan(const fs::path &gamePath, Progress progress, std::stop_token token)
     {
+        auto index = ScanTransient(gamePath, index_ ? &*index_ : nullptr, std::move(progress), token);
+        repository_.StoreMetadata("mods-v1", index);
+        index_ = index;
+        return index;
+    }
+
+    ModIndex ModDependencyService::ScanTransient(const fs::path &gamePath, const ModIndex *previous, Progress progress,
+                                                 std::stop_token token)
+    {
         ModIndex index;
         auto game = fs::absolute(gamePath);
         index.GamePath = Utf8(game);
@@ -456,8 +465,8 @@ namespace hs2
             }
         }
         std::map<std::string, const ModFileInfo *> cached;
-        if (index_ && SamePath(Path(index_->GamePath), game))
-            for (auto &item : index_->Files)
+        if (previous && SamePath(Path(previous->GamePath), game))
+            for (auto &item : previous->Files)
                 cached.emplace(Lower(item.Path), &item);
         int done = 0;
         for (auto &[key, path] : paths)
@@ -498,8 +507,6 @@ namespace hs2
         for (auto &file : plugins)
             for (auto &plugin : file.Plugins)
                 index.Plugins[plugin.Guid] = Utf8(Path(file.Path).filename());
-        repository_.StoreMetadata("mods-v1", index);
-        index_ = index;
         return index;
     }
 

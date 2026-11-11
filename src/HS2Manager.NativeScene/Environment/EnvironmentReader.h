@@ -2,6 +2,7 @@
 #include "Character/CharacterDefinition.h"
 #include "Assets/AssetStore.h"
 #include "Common/Core.h"
+#include "Preview/PreviewResourceContext.h"
 
 namespace hs2
 {
@@ -10,5 +11,5 @@ namespace hs2
     EnvironmentDefinition ReadCharacterEnvironment(const fs::path &game, const fs::path &cache,
                                                    NativeGpuAssetStore &assets, std::vector<AssetSelection> &selections,
                                                    std::vector<std::string> &diagnostics,
-                                                   std::stop_token cancellation = {});
+                                                   std::stop_token cancellation = {}, PreviewResources resources = {});
 }

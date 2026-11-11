@@ -36,7 +36,8 @@ namespace hs2::ui
         NativePreviewWorker(fs::path game, fs::path data, fs::path tpk, PreviewCallbacks callbacks);
         ~NativePreviewWorker();
         uint64_t Load(CardRecord card, std::optional<CharacterDocument> draft = {},
-                      CharacterPreviewVisibility visibility = {}, bool preserveTime = false);
+                      CharacterPreviewVisibility visibility = {}, bool preserveTime = false,
+                      PreviewResources resources = {});
         void Unload();
         // 等待渲染器退出 Present 后，界面再解除面板绑定。
         void Quiesce();
@@ -57,6 +58,7 @@ namespace hs2::ui
             std::stop_source Cancellation;
             bool PreserveTime = false;
             bool Recovery = false;
+            PreviewResources Resources;
         };
 
         void Run(std::stop_token stop);

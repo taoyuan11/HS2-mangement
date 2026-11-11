@@ -178,7 +178,9 @@ namespace hs2::ui
 
     NativeWindow::~NativeWindow()
     {
+        temporaryCancellation_.request_stop();
         preview_.reset();
+        temporaryPreview_.reset();
         if (preferenceToken_.value)
             preferences_.ColorValuesChanged(preferenceToken_);
         work_.request_stop();
@@ -225,6 +227,7 @@ namespace hs2::ui
         window_.Content(root_);
         model_->Put(L"IsEditing", false);
         model_->Put(L"IsPreview", false);
+        model_->Put(L"IsTemporaryPreview", false);
         model_->Put(L"IsIdle", true);
         model_->Put(L"IsBusy", false);
         model_->Put(L"CanModify", false);
@@ -303,6 +306,7 @@ namespace hs2::ui
                         args.Cancel(true);
                         self->closing_ = true;
                         self->work_.request_stop();
+                        self->CancelTemporaryPreview();
                         if (self->editor_)
                             self->editor_->CancelPending();
                         self->Report("正在取消当前操作，完成清理后关闭…");
@@ -326,7 +330,7 @@ namespace hs2::ui
                     {
                         self->Report(e.what());
                     }
-                    self->preview_.reset();
+                    self->ClosePreview();
                     self->closing_ = true;
                 }
             });
@@ -373,6 +377,7 @@ namespace hs2::ui
         Work("检查未完成操作",
              [this](auto stop, auto progress)
              {
+                 TemporaryPreviewStorage::CleanAbandoned(dataDirectory_);
                  auto recovered = files_->Recover(stop);
                  auto scan = library_->Scan(settings_.ScanRoots(), progress, stop, settings_.RecursiveCardSearch);
                  return "扫描完成：" + std::to_string(scan.Valid) + " 张人物卡，" +
@@ -619,8 +624,7 @@ namespace hs2::ui
 
     void NativeWindow::Navigate(std::string mode)
     {
-        preview_.reset();
-        model_->Put(L"IsPreview", false);
+        ClosePreview();
         mode_ = std::move(mode);
         folder_.clear();
         collection_.clear();
@@ -700,6 +704,8 @@ namespace hs2::ui
             items.Append(item.as<Object>());
         }
         model_->Set(L"VisibleCards", items, false);
+        if (!model_->Bool(L"IsTemporaryPreview"))
+            model_->Set(L"PreviewCards", items, false);
         model_->Put(L"Empty", visible_.empty());
         model_->Text(L"ResultSummary", std::to_string(visible_.size()) + " 个结果");
         model_->Put(L"EmptyTitle", L"没有匹配的人物卡");
@@ -815,7 +821,8 @@ namespace hs2::ui
                      std::to_string(missing) + " 项缺失 · " + std::to_string(unknown) + " 项待确认");
     }
 
-    fire_and_forget NativeWindow::LoadCover(com_ptr<Observable> item, CardRecord card)
+    fire_and_forget NativeWindow::LoadCover(com_ptr<Observable> item, CardRecord card,
+                                            std::shared_ptr<TemporaryPreviewStorage> storage)
     {
         auto lifetime = shared_from_this();
         try
@@ -824,18 +831,36 @@ namespace hs2::ui
                 co_return;
             auto path = (dataDirectory_ / Path(card.CoverFile)).wstring();
             apartment_context ui;
-            winrt::Windows::Storage::Streams::IRandomAccessStreamWithContentType stream{nullptr};
+            winrt::Windows::Storage::Streams::IRandomAccessStream stream{nullptr};
             // 此协程由 ContainerContentChanging 发起。StorageFile 的首次激活会泵送 COM 消息，
             // 在列表布局中同步调用会重入 XAML，触发 E_UNEXPECTED / 0xc000027b。
             co_await resume_background();
             try
             {
-                auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(path);
-                stream = co_await file.OpenReadAsync();
+                if (storage)
+                {
+                    // WinRT 文件路径接口不能可靠处理扩展长路径；临时封面先读入内存并立即释放文件。
+                    auto bytes = ReadFile(fs::path(path));
+                    winrt::Windows::Storage::Streams::InMemoryRandomAccessStream memory;
+                    winrt::Windows::Storage::Streams::DataWriter writer(memory);
+                    writer.WriteBytes(bytes);
+                    co_await writer.StoreAsync();
+                    writer.DetachStream();
+                    memory.Seek(0);
+                    stream = memory;
+                }
+                else
+                {
+                    auto file = co_await winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(path);
+                    stream = co_await file.OpenReadAsync();
+                }
             }
             catch (hresult_error const &)
             {
                 // 缺失的封面仍回到 UI 线程释放窗口及绑定对象，保留占位图。
+            }
+            catch (std::exception const &)
+            {
             }
             co_await ui;
             if (!stream || closing_)
@@ -843,6 +868,7 @@ namespace hs2::ui
             Media::Imaging::BitmapImage bitmap;
             bitmap.DecodePixelWidth(360);
             co_await bitmap.SetSourceAsync(stream);
+            stream.Close();
             item->Set(L"Cover", bitmap, false);
         }
         catch (hresult_error const &)
@@ -896,15 +922,14 @@ namespace hs2::ui
                             {
                                 if (auto self = weak.lock())
                                 {
-                                    if (self->updating_)
+                                    if (self->updating_ || self->busy_)
                                         return;
                                     auto node = self->Control<TreeView>(L"FolderTree").SelectedNode();
                                     if (node)
                                     {
                                         auto value =
                                             get_self<Observable>(node.Content().as<data::ICustomPropertyProvider>());
-                                        self->preview_.reset();
-                                        self->model_->Put(L"IsPreview", false);
+                                        self->ClosePreview();
                                         self->folder_ = to_string(value->String(L"Path"));
                                         self->mode_ = "all";
                                         self->collection_.clear();
@@ -975,6 +1000,18 @@ namespace hs2::ui
                             return;
                         object->Put(L"CoverLoading", true);
                         auto id = to_string(object->String(L"Id"));
+                        if (self->temporaryPreview_)
+                        {
+                            auto found = std::find_if(self->temporaryPreview_->Cards.begin(),
+                                                      self->temporaryPreview_->Cards.end(),
+                                                      [&](auto &entry)
+                                                      {
+                                                          return entry.Card.Id == id;
+                                                      });
+                            if (found != self->temporaryPreview_->Cards.end())
+                                self->LoadCover(object->get_strong(), found->Card, self->temporaryPreview_->Storage);
+                            return;
+                        }
                         auto it = std::find_if(self->visible_.begin(), self->visible_.end(),
                                                [&](auto const &card)
                                                {
@@ -1019,7 +1056,7 @@ namespace hs2::ui
                     {
                         if (self->editor_)
                             self->Action(L"CloseEditor_Click", nullptr);
-                        else if (self->preview_)
+                        else if (self->preview_ || self->model_->Bool(L"IsTemporaryPreview"))
                             self->Action(L"ClosePreview_Click", nullptr);
                         else if (self->model_->Bool(L"IsMultiSelectMode"))
                             self->Action(L"MultiSelect_Click", nullptr);
@@ -1033,7 +1070,7 @@ namespace hs2::ui
                             self->editor_->Redo();
                         args.Handled(true);
                     }
-                    else if (ctrl && key == 'F')
+                    else if (ctrl && key == 'F' && !self->model_->Bool(L"IsTemporaryPreview"))
                     {
                         if (self->editor_)
                             self->editor_->FocusSearch();
@@ -1079,6 +1116,7 @@ namespace hs2::ui
                 {
                     args.AcceptedOperation(
                         !self->busy_ && !self->editor_ && !self->closing_ &&
+                                !self->model_->Bool(L"IsTemporaryPreview") &&
                                 args.DataView().Contains(
                                     winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::StorageItems())
                             ? winrt::Windows::ApplicationModel::DataTransfer::DataPackageOperation::Copy
@@ -1096,6 +1134,7 @@ namespace hs2::ui
                     try
                     {
                         if (!self->busy_ && !self->editor_ && !self->closing_ &&
+                            !self->model_->Bool(L"IsTemporaryPreview") &&
                             args.DataView().Contains(
                                 winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::StorageItems()))
                         {
@@ -1139,6 +1178,8 @@ namespace hs2::ui
                     deferral.Complete();
                 }
             });
+        BindTemporaryPreviewDrop(Control<FrameworkElement>(L"TemporaryPreviewDropZone"));
+        BindTemporaryPreviewDrop(Control<FrameworkElement>(L"OpenTemporaryPreviewAgain"));
     }
 
     IAsyncOperation<bool> NativeWindow::Confirm(hstring title, hstring message, bool destructive)

@@ -51,8 +51,10 @@ namespace hs2
             return values;
         }
 
-        bool Plugin(const fs::path &game, std::wstring_view name)
+        bool Plugin(const fs::path &game, std::wstring_view name, const PreviewResources &resources)
         {
+            if (resources)
+                return resources->Plugin(name).has_value();
             auto directory = game / "BepInEx/plugins";
             if (!fs::is_directory(directory))
                 return false;
@@ -118,15 +120,25 @@ namespace hs2
 
     std::vector<BodyCatalogEntry> ResolveCharacterBody(const fs::path &game, const fs::path &data,
                                                        const CharacterDocument &document, const Parameter &uncensor,
-                                                       std::stop_token cancellation)
+                                                       std::stop_token cancellation, PreviewResources resources)
     {
-        if (!Plugin(game, L"HS2_UncensorSelector.dll"))
+        if (!Plugin(game, L"HS2_UncensorSelector.dll", resources))
             return {};
-        CardRepository repository(data);
-        auto stored = repository.LoadMetadata("mods-v1");
-        if (!stored)
-            throw std::runtime_error("MOD index is required for body selection.");
-        auto mods = NativeModSelection::Select(stored->get<ModIndex>().Files);
+        std::vector<ModFileInfo> mods;
+        if (resources)
+        {
+            mods = resources->Index.Files;
+            // 身体与迁移清单采用后读覆盖，因此从本机、共享到角色目录依次读取。
+            std::reverse(mods.begin(), mods.end());
+        }
+        else
+        {
+            CardRepository repository(data);
+            auto stored = repository.LoadMetadata("mods-v1");
+            if (!stored)
+                throw std::runtime_error("MOD index is required for body selection.");
+            mods = NativeModSelection::Select(stored->get<ModIndex>().Files);
+        }
         std::vector<BodyCatalogEntry> entries{
             {"Body", "Default.Body.Female", "Default Body F", 1, false, {}, "chara/oo_base.unity3d", "p_cf_body_00"},
             {"Penis", "Default.Penis", "Mosaic Penis", -1, false, {}, "chara/oo_base.unity3d", "p_cm_body_00"},
@@ -136,7 +148,7 @@ namespace hs2
         for (auto &mod : mods)
             fingerprint +=
                 mod.Path + "|" + std::to_string(mod.Size) + "|" + std::to_string(mod.ModifiedUtcTicks) + "\n";
-        auto cache = data / "NativeCpp/resources" /
+        auto cache = data / "NativeCpp" / "resources" /
                      Path("body-v1-" +
                           Sha256(std::span(reinterpret_cast<const uint8_t *>(fingerprint.data()), fingerprint.size())) +
                           ".json");
@@ -228,10 +240,11 @@ namespace hs2
                                        {"Asset", e.Asset}});
             WriteJson(cache, Json{{"Entries", encoded}, {"Migrations", migrations}});
         }
-        auto config = Config(game / "BepInEx/config/com.deathweasel.bepinex.uncensorselector.cfg");
+        auto config =
+            Config(PreviewResourceFile(game, resources, "BepInEx/config/com.deathweasel.bepinex.uncensorselector.cfg"));
         auto parameter = ParameterOf(MessagePack::Parse(document.BlockBytes("Parameter")));
         float voice = parameter.Float("voiceRate", .5f);
-        if (!Plugin(game, L"HS2_SliderUnlocker.dll"))
+        if (!Plugin(game, L"HS2_SliderUnlocker.dll", resources))
             voice = std::clamp(voice, 0.f, 1.f);
         float pitch = .94f + (1.06f - .94f) * voice;
         int seed = static_cast<int>(parameter.Int("birthDay") + parameter.Int("personality")) +
@@ -345,12 +358,13 @@ namespace hs2
         return result;
     }
 
-    std::optional<ColliderSupportDefinition> ReadCharacterColliders(const fs::path &game)
+    std::optional<ColliderSupportDefinition> ReadCharacterColliders(const fs::path &game, PreviewResources resources)
     {
-        if (!Plugin(game, L"HS2_Colliders.dll"))
+        if (!Plugin(game, L"HS2_Colliders.dll", resources))
             return {};
         ColliderSupportDefinition result{true, true};
-        auto config = Config(game / "BepInEx/config/com.deathweasel.bepinex.colliders.cfg");
+        auto config =
+            Config(PreviewResourceFile(game, resources, "BepInEx/config/com.deathweasel.bepinex.colliders.cfg"));
         for (auto &[key, value] : config)
         {
             if (key.ends_with("/Breast Colliders"))

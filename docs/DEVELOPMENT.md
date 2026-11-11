@@ -21,11 +21,12 @@ HS2-mangement/
             Export/                    人物卡及关联依赖导出
             Library/                   资料库与文件操作
             Mods/                      MOD 和插件索引
+            Preview/                   临时会话、资源上下文及目录租约
             Serialization/             人物卡、MessagePack 和元数据解析
             third_party/               保持上游原样的 JSON 依赖
         HS2Manager.NativeScene/        资源解析、角色装配与运行状态
             Animation/                 动画、骨架及姿态控制
-            Archive/                   ZIP 读取
+            Archive/                   ZIP 资源读取及 7-Zip 安全流式解压
             Assets/                    游戏资源读取和结构解析
             Character/                 角色目录、扩展与装配准备
             Environment/               环境定义和读取

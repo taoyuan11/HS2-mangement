@@ -138,11 +138,13 @@ namespace hs2::ui
     }
 
     uint64_t NativePreviewWorker::Load(CardRecord card, std::optional<CharacterDocument> draft,
-                                       CharacterPreviewVisibility visibility, bool preserveTime)
+                                       CharacterPreviewVisibility visibility, bool preserveTime,
+                                       PreviewResources resources)
     {
         std::lock_guard lock(mutex_);
         loading_.request_stop();
-        pending_ = Request{++generation_, std::move(card), std::move(draft), visibility, {}, preserveTime};
+        pending_ = Request{++generation_, std::move(card), std::move(draft),    visibility, {},
+                           preserveTime,  false,           std::move(resources)};
         unload_ = false;
         quiesce_ = false;
         quiescent_ = false;
@@ -233,6 +235,7 @@ namespace hs2::ui
         try
         {
             std::unique_ptr<NativeCharacterService> service;
+            PreviewResources serviceResources;
             std::unique_ptr<GraphicsDevice> graphics;
             PreparedCharacter prepared;
             std::unique_ptr<NativeCharacterRuntime> runtime;
@@ -311,6 +314,8 @@ namespace hs2::ui
                     runtime.reset();
                     prepared = {};
                     active.reset();
+                    service.reset();
+                    serviceResources.reset();
                     loaded = 0;
                 }
                 if (request)
@@ -332,8 +337,12 @@ namespace hs2::ui
                                 callbacks_.Progress(request->Generation, value.Message);
                         };
                         auto token = request->Cancellation.get_token();
-                        if (!service)
-                            service = std::make_unique<NativeCharacterService>(game_, data_, tpk_);
+                        if (!service || serviceResources != request->Resources)
+                        {
+                            service.reset();
+                            serviceResources = request->Resources;
+                            service = std::make_unique<NativeCharacterService>(game_, data_, tpk_, serviceResources);
+                        }
                         prepared = service->Prepare(request->Card, request->Draft ? &*request->Draft : nullptr,
                                                     request->Visibility, progress, token);
                         CheckCancelled(token);

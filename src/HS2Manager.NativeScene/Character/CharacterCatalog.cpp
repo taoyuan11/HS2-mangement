@@ -292,6 +292,7 @@ namespace hs2
     struct CharacterCatalog::Impl
     {
         fs::path Game, Data, Cache;
+        PreviewResources Resources;
         std::shared_ptr<UnityClassDatabase> Database;
         std::vector<NativeAssetEntry> Entries, StockEntries;
         std::vector<std::string> Warnings;
@@ -303,9 +304,9 @@ namespace hs2
         bool Loaded = false, ManifestLoaded = false, Migration = true;
         std::stop_token Cancellation;
 
-        Impl(fs::path game, fs::path data, fs::path tpk)
+        Impl(fs::path game, fs::path data, fs::path tpk, PreviewResources resources)
             : Game(fs::absolute(game)), Data(fs::absolute(data)), Cache(Data / "NativeCpp" / "resources"),
-              Database(std::make_shared<UnityClassDatabase>(tpk))
+              Resources(std::move(resources)), Database(std::make_shared<UnityClassDatabase>(tpk))
         {
             fs::create_directories(Cache);
         }
@@ -336,6 +337,40 @@ namespace hs2
             CheckCancelled(Cancellation);
             WriteAtomic(target, data);
             return target;
+        }
+
+        struct ResourceSource
+        {
+            fs::path Path;
+            std::string Relative;
+            bool Archived = false;
+        };
+
+        std::vector<ResourceSource> Sources(const std::string &relative, const fs::path &archive)
+        {
+            std::vector<ResourceSource> sources;
+            if (auto loose = Resources->Loose("abdata/" + relative))
+                sources.push_back({*loose, relative, false});
+            if (!archive.empty())
+                sources.push_back({archive, relative, true});
+            auto physical = Physical(relative);
+            if (fs::is_regular_file(physical))
+                sources.push_back({physical, relative, false});
+            if (auto list = Bundles.find(Normal(relative)); list != Bundles.end())
+                for (auto &other : list->second)
+                    if (other != archive)
+                        sources.push_back({other, relative, true});
+            return sources;
+        }
+
+        void Prioritize(std::vector<ResourceSource> &sources)
+        {
+            // 散装资源、MOD 内资源与本机补齐使用同一来源层级。
+            std::stable_sort(sources.begin(), sources.end(),
+                             [&](auto &a, auto &b)
+                             {
+                                 return Resources->Priority(a.Path) > Resources->Priority(b.Path);
+                             });
         }
 
         std::vector<NativeAssetEntry> Stock(const fs::path &path)
@@ -471,8 +506,8 @@ namespace hs2
         }
     };
 
-    CharacterCatalog::CharacterCatalog(fs::path game, fs::path data, fs::path tpk)
-        : impl_(std::make_unique<Impl>(std::move(game), std::move(data), std::move(tpk)))
+    CharacterCatalog::CharacterCatalog(fs::path game, fs::path data, fs::path tpk, PreviewResources resources)
+        : impl_(std::make_unique<Impl>(std::move(game), std::move(data), std::move(tpk), std::move(resources)))
     {
     }
 
@@ -490,9 +525,16 @@ namespace hs2
         auto directory = p.Game / "abdata/list/characustom";
         if (!fs::is_directory(directory))
             throw std::runtime_error("Game character lists are missing.");
-        for (auto &f : fs::recursive_directory_iterator(directory))
-            if (f.is_regular_file() && Normal(Utf8(f.path().extension())) == ".unity3d")
-                stock.push_back(f.path());
+        if (p.Resources)
+        {
+            for (auto &path : p.Resources->Enumerate("abdata/list/characustom"))
+                if (Normal(Utf8(path.extension())) == ".unity3d")
+                    stock.push_back(path);
+        }
+        else
+            for (auto &f : fs::recursive_directory_iterator(directory))
+                if (f.is_regular_file() && Normal(Utf8(f.path().extension())) == ".unity3d")
+                    stock.push_back(f.path());
         std::sort(stock.begin(), stock.end(),
                   [](auto &a, auto &b)
                   {
@@ -523,26 +565,33 @@ namespace hs2
             }
         }
         p.StockEntries = entries;
-        CardRepository repository(p.Data);
         std::optional<ModIndex> index;
-        if (auto saved = repository.LoadMetadata("mods-v1"))
-            try
-            {
-                index = saved->get<ModIndex>();
-                if (!SamePath(Path(index->GamePath), p.Game) || std::any_of(index->Files.begin(), index->Files.end(),
-                                                                            [](auto &mod)
-                                                                            {
-                                                                                return mod.Error.empty() &&
-                                                                                       !mod.ArchiveEntries;
-                                                                            }))
-                    index.reset();
-            }
-            catch (const std::exception &)
-            {
-            }
-        if (!index)
-            index = ModDependencyService(repository).Scan(p.Game, progress, cancellation);
-        p.Mods = NativeModSelection::Select(index->Files);
+        if (p.Resources)
+            index = p.Resources->Index;
+        else
+        {
+            CardRepository repository(p.Data);
+            if (auto saved = repository.LoadMetadata("mods-v1"))
+                try
+                {
+                    index = saved->get<ModIndex>();
+                    if (!SamePath(Path(index->GamePath), p.Game) ||
+                        std::any_of(index->Files.begin(), index->Files.end(),
+                                    [](auto &mod)
+                                    {
+                                        return mod.Error.empty() && !mod.ArchiveEntries;
+                                    }))
+                        index.reset();
+                }
+                catch (const std::exception &)
+                {
+                }
+            if (!index)
+                index = ModDependencyService(repository).Scan(p.Game, progress, cancellation);
+        }
+        p.Mods = p.Resources ? index->Files : NativeModSelection::Select(index->Files);
+        if (p.Resources)
+            p.Warnings.insert(p.Warnings.end(), index->Warnings.begin(), index->Warnings.end());
         p.Migration = index->MigrationEnabled;
         for (size_t i = 0; i < p.Mods.size(); ++i)
         {
@@ -663,6 +712,17 @@ namespace hs2
         auto &p = *impl_;
         auto physical = p.Physical(relative);
         std::replace(relative.begin(), relative.end(), '\\', '/');
+        if (p.Resources)
+        {
+            auto sources = p.Sources(relative, archive);
+            p.Prioritize(sources);
+            for (auto &source : sources)
+                if (!source.Archived)
+                    return source.Path;
+                else if (auto found = p.Extract(source.Path, relative))
+                    return *found;
+            throw std::runtime_error("Missing asset bundle: " + relative);
+        }
         if (!archive.empty())
             if (auto own = p.Extract(archive, relative))
                 return *own;
@@ -680,6 +740,39 @@ namespace hs2
         auto &p = *impl_;
         p.Physical(relative);
         std::replace(relative.begin(), relative.end(), '\\', '/');
+        if (p.Resources)
+        {
+            // Sideloader 允许 PNG 提供逻辑 unity3d 包里的单个贴图。
+            auto png =
+                relative.substr(0, relative.size() - Utf8(Path(relative).extension()).size()) + "/" + name + ".png";
+            p.Physical(png);
+            auto sources = p.Sources(png, archive);
+            auto bundles = p.Sources(relative, archive);
+            sources.insert(sources.end(), bundles.begin(), bundles.end());
+            p.Prioritize(sources);
+            for (auto &source : sources)
+            {
+                auto path = source.Archived ? p.Extract(source.Path, source.Relative) : std::optional(source.Path);
+                if (!path)
+                    continue;
+                if (Normal(source.Relative).ends_with(".png"))
+                    return {*path, name};
+                auto cacheKey = Utf8(*path);
+                auto known = p.Exports.find(cacheKey);
+                if (known == p.Exports.end())
+                {
+                    NativeGpuAssetReader reader(*path, p.Database.get());
+                    known = p.Exports.emplace(cacheKey, reader.ExportNames()).first;
+                }
+                for (auto &exported : known->second)
+                {
+                    auto base = Normal(Utf8(Path(exported).filename()));
+                    if (base == Lower(name) || Lower(Utf8(Path(base).stem())) == Lower(name))
+                        return {*path, name};
+                }
+            }
+            return {Bundle(relative, archive), std::move(name)};
+        }
         if (auto list = p.Bundles.find(Normal(relative)); list != p.Bundles.end())
             for (auto &other : list->second)
                 if (auto path = p.Extract(other, relative))

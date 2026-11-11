@@ -73,13 +73,23 @@ namespace hs2
         }
 
         std::map<std::string, Entry> Catalog(const fs::path &data, const std::vector<fs::path> &plugins,
-                                             std::stop_token cancellation)
+                                             std::stop_token cancellation, const PreviewResources &resources)
         {
-            CardRepository repository(data);
-            auto index = repository.LoadMetadata("mods-v1");
-            if (!index)
-                throw std::runtime_error("MOD index is required for shader manifests.");
-            auto mods = NativeModSelection::Select(index->get<ModIndex>().Files);
+            std::vector<ModFileInfo> mods;
+            if (resources)
+            {
+                mods = resources->Index.Files;
+                // Shader 清单按名称覆盖，低优先级先读，让包内清单最后生效。
+                std::reverse(mods.begin(), mods.end());
+            }
+            else
+            {
+                CardRepository repository(data);
+                auto index = repository.LoadMetadata("mods-v1");
+                if (!index)
+                    throw std::runtime_error("MOD index is required for shader manifests.");
+                mods = NativeModSelection::Select(index->get<ModIndex>().Files);
+            }
             std::string stamp;
             for (auto &mod : mods)
                 stamp += mod.Path + "|" + std::to_string(mod.Size) + "|" + std::to_string(mod.ModifiedUtcTicks) + "\n";
@@ -87,7 +97,7 @@ namespace hs2
                 stamp += Utf8(plugin) + "|" + std::to_string(fs::file_size(plugin)) + "|" +
                          std::to_string(ModifiedTicks(plugin)) + "\n";
             auto cache =
-                data / "NativeCpp/resources" /
+                data / "NativeCpp" / "resources" /
                 Path("shaders-v1-" + Sha256(std::span(reinterpret_cast<const uint8_t *>(stamp.data()), stamp.size())) +
                      ".json");
             std::map<std::string, Entry> result;
@@ -172,11 +182,18 @@ namespace hs2
 
     void ReadCharacterShaders(const fs::path &game, const fs::path &data, CharacterCatalog &catalog,
                               NativeGpuAssetStore &assets, CharacterDefinition &definition,
-                              std::stop_token cancellation)
+                              std::stop_token cancellation, PreviewResources resources)
     {
         std::vector<fs::path> plugins;
         auto pluginDirectory = game / "BepInEx/plugins";
-        if (fs::is_directory(pluginDirectory))
+        if (resources)
+        {
+            for (auto &plugin : resources->Index.PluginFiles)
+                if (Lower(Utf8(Path(plugin.Path).filename())).find("materialeditor") != std::string::npos)
+                    plugins.push_back(Path(plugin.Path));
+            std::reverse(plugins.begin(), plugins.end());
+        }
+        else if (fs::is_directory(pluginDirectory))
             for (auto &file : fs::recursive_directory_iterator(pluginDirectory))
             {
                 CheckCancelled(cancellation);
@@ -185,13 +202,15 @@ namespace hs2
                     name.find("materialeditor") != std::string::npos)
                     plugins.push_back(file.path());
             }
-        std::sort(plugins.begin(), plugins.end(),
-                  [](auto &a, auto &b)
-                  {
-                      return Lower(Utf8(a)) < Lower(Utf8(b));
-                  });
+        if (!resources)
+            std::sort(plugins.begin(), plugins.end(),
+                      [](auto &a, auto &b)
+                      {
+                          return Lower(Utf8(a)) < Lower(Utf8(b));
+                      });
         bool optimization = !plugins.empty();
-        std::ifstream config(game / "BepInEx/config/com.deathweasel.bepinex.materialeditor.cfg");
+        std::ifstream config(
+            PreviewResourceFile(game, resources, "BepInEx/config/com.deathweasel.bepinex.materialeditor.cfg"));
         for (std::string line; std::getline(config, line);)
         {
             auto at = line.find('=');
@@ -223,7 +242,7 @@ namespace hs2
             }
         if (wanted.empty() && automatic.empty())
             return;
-        auto entries = Catalog(data, plugins, cancellation);
+        auto entries = Catalog(data, plugins, cancellation, resources);
         auto names = wanted;
         names.insert(automatic.begin(), automatic.end());
         auto reference = [&](const std::string &bundle, const std::string &asset, const fs::path &source)
@@ -245,7 +264,7 @@ namespace hs2
                 !std::equal(std::begin(magic), std::end(magic), bytes.begin()))
                 throw std::runtime_error("Invalid embedded MaterialEditor shader bundle: " + bundle);
             auto hash = Sha256(bytes);
-            auto path = data / "NativeCpp/resources/shader-data" / Path(hash + ".unity3d");
+            auto path = data / "NativeCpp" / "resources" / "shader-data" / Path(hash + ".unity3d");
             if (!fs::is_regular_file(path) || HashFile(path, cancellation) != hash)
                 WriteAtomic(path, bytes);
             assets.AddPath(path);

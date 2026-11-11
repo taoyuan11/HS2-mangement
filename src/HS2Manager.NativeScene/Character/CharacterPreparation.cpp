@@ -98,9 +98,11 @@ namespace hs2
         }
     }
 
-    NativeCharacterService::NativeCharacterService(fs::path game, fs::path data, fs::path tpk)
-        : game_(fs::absolute(game)), data_(fs::absolute(data)), catalog_(game_, data_, std::move(tpk)),
-          blockCache_(std::make_shared<UnityBlockCache>(data_ / "NativeCpp/blocks-v1"))
+    NativeCharacterService::NativeCharacterService(fs::path game, fs::path data, fs::path tpk,
+                                                   PreviewResources resources)
+        : game_(fs::absolute(game)), data_(resources ? resources->Data : fs::absolute(data)),
+          resources_(std::move(resources)), catalog_(game_, data_, std::move(tpk), resources_),
+          blockCache_(std::make_shared<UnityBlockCache>(data_ / "NativeCpp" / "blocks-v1"))
     {
     }
 
@@ -121,10 +123,12 @@ namespace hs2
         definition->Hair = ParameterOf(document.Node("hair"));
         definition->Clothes = ParameterOf(document.Node("clothes"));
         definition->Diagnostics = catalog_.Warnings();
-        auto extensions = ReadCharacterExtensions(document, *definition, data_, game_, cancellation);
+        auto extensions = ReadCharacterExtensions(document, *definition, data_, game_, cancellation, resources_);
         bool unlocked = false;
         auto pluginRoot = game_ / "BepInEx/plugins";
-        if (fs::is_directory(pluginRoot))
+        if (resources_)
+            unlocked = resources_->Plugin(L"HS2_SliderUnlocker.dll").has_value();
+        else if (fs::is_directory(pluginRoot))
             for (auto &file : fs::recursive_directory_iterator(pluginRoot))
                 if (file.path().filename() == L"HS2_SliderUnlocker.dll")
                 {
@@ -154,11 +158,12 @@ namespace hs2
         {
             CheckCancelled(cancellation);
             auto ref = catalog_.Asset(bundle, name, archive);
-            for (auto &dependency : catalog_.Dependencies(bundle, archive))
-            {
-                assets->AddPath(dependency);
-                paths.insert(dependency);
-            }
+            if (ref.Bundle.extension() != L".png")
+                for (auto &dependency : catalog_.Dependencies(bundle, archive))
+                {
+                    assets->AddPath(dependency);
+                    paths.insert(dependency);
+                }
             assets->AddPath(ref.Bundle);
             paths.insert(ref.Bundle);
             return ref;
@@ -239,7 +244,8 @@ namespace hs2
         applyShape(*rig, "ShapeBodyInfoFemale", bodyAnimation, bodyCategories, definition->Body.Get("shapeValueBody"));
         ApplyBoneModifiers(*rig, definition->BoneModifiers);
         read("chara/oo_base.unity3d", definition->Sex == 0 ? "p_cm_body_00" : "p_cf_body_00", {}, "body", 0);
-        for (auto &supplement : ResolveCharacterBody(game_, data_, document, extensions.Uncensor, cancellation))
+        for (auto &supplement :
+             ResolveCharacterBody(game_, data_, document, extensions.Uncensor, cancellation, resources_))
         {
             auto part = read(supplement.Bundle, supplement.Asset, supplement.Archive, "supplement",
                              supplement.Kind == "Body"    ? 0
@@ -381,7 +387,8 @@ namespace hs2
                     part->Adjustments = Flatten(
                         move.Children.size() == 3 && !move.Children[2].Children.empty() ? move.Children[2] : move);
                 }
-                if (role == "hair" && fs::is_regular_file(game_ / "BepInEx/plugins/HairMeshforAll.dll"))
+                if (role == "hair" &&
+                    fs::is_regular_file(PreviewResourceFile(game_, resources_, "BepInEx/plugins/HairMeshforAll.dll")))
                     for (auto &component : part->Components)
                         if (component.Type == "CmpHair" && !component.Data.Get("rendHair").Children.empty())
                             for (auto &field : component.Data.Children)
@@ -544,15 +551,16 @@ namespace hs2
         definition->Heels = visibility.ClothesVisible(7)
                                 ? ReadCharacterHeels(worn.contains(7) ? &worn.at(7) : nullptr, definition->Diagnostics)
                                 : HeelDefinition{};
-        definition->ColliderSupport = ReadCharacterColliders(game_);
+        definition->ColliderSupport = ReadCharacterColliders(game_, resources_);
         if (!definition->Overlays.empty() ||
             std::any_of(definition->MaterialEdits.begin(), definition->MaterialEdits.end(),
                         [](auto &e)
                         {
                             return e.Kind == "shader";
                         }))
-            for (auto &bundle : ExtractUnityBundles(game_ / "BepInEx/plugins/HS2_OverlayMods.dll",
-                                                    data_ / "NativeCpp/resources/shader-data", cancellation))
+            for (auto &bundle :
+                 ExtractUnityBundles(PreviewResourceFile(game_, resources_, "BepInEx/plugins/HS2_OverlayMods.dll"),
+                                     data_ / "NativeCpp" / "resources" / "shader-data", cancellation))
             {
                 assets->AddPath(bundle);
                 auto reader = assets->Reader(bundle);
@@ -565,10 +573,10 @@ namespace hs2
             progress({0, 0, "读取角色光照与后处理设置"});
         definition->Environment =
             ReadCharacterEnvironment(game_, data_ / "NativeCpp" / "resources", *assets, definition->Selections,
-                                     definition->Diagnostics, cancellation);
+                                     definition->Diagnostics, cancellation, resources_);
         if (progress)
             progress({0, 0, "读取材质编辑器着色器配置"});
-        ReadCharacterShaders(game_, data_, catalog_, *assets, *definition, cancellation);
+        ReadCharacterShaders(game_, data_, catalog_, *assets, *definition, cancellation, resources_);
         for (auto &parameter : definition->Body.Children)
             if (parameter.Name == "paintInfo")
                 for (auto &paint : parameter.Children)

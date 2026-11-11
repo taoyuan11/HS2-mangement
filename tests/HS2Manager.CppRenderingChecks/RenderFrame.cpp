@@ -1,6 +1,7 @@
 #include "Pipeline/NativeFramePipeline.h"
 #include "Character/CharacterPreparation.h"
 #include "Runtime/CharacterRuntime.h"
+#include "Preview/TemporaryPreviewSession.h"
 #include <wincodec.h>
 #include <fstream>
 #include <iostream>
@@ -44,10 +45,16 @@ int wmain(int argc, wchar_t **argv)
 {
     try
     {
+        fs::path decoder;
+        if (argc >= 8 && std::wstring_view(argv[argc - 2]) == L"--temporary")
+        {
+            decoder = argv[argc - 1];
+            argc -= 2;
+        }
         if (argc < 6 || argc > 8)
         {
             std::cerr << "Usage: hs2_render_frame_checks game data classdata.tpk card.png output-directory "
-                         "[physics-directory [comparison-card.png]]\n";
+                         "[physics-directory [comparison-card.png]] [--temporary 7z.dll]\n";
             return 2;
         }
         CheckHResult(CoInitializeEx(nullptr, COINIT_MULTITHREADED), "Initialize COM");
@@ -60,7 +67,27 @@ int wmain(int argc, wchar_t **argv)
             }
         } apartment;
 
-        auto card = CardParser().Parse(argv[4]);
+        std::shared_ptr<TemporaryPreviewSession> session;
+        PreviewResources resources;
+        if (!decoder.empty())
+        {
+            std::optional<ModIndex> previous;
+            {
+                CardRepository repository(argv[2]);
+                if (auto saved = repository.LoadMetadata("mods-v1"))
+                    previous = saved->get<ModIndex>();
+            }
+            session = TemporaryPreviewSession::Open(argv[4], argv[1], argv[2], decoder, previous, {},
+                                                    [](auto &p)
+                                                    {
+                                                        std::cout << p.Message << " " << p.Completed << "/" << p.Total
+                                                                  << std::endl;
+                                                    });
+            resources = session->Cards.front().Resources;
+            std::cout << "temporary cards=" << session->Cards.size() << " mods=" << resources->Index.Files.size()
+                      << std::endl;
+        }
+        auto card = session ? session->Cards.front().Card : CardParser().Parse(argv[4]);
         if (card.Status != CardStatus::Valid)
             throw std::runtime_error(card.Error);
         auto started = std::chrono::steady_clock::now();
@@ -68,7 +95,7 @@ int wmain(int argc, wchar_t **argv)
         {
             return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         };
-        NativeCharacterService service(argv[1], argv[2], argv[3]);
+        NativeCharacterService service(argv[1], argv[2], argv[3], resources);
         auto original = card;
         for (int run = 0; run < (argc == 8 ? 3 : 1); ++run)
         {

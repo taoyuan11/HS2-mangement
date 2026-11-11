@@ -3,20 +3,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(HS2ManagerNativeCore LANGUAGES C CXX)
     enable_testing()
 endif()
-if(NOT TARGET hs2_archive)
-    add_library(
-        hs2_archive STATIC ../HS2Manager.NativeScene/Archive/ZipArchive.cpp
-                           ../HS2Manager.NativeScene/ThirdParty/Miniz/miniz_tinfl.c
-    )
-    target_compile_features(hs2_archive PUBLIC cxx_std_20)
-    target_include_directories(hs2_archive PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../HS2Manager.NativeScene")
-    target_compile_definitions(
-        hs2_archive
-        PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN
-        PRIVATE MINIZ_NO_ARCHIVE_APIS MINIZ_NO_DEFLATE_APIS MINIZ_NO_ZLIB_APIS
-    )
-    target_compile_options(hs2_archive PRIVATE /utf-8)
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/../HS2Manager.NativeScene/Archive/Archive.cmake")
+
 add_library(
     hs2_core STATIC
     Common/Core.cpp
@@ -29,6 +17,8 @@ add_library(
     Editing/EditSchema.cpp
     Mods/ModIndex.cpp
     Mods/PluginIndex.cpp
+    Preview/PreviewResourceContext.cpp
+    Preview/TemporaryPreviewSession.cpp
 )
 target_compile_features(hs2_core PUBLIC cxx_std_20)
 target_include_directories(hs2_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")

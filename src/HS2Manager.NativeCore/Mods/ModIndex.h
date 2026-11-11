@@ -128,6 +128,9 @@ namespace hs2
     public:
         explicit ModDependencyService(CardRepository &repository);
         ModIndex Scan(const fs::path &gamePath, Progress progress = {}, std::stop_token cancellation = {});
+        // 临时预览只读取资源，索引持久化由正常资料库扫描单独负责。
+        static ModIndex ScanTransient(const fs::path &gamePath, const ModIndex *previous = nullptr,
+                                      Progress progress = {}, std::stop_token cancellation = {});
 
         const std::optional<ModIndex> &Index() const
         {

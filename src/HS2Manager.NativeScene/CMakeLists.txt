@@ -3,19 +3,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(HS2ManagerNativeScene LANGUAGES C CXX)
     enable_testing()
 endif()
-if(NOT TARGET hs2_archive)
-    add_library(hs2_archive STATIC Archive/ZipArchive.cpp ThirdParty/Miniz/miniz_tinfl.c)
-    target_compile_features(hs2_archive PUBLIC cxx_std_20)
-    target_include_directories(hs2_archive PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_definitions(
-        hs2_archive
-        PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN
-        PRIVATE MINIZ_NO_ARCHIVE_APIS MINIZ_NO_DEFLATE_APIS MINIZ_NO_ZLIB_APIS
-    )
-    if(MSVC)
-        target_compile_options(hs2_archive PRIVATE /utf-8)
-    endif()
-endif()
+include(Archive/Archive.cmake)
+
 add_library(
     hs2_scene STATIC
     Scene/SceneTypes.cpp

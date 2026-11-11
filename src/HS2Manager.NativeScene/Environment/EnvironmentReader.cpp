@@ -135,7 +135,8 @@ namespace hs2
 
     EnvironmentDefinition ReadCharacterEnvironment(const fs::path &game, const fs::path &cache,
                                                    NativeGpuAssetStore &assets, std::vector<AssetSelection> &selections,
-                                                   std::vector<std::string> &diagnostics, std::stop_token cancellation)
+                                                   std::vector<std::string> &diagnostics, std::stop_token cancellation,
+                                                   PreviewResources resources)
     {
         using namespace sim;
         EnvironmentDefinition result;
@@ -271,7 +272,8 @@ namespace hs2
                 }
                 result.Profiles.push_back(std::move(output));
             }
-        auto setup = game / "UserData/setup.xml", system = game / "UserData/config/system.xml";
+        auto setup = PreviewResourceFile(game, resources, "UserData/setup.xml"),
+             system = PreviewResourceFile(game, resources, "UserData/config/system.xml");
         if (fs::is_regular_file(setup))
         {
             auto xml = ReadSceneXml(ReadFile(setup, 4 * 1024 * 1024));
@@ -297,9 +299,10 @@ namespace hs2
         Require(selected >= 0 && static_cast<size_t>(selected) < quality.Get("m_QualitySettings").Children.size(),
                 "Quality preset index is invalid.");
         result.Quality = quality.Get("m_QualitySettings").Children[selected];
-        if (fs::is_regular_file(game / "BepInEx/plugins/IllusionFixes/HS2_Fix_GravityAdjust.dll"))
+        if (fs::is_regular_file(
+                PreviewResourceFile(game, resources, "BepInEx/plugins/IllusionFixes/HS2_Fix_GravityAdjust.dll")))
             Child(Child(result.Physics, "m_Gravity"), "y").Number = -98.1;
-        auto custom = game / "UserData/custom/customscene.dat";
+        auto custom = PreviewResourceFile(game, resources, "UserData/custom/customscene.dat");
         if (fs::is_regular_file(custom))
         {
             auto bytes = ReadFile(custom, 16 * 1024 * 1024);
@@ -329,7 +332,8 @@ namespace hs2
             assets.AddPath(bundle);
             selections.push_back({key, {bundle, name}});
         };
-        auto user = game / "DHH_Data/UserSetting.ini", graphic = game / "DHH_Data/GraphicSetting.dhs";
+        auto user = PreviewResourceFile(game, resources, "DHH_Data/UserSetting.ini"),
+             graphic = PreviewResourceFile(game, resources, "DHH_Data/GraphicSetting.dhs");
         if (fs::is_regular_file(user) && fs::is_regular_file(graphic))
         {
             result.DhhEnabled = Tags(ReadText(user))["GraphicEnable"] == "True";
@@ -348,11 +352,12 @@ namespace hs2
                     result.DhhColors[i * 3 + index++] = Number(it->str());
             }
             result.SkyboxId = static_cast<int>(Number(values["SkyboxID"]));
-            result.LutPath = Utf8(game / "DHH_Data/LutTextures" /
-                                  Path("Lut_" + std::to_string(static_cast<int>(result.DhhFloats[43])) + ".png"));
+            result.LutPath = Utf8(PreviewResourceFile(
+                game, resources,
+                "DHH_Data/LutTextures/Lut_" + std::to_string(static_cast<int>(result.DhhFloats[43])) + ".png"));
             if (result.DhhEnabled)
             {
-                auto bundle = game / "DHH_Data/ModData/dhpost";
+                auto bundle = PreviewResourceFile(game, resources, "DHH_Data/ModData/dhpost");
                 Require(fs::is_regular_file(bundle), "DHH environment resources are missing.");
                 assets.AddPath(bundle);
                 if (result.SkyboxId > 0 && result.SkyboxId < 6)
@@ -364,7 +369,8 @@ namespace hs2
                     diagnostics.push_back("DHH 当前环境贴图配置尚未完成还原：" + std::to_string(result.SkyboxId));
             }
         }
-        auto aaConfig = game / "BepInEx/config/BetterAA.cfg", aaPlugin = game / "BepInEx/plugins/HS2_BetterAA.dll";
+        auto aaConfig = PreviewResourceFile(game, resources, "BepInEx/config/BetterAA.cfg"),
+             aaPlugin = PreviewResourceFile(game, resources, "BepInEx/plugins/HS2_BetterAA.dll");
         if (fs::is_regular_file(aaConfig) && fs::is_regular_file(aaPlugin))
         {
             std::map<std::string, std::string> config;

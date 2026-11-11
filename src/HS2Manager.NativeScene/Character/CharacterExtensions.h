@@ -1,6 +1,7 @@
 #pragma once
 #include "Character/CharacterDefinition.h"
 #include "Common/Core.h"
+#include "Preview/PreviewResourceContext.h"
 #include <map>
 
 namespace hs2
@@ -35,7 +36,7 @@ namespace hs2
 
     CharacterExtensionState ReadCharacterExtensions(const CharacterDocument &document, CharacterDefinition &definition,
                                                     const fs::path &dataCache, const fs::path &game,
-                                                    std::stop_token cancellation = {});
+                                                    std::stop_token cancellation = {}, PreviewResources resources = {});
     void ApplyCharacterPushUp(CharacterDefinition &definition, const CharacterExtensionState &state,
                               std::span<const std::uint8_t> bodyAnimation, bool braWorn, bool topWorn);
 }

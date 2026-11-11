@@ -11,7 +11,7 @@ namespace hs2::ui
         ~NativePreview();
         void Load(CardRecord card, xaml::FrameworkElement view, bool editor,
                   std::optional<CharacterDocument> draft = {}, CharacterPreviewVisibility visibility = {},
-                  bool preserveView = false);
+                  bool preserveView = false, PreviewResources resources = {});
         void Update(CharacterDocument draft, CharacterPreviewVisibility visibility);
         void SyncRail(bool reveal = false);
         void Stop();
@@ -53,6 +53,7 @@ namespace hs2::ui
         uint64_t generation_ = 0, epoch_ = 0;
         std::optional<CharacterDocument> draft_;
         CharacterPreviewVisibility visibility_;
+        PreviewResources resources_;
         NativeRendererBounds body_, face_;
         NativeRenderCamera camera_;
         Vector3 center_{};

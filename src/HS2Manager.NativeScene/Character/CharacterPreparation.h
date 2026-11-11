@@ -13,7 +13,8 @@ namespace hs2
     class NativeCharacterService
     {
     public:
-        NativeCharacterService(std::filesystem::path game, std::filesystem::path data, std::filesystem::path tpk);
+        NativeCharacterService(std::filesystem::path game, std::filesystem::path data, std::filesystem::path tpk,
+                               PreviewResources resources = {});
         PreparedCharacter Prepare(const CardRecord &card, const CharacterDocument *draft = nullptr,
                                   CharacterPreviewVisibility visibility = {}, Progress progress = {},
                                   std::stop_token cancellation = {});
@@ -25,6 +26,7 @@ namespace hs2
 
     private:
         std::filesystem::path game_, data_;
+        PreviewResources resources_;
         CharacterCatalog catalog_;
         std::shared_ptr<UnityBlockCache> blockCache_;
     };

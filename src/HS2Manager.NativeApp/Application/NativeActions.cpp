@@ -78,6 +78,22 @@ namespace hs2::ui
         {
             if (preview_ && preview_->Action(name, sender))
                 co_return;
+            if (name == L"TemporaryPreview_Click")
+            {
+                OpenTemporaryPreview();
+                co_return;
+            }
+            if (model_->Bool(L"IsTemporaryPreview"))
+            {
+                // 临时模式不让快捷键或隐藏菜单落到资料库写入操作。
+                bool navigation =
+                    name == L"Navigate_Click" || name == L"Collection_SelectionChanged" || name == L"Settings_Click";
+                bool allowed = name == L"ClosePreview_Click" || name == L"Cancel_Click" ||
+                               name == L"ToggleRail_Click" || name == L"PreviewRail_Selected" ||
+                               (name == L"SaveDetails_Click" && preview_) || navigation;
+                if (!allowed || (navigation && busy_))
+                    co_return;
+            }
             if (name == L"CloseEditor_Click")
             {
                 co_await CloseEditor();
@@ -85,8 +101,7 @@ namespace hs2::ui
             }
             if (name == L"ClosePreview_Click")
             {
-                preview_.reset();
-                model_->Put(L"IsPreview", false);
+                ClosePreview();
                 co_return;
             }
             if (name == L"ToggleRail_Click")
@@ -104,6 +119,11 @@ namespace hs2::ui
                 if (item)
                 {
                     auto id = to_string(get_self<Observable>(item.as<data::ICustomPropertyProvider>())->String(L"Id"));
+                    if (temporaryPreview_)
+                    {
+                        LoadTemporaryCard(id);
+                        co_return;
+                    }
                     auto found = std::find_if(cards_.begin(), cards_.end(),
                                               [&](auto const &c)
                                               {
@@ -121,6 +141,7 @@ namespace hs2::ui
             if (name == L"Cancel_Click")
             {
                 work_.request_stop();
+                CancelTemporaryPreview();
                 if (editor_)
                     editor_->CancelPending();
                 co_return;
@@ -153,8 +174,7 @@ namespace hs2::ui
                 auto item = Control<ListView>(L"CollectionList").SelectedItem();
                 if (item)
                 {
-                    preview_.reset();
-                    model_->Put(L"IsPreview", false);
+                    ClosePreview();
                     collection_ = to_string(unbox_value<hstring>(item));
                     folder_.clear();
                     mode_ = "all";
@@ -171,8 +191,7 @@ namespace hs2::ui
             {
                 if (!busy_)
                 {
-                    preview_.reset();
-                    model_->Put(L"IsPreview", false);
+                    ClosePreview();
                     Settings();
                 }
                 co_return;
@@ -226,8 +245,7 @@ namespace hs2::ui
                 co_return;
             if (name == L"Duplicates_Click")
             {
-                preview_.reset();
-                model_->Put(L"IsPreview", false);
+                ClosePreview();
                 Work("校验重复文件",
                      [this](auto stop, auto progress)
                      {

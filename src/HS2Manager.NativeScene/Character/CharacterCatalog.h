@@ -2,6 +2,7 @@
 #include "Assets/AssetStore.h"
 #include "Character/CharacterDefinition.h"
 #include "Common/Core.h"
+#include "Preview/PreviewResourceContext.h"
 
 namespace hs2
 {
@@ -18,7 +19,8 @@ namespace hs2
     class CharacterCatalog
     {
     public:
-        CharacterCatalog(std::filesystem::path game, std::filesystem::path data, std::filesystem::path tpk);
+        CharacterCatalog(std::filesystem::path game, std::filesystem::path data, std::filesystem::path tpk,
+                         PreviewResources resources = {});
         ~CharacterCatalog();
         CharacterCatalog(const CharacterCatalog &) = delete;
         CharacterCatalog &operator=(const CharacterCatalog &) = delete;
