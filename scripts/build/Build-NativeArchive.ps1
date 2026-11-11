@@ -23,7 +23,20 @@ $expected = 'A4E374C8F864F51DF48C2CFD0E1413EC3B2EA030DEAE852D6A655402EBB61AC4'
 if (!(Test-Path -LiteralPath $archive -PathType Leaf)) {
     Invoke-WebRequest -Uri 'https://github.com/ip7z/7zip/releases/download/26.06/7z2606-src.tar.xz' -OutFile $archive -UseBasicParsing
 }
-if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) {
+# CMake 启动的 Windows PowerShell 可能继承 PowerShell 7 模块路径，直接用 .NET 校验。
+$sha = [Security.Cryptography.SHA256]::Create()
+$stream = $null
+try {
+    $stream = [IO.File]::OpenRead($archive)
+    $actual = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '')
+}
+finally {
+    if ($null -ne $stream) {
+        $stream.Dispose()
+    }
+    $sha.Dispose()
+}
+if ($actual -ne $expected) {
     throw "7-Zip 26.06 源码校验失败：$archive"
 }
 if (!(Test-Path -LiteralPath (Join-Path $sourceRoot 'CPP/7zip/Archive/IArchive.h'))) {
