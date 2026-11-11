@@ -1,5 +1,7 @@
 # 本机验收记录
 
+> 历史记录：本文的架构、命令、版本、性能和通过数量对应迁移前的 C# 实现及其当时的预览后端。旧源码现存于 `tests/reference/src`。本次 C++ 重写的实际检查见 [C++ 验证结果](CPP-VALIDATION.md)，当前构建与架构见 [C++ 迁移说明](CPP-MIGRATION.md)；本文数字不自动计入新版本验收。
+
 > 以下为 1.0.0 Studio 桥接版历史记录。1.1.0-preview.2 独立预览的范围与验收见 [NATIVE-PREVIEW.md](NATIVE-PREVIEW.md)。
 
 日期：2026-11-07。Windows x64，.NET SDK 10.0.403 / Runtime 10.0.14。游戏：本机映射盘的 HS two DX - TSYMQ，Unity 2018.4，BepInEx 5.4.17，HS2API 1.28.1。

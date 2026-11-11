@@ -1,0 +1,131 @@
+{
+  "SchemaVersion": 1,
+  "Date": "2026-11-11",
+  "Scope": "Eight frozen definitions: C++ animation, bone dynamics, cloth and full GPU pipeline after deterministic static settling; four static views per character",
+  "Accepted": true,
+  "Count": 8,
+  "StaticViews": 32,
+  "NumericPass": true,
+  "VisualReviewPassed": true,
+  "Thresholds": {
+    "MinimumForegroundAndFaceSSIM": 0.99,
+    "MaximumMeanChannelError255": 2
+  },
+  "Timing": {
+    "Seed": 1979,
+    "Rate": 30,
+    "InitialWarmupSteps": 4,
+    "ResetFixturePhysics": true,
+    "SettlingSteps": 180,
+    "CameraPrimeFrames": 1,
+    "ForegroundFramesPerView": 48,
+    "HiddenBackgroundFramesPerView": 48,
+    "AnimationTime": 0
+  },
+  "ReferenceSource": "legacy-preview",
+  "ProductionPreparationValidatedByThisMatrix": false,
+  "DynamicPlaybackMatrixValidated": false,
+  "ExecutableSHA256": "D20D1EE3E1A4052BDDA5F5949D7149339F74C6494D7C4A84BCE9F95DFFB0AA50",
+  "SourceReportSHA256": "7FF8FFAB76AE5162F4A3BA34662B2A95AD49C577DA4826BB1B980B7D9C54B1A1",
+  "MinimumSSIM": 0.9903947229286997,
+  "MaximumMAE255": 1.308492747529956,
+  "Cards": [
+    {
+      "Id": "019-080816A77C8E",
+      "Name": "fate-白枪呆 阿尔托莉雅",
+      "Sex": 1,
+      "NumericPass": true,
+      "VisualReviewPassed": true,
+      "MinSSIM": 0.9953019556381808,
+      "MaxMAE255": 0.8092461723585451,
+      "DefinitionSHA256": "E2CA5BAA9452034BA3BA0CBF9B6D3A2401E7D54DC36FFA0E5EFB9637F802A3E5",
+      "ComparisonSHA256": "F176BD09C3E8F35ED0E63EEBB8F8FBCE905D4E221485A3DF3A835CE4D9532150",
+      "VisualReviewSHA256": "F78B7A144F24BFBD25FAAF1B962A9084B3C245CABD36D1E72D19120CA3641B4D"
+    },
+    {
+      "Id": "018-FB309C847AFF",
+      "Name": "永劫无间-席拉 开辟鸿蒙日月明",
+      "Sex": 1,
+      "NumericPass": true,
+      "VisualReviewPassed": true,
+      "MinSSIM": 0.9907135125574738,
+      "MaxMAE255": 0.8770383309283831,
+      "DefinitionSHA256": "CE4AC651A93BF54519EDCC8463ED11EDF0A124FA39F0A795B9251FC996C2A693",
+      "ComparisonSHA256": "4064655315CA3C7F4D5F56A69640274D4B8F69AC6AFB6DE2414F62AA4C133463",
+      "VisualReviewSHA256": "E3A4876F941C772D7837F669E69A8C7F983A9CAEB4194A643C7C696C965F48CA"
+    },
+    {
+      "Id": "075-943C63A4AAC6",
+      "Name": "暗区联动少前 黑闪",
+      "Sex": 1,
+      "NumericPass": true,
+      "VisualReviewPassed": true,
+      "MinSSIM": 0.9903947229286997,
+      "MaxMAE255": 1.308492747529956,
+      "DefinitionSHA256": "C49C3684CF72C07CD99182842ECB5C89293E2AEA103FCD8EB823C8B885B83214",
+      "ComparisonSHA256": "F2528D2EFC09271F915E557946C597CFB892CFC71DE793E6A6B5CFEBA5A803C1",
+      "VisualReviewSHA256": "76471F42673A34EA6092118B57348A4E29B32D9B6D9F998C92246712BF8DCB33"
+    },
+    {
+      "Id": "077-B68363232A80",
+      "Name": "fy",
+      "Sex": 1,
+      "NumericPass": true,
+      "VisualReviewPassed": true,
+      "MinSSIM": 0.9972003542057782,
+      "MaxMAE255": 0.32702999161686136,
+      "DefinitionSHA256": "5AC714B293CD2D16A9135D303982CC9D6A8B6D8EDFB64574F544191EB1AFE401",
+      "ComparisonSHA256": "B4E7C54337A624C000A9C6816A6F0B8AD1159E773514A193143DAC82F9140699",
+      "VisualReviewSHA256": "C4EA9BBDBA0894BD40EEED8EBF41B5CAB6D7A6D9FCCBE0802686892A355B675E"
+    },
+    {
+      "Id": "001-F605977B6499",
+      "Name": "永劫无间斗罗联动 胡桃-小舞",
+      "Sex": 1,
+      "NumericPass": true,
+      "VisualReviewPassed": true,
+      "MinSSIM": 0.996992514247361,
+      "MaxMAE255": 0.6631891979485562,
+      "DefinitionSHA256": "1242D2A41FFF68DA38FA7C195E4E40C4F33FDC124EF97722A44FDFB57099C442",
+      "ComparisonSHA256": "8091671A0677AA76A80A2D7A99D4AE4C2370C517E4BBFA7BF64EFD05CA7E2DD7",
+      "VisualReviewSHA256": "597BBEEFB61AEB3667ED33B773A77A01511B0BA88976FD86CDA574C5CC3405DE"
+    },
+    {
+      "Id": "001-65FE9A474B7E",
+      "Name": "Hero",
+      "Sex": 0,
+      "NumericPass": true,
+      "VisualReviewPassed": true,
+      "MinSSIM": 0.995893119493373,
+      "MaxMAE255": 0.7057039209381932,
+      "DefinitionSHA256": "E88513F1C1FC2D12FAC5DBA030D37A74168DD79994CEE3DDEE93D6E1B9A5BC06",
+      "ComparisonSHA256": "58179AB48B48501013F6C08046162A79417049C705C95505CF6CD57A5BA09A32",
+      "VisualReviewSHA256": "D9855DD386F086C714ADAB7445744708A0ECA56D94287FE68D8888A844EC2CA7"
+    },
+    {
+      "Id": "072-4BD6BBF979DF",
+      "Name": "三角洲行动麦晓雯-骇客少女",
+      "Sex": 1,
+      "NumericPass": true,
+      "VisualReviewPassed": true,
+      "MinSSIM": 0.9929313176581765,
+      "MaxMAE255": 0.9532194854825476,
+      "DefinitionSHA256": "512D48B70ACF7CB4798A5251A9F02737DD551EB777A1C2FF2872E6BADEE28F2F",
+      "ComparisonSHA256": "F21B4296A9AF46994A590CECABA10F3ACD8F0F0DF9BF955EDA0EDEED110A3C53",
+      "VisualReviewSHA256": "35166738E6557EE493E85442C0DD2E2F53906DB5C38C7B11757EEBD56D6866A1"
+    },
+    {
+      "Id": "079-FE9A9A9EA3B2",
+      "Name": "Fur",
+      "Sex": 1,
+      "NumericPass": true,
+      "VisualReviewPassed": true,
+      "MinSSIM": 0.9942588441202422,
+      "MaxMAE255": 0.802080539312984,
+      "DefinitionSHA256": "E6EF045A289D1A0A805BBD91027502A5E8CEF57752AEAEA0FB625DA70DEA4DE0",
+      "ComparisonSHA256": "878651EA032A247DE20C5767B7AB7434657A18E1B1233248490B22AD29D13B07",
+      "VisualReviewSHA256": "0E145E0E3B787D2F4339B547DD1B781F1D3295BB4034A0BF305E2324CC714548"
+    }
+  ],
+  "AcceptanceSHA256": "C2B2FEE2F20D6CD45917DABB1CA163ECE000DC0AFB3B53A91E42A5CC59E420BF"
+}

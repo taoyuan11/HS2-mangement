@@ -1,0 +1,498 @@
+<Grid x:Name="Root" Background="{ThemeResource PageBrush}" AllowDrop="True" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="using:HS2Manager.NativeApp" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+  <Grid.Resources>
+    <DataTemplate x:Key="CardTemplate">
+      <Grid Margin="6,5,6,7">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="240" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Border CornerRadius="9" Background="{ThemeResource SidebarBrush}">
+          <Grid>
+            <FontIcon Glyph="" FontSize="32" Foreground="{ThemeResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Image Source="{Binding Cover}" Stretch="Uniform" />
+            <Border Background="#D9252928" CornerRadius="5" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Padding="6,2" Visibility="{Binding Favorite, Converter={StaticResource BoolVisible}}">
+              <FontIcon Glyph="" Foreground="#F0D58D" FontSize="12" />
+            </Border>
+          </Grid>
+        </Border>
+        <StackPanel Grid.Row="1" Margin="2,9,0,0">
+          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding Name}" />
+          <TextBlock Text="{Binding Subtitle}" Foreground="{ThemeResource MutedBrush}" FontSize="12" Margin="0,4,0,0" />
+        </StackPanel>
+      </Grid>
+    </DataTemplate>
+    <Style x:Key="CardContainer" TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="3" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="AllowDrop" Value="False" />
+    </Style>
+    <DataTemplate x:Key="FolderTemplate">
+      <TreeViewItem ItemsSource="{Binding Children}" IsExpanded="{Binding Expanded, Mode=TwoWay}">
+        <TextBlock Text="{Binding Name}" ToolTipService.ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis" FontSize="12" />
+      </TreeViewItem>
+    </DataTemplate>
+  </Grid.Resources>
+  <Grid x:Name="LibraryShell" Visibility="{Binding IsEditing, Converter={StaticResource BoolVisible}, ConverterParameter=Invert}">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="224" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+    <Border Background="{ThemeResource SidebarBrush}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="0,0,1,0">
+      <Grid Margin="14,0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Margin="8,26,0,23" Grid.Row="0">
+          <StackPanel Orientation="Horizontal">
+            <Image x:Name="BrandLogo" Source="ms-appx:///Assets/Brand/hs2-manager.png" Width="36" Height="36" Stretch="Uniform" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
+            <StackPanel Margin="10,0,0,0">
+              <TextBlock Text="HS2 Manager" FontSize="15" FontWeight="SemiBold" />
+              <TextBlock Text="人物卡资源库" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,3,0,0" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Margin="4,12,4,16" Grid.Row="2">
+          <Border BorderBrush="{ThemeResource BorderBrush}" BorderThickness="0,1,0,0" Padding="4,14,0,12">
+            <StackPanel>
+              <StackPanel Orientation="Horizontal">
+                <Ellipse Width="6" Height="6" Fill="{Binding GameConnectionBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBlock Text="{Binding GameConnection}" FontSize="12" />
+              </StackPanel>
+              <TextBlock Text="{Binding GameFolderName}" ToolTipService.ToolTip="{Binding Settings.GamePath}" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="16,5,0,0" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </Border>
+          <Button AutomationProperties.Name="设置与连接" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch" x:Name="ActionMainWindow1">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+              <TextBlock Text="设置与连接" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Grid.Row="1">
+          <StackPanel>
+            <Button x:Name="NavAll" Tag="all" Style="{StaticResource NavButton}" Background="{Binding CurrentNavigation, Converter={StaticResource NavigationBackground}, ConverterParameter=all}" AutomationProperties.Name="全部人物卡">
+              <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="20" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                <TextBlock Grid.Column="1" Text="全部人物卡" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding TotalCount}" Foreground="{ThemeResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Button x:Name="NavFavorites" Tag="favorites" Style="{StaticResource NavButton}" Background="{Binding CurrentNavigation, Converter={StaticResource NavigationBackground}, ConverterParameter=favorites}" AutomationProperties.Name="我的收藏">
+              <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="20" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                <TextBlock Grid.Column="1" Text="我的收藏" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding FavoriteCount}" Foreground="{ThemeResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Button x:Name="NavDuplicates" Tag="duplicates" Style="{StaticResource NavButton}" Background="{Binding CurrentNavigation, Converter={StaticResource NavigationBackground}, ConverterParameter=duplicates}" AutomationProperties.Name="重复文件" IsEnabled="{Binding IsIdle}">
+              <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="20" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                <TextBlock Grid.Column="1" Text="重复文件" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding DuplicateCount}" Foreground="{ThemeResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Button x:Name="NavIssues" Tag="issues" Style="{StaticResource NavButton}" Background="{Binding CurrentNavigation, Converter={StaticResource NavigationBackground}, ConverterParameter=issues}" AutomationProperties.Name="需要关注">
+              <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="20" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                <TextBlock Grid.Column="1" Text="需要关注" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding IssueCount}" Foreground="{ThemeResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Button x:Name="NavTrash" Tag="trash" Style="{StaticResource NavButton}" Background="{Binding CurrentNavigation, Converter={StaticResource NavigationBackground}, ConverterParameter=trash}" AutomationProperties.Name="可恢复隔离区">
+              <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="20" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                <TextBlock Grid.Column="1" Text="可恢复隔离区" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding TrashCount}" Foreground="{ThemeResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Grid Margin="12,22,4,6">
+              <TextBlock Text="虚拟分类" Foreground="{ThemeResource MutedBrush}" FontSize="12" VerticalAlignment="Center" />
+              <Button HorizontalAlignment="Right" Width="32" Height="32" Padding="0" Style="{StaticResource QuietButton}" ToolTipService.ToolTip="新建虚拟分类" AutomationProperties.Name="新建虚拟分类" x:Name="ActionMainWindow2">
+                <FontIcon Glyph="" FontSize="14" />
+              </Button>
+            </Grid>
+            <ListView x:Name="CollectionList" ItemsSource="{Binding Collections}" FontSize="12" MinHeight="22">
+              <ListView.ContextFlyout>
+                <MenuFlyout>
+                  <MenuFlyoutItem Text="重命名分类" x:Name="ActionMainWindow3" />
+                  <MenuFlyoutItem Text="删除分类（保留人物卡）" x:Name="ActionMainWindow4" />
+                </MenuFlyout>
+              </ListView.ContextFlyout>
+            </ListView>
+            <TextBlock Text="文件夹" Style="{StaticResource SectionLabel}" />
+            <TreeView x:Name="FolderTree" SelectionMode="Single" Margin="3,0,0,16" />
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="34" />
+      </Grid.RowDefinitions>
+      <Grid Visibility="{Binding IsPreview, Converter={StaticResource BoolVisible}, ConverterParameter=Invert}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Margin="28,25,26,19">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,20,0">
+            <TextBlock Text="{Binding PageTitle}" FontSize="28" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding PageTitle}" />
+            <TextBlock Text="{Binding LibrarySummary}" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource MutedBrush}" FontSize="12" Margin="1,8,0,0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Button AutomationProperties.Name="刷新人物卡" Margin="0,0,10,0" IsEnabled="{Binding IsIdle}" Style="{StaticResource ToolbarButton}" x:Name="ActionMainWindow5">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                <TextBlock Text="刷新" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button AutomationProperties.Name="导入人物卡" Style="{StaticResource PrimaryButton}" IsEnabled="{Binding IsIdle}" x:Name="ActionMainWindow6">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                <TextBlock Text="导入人物卡" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+        <Grid Grid.Row="1" Margin="28,0,26,18">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="124" />
+            <ColumnDefinition Width="116" />
+          </Grid.ColumnDefinitions>
+          <Grid Margin="0,0,12,0">
+            <TextBox x:Name="SearchBox" PlaceholderText="搜索名称、文件名、标签…" Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="搜索人物卡" Height="36" Padding="12,6" VerticalContentAlignment="Center" />
+          </Grid>
+          <ComboBox x:Name="GenderFilterBox" Height="36" Grid.Column="1" ItemsSource="{Binding GenderChoices}" SelectedItem="{Binding GenderFilter, Mode=TwoWay}" MinWidth="136" HorizontalAlignment="Stretch" Margin="0,0,8,0" AutomationProperties.Name="性别筛选" />
+          <ComboBox x:Name="TagFilterBox" HorizontalAlignment="Stretch" Height="36" Grid.Column="2" ItemsSource="{Binding Tags}" SelectedItem="{Binding TagFilter, Mode=TwoWay}" Margin="0,0,8,0" AutomationProperties.Name="标签筛选" />
+          <ComboBox x:Name="SortOrderBox" HorizontalAlignment="Stretch" Height="36" Grid.Column="3" ItemsSource="{Binding SortChoices}" SelectedItem="{Binding SortOrder, Mode=TwoWay}" AutomationProperties.Name="排序方式" />
+        </Grid>
+        <Grid Grid.Row="2">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="300" />
+          </Grid.ColumnDefinitions>
+          <Grid Margin="18,0,12,0">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid Margin="12,0,0,9" x:Name="WrapMainWindow7">
+              <TextBlock Text="{Binding ResultSummary}" Foreground="{ThemeResource MutedBrush}" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0" />
+              <Button x:Name="MultiSelectButton" Content="{Binding MultiSelectLabel}" Style="{StaticResource QuietButton}" IsEnabled="{Binding IsIdle}" />
+              <Button x:Name="SelectAllCardsButton" Content="全选当前结果" Style="{StaticResource QuietButton}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsMultiSelectMode, Converter={StaticResource BoolVisible}}" />
+              <Button x:Name="ClearCardSelectionButton" Content="清空" Style="{StaticResource QuietButton}" IsEnabled="{Binding CanModify}" Visibility="{Binding IsMultiSelectMode, Converter={StaticResource BoolVisible}}" />
+            </Grid>
+            <GridView x:Name="CardList" Grid.Row="1" ItemsSource="{Binding VisibleCards}" ItemTemplate="{StaticResource CardTemplate}" ItemContainerStyle="{StaticResource CardContainer}" SelectionMode="Extended" IsMultiSelectCheckBoxEnabled="{Binding IsMultiSelectMode}" AutomationProperties.Name="人物卡网格">
+              <GridView.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <ItemsWrapGrid ItemWidth="190" ItemHeight="310" Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </GridView.ItemsPanel>
+              <GridView.ContextFlyout>
+                <MenuFlyout>
+                  <MenuFlyoutItem Text="打开 3D 预览" x:Name="ActionMainWindow8" />
+                  <MenuFlyoutItem Text="编辑角色" x:Name="ActionMainWindow9" />
+                  <MenuFlyoutItem Text="收藏 / 取消收藏" x:Name="ActionMainWindow10" />
+                  <MenuFlyoutSeparator />
+                  <MenuFlyoutItem Text="添加标签…" x:Name="ActionMainWindow11" />
+                  <MenuFlyoutItem Text="加入虚拟分类…" x:Name="ActionMainWindow12" />
+                  <MenuFlyoutItem Text="导出人物卡与资源…" x:Name="ActionMainWindow13" />
+                  <MenuFlyoutItem Text="导出 3D 模型…" x:Name="ActionMainWindow14" />
+                  <MenuFlyoutItem Text="仅导出原始 PNG…" x:Name="ActionMainWindow15" />
+                  <MenuFlyoutItem Text="移动到文件夹…" x:Name="ActionMainWindow16" />
+                  <MenuFlyoutItem Text="重命名…" x:Name="ActionMainWindow17" />
+                  <MenuFlyoutSeparator />
+                  <MenuFlyoutItem Text="在资源管理器中显示" x:Name="ActionMainWindow18" />
+                  <MenuFlyoutItem Text="移入可恢复隔离区…" x:Name="ActionMainWindow19" />
+                  <MenuFlyoutItem x:Name="DeleteCardMenuItem" Text="永久删除…" IsEnabled="{Binding CanModify}" />
+                </MenuFlyout>
+              </GridView.ContextFlyout>
+            </GridView>
+            <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16" Visibility="{Binding Empty, Converter={StaticResource BoolVisible}}" MaxWidth="350">
+              <FontIcon Glyph="" FontSize="40" Foreground="{ThemeResource MutedBrush}" HorizontalAlignment="Center" />
+              <TextBlock Text="{Binding EmptyTitle}" TextWrapping="Wrap" TextAlignment="Center" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,18,0,8" />
+              <TextBlock Text="{Binding EmptyDescription}" Foreground="{ThemeResource MutedBrush}" TextWrapping="Wrap" TextAlignment="Center" />
+            </StackPanel>
+            <Border Grid.Row="2" Background="{ThemeResource SurfaceBrush}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" CornerRadius="9" Padding="8" Margin="8,8,8,12" Visibility="{Binding HasSelection, Converter={StaticResource BoolVisible}}">
+              <Grid x:Name="WrapMainWindow20">
+                <Button IsEnabled="{Binding CanModify}" Content="收藏" Style="{StaticResource QuietButton}" x:Name="ActionMainWindow21" />
+                <Button IsEnabled="{Binding CanModify}" Content="标签" Style="{StaticResource QuietButton}" x:Name="ActionMainWindow22" />
+                <Button IsEnabled="{Binding CanModify}" Content="分类" Style="{StaticResource QuietButton}" x:Name="ActionMainWindow23" />
+                <Button IsEnabled="{Binding CanModify}" Content="导出" Style="{StaticResource QuietButton}" x:Name="ActionMainWindow24" />
+                <Button IsEnabled="{Binding CanModify}" Content="导出 3D 模型" Style="{StaticResource QuietButton}" x:Name="ActionMainWindow25" />
+                <Button x:Name="DeleteCardsButton" IsEnabled="{Binding CanModify}" Content="永久删除" Style="{StaticResource DangerButton}" />
+                <Button IsEnabled="{Binding CanModify}" Content="更多…" Style="{StaticResource QuietButton}" x:Name="ActionMainWindow26" />
+                <Button IsEnabled="{Binding CanModify}" Content="恢复" Style="{StaticResource QuietButton}" Visibility="{Binding IsTrash, Converter={StaticResource BoolVisible}}" x:Name="ActionMainWindow27" />
+              </Grid>
+            </Border>
+          </Grid>
+          <Border Grid.Column="1" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1,0,0,0" Background="{ThemeResource SurfaceBrush}">
+            <Grid>
+              <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="218" Visibility="{Binding SelectedCard, Converter={StaticResource NullVisible}, ConverterParameter=Invert}">
+                <FontIcon Glyph="" FontSize="32" Foreground="{ThemeResource MutedBrush}" HorizontalAlignment="Center" />
+                <TextBlock Text="选择一张人物卡" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,17,0,8" />
+                <TextBlock Text="查看角色信息、管理标签，或打开独立 3D 预览。" Foreground="{ThemeResource MutedBrush}" TextWrapping="Wrap" TextAlignment="Center" LineHeight="22" />
+              </StackPanel>
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="{Binding SelectedCard, Converter={StaticResource NullVisible}}">
+                <StackPanel Margin="22,18,22,24">
+                  <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="人物详情" FontSize="12" Foreground="{ThemeResource MutedBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding SelectedCard.Status}" FontSize="12" Foreground="{Binding SelectedCard.StatusBrush}" />
+                  </Grid>
+                  <Border Background="{ThemeResource SidebarBrush}" CornerRadius="8" Margin="0,18,0,14" Height="210">
+                    <Image Source="{Binding SelectedCard.Cover}" Stretch="Uniform" />
+                  </Border>
+                  <TextBlock Text="{Binding SelectedCard.Name}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding SelectedCard.Subtitle}" TextTrimming="CharacterEllipsis" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,7,0,16" />
+                  <Button AutomationProperties.Name="打开 3D 预览" Style="{StaticResource PrimaryButton}" IsEnabled="{Binding CanPreview}" Padding="12,11" HorizontalAlignment="Stretch" x:Name="ActionMainWindow28">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                      <TextBlock Text="打开 3D 预览" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                  <Button Content="编辑角色" IsEnabled="{Binding CanPreview}" HorizontalAlignment="Stretch" Margin="0,8,0,0" x:Name="ActionMainWindow29" />
+                  <Button AutomationProperties.Name="{Binding FavoriteText}" Margin="0,8,0,0" IsEnabled="{Binding CanModify}" HorizontalAlignment="Stretch" x:Name="ActionMainWindow30">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <FontIcon Glyph="{Binding FavoriteGlyph}" Style="{StaticResource ActionIcon}" />
+                      <TextBlock Text="{Binding FavoriteText}" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                  <Border Height="1" Background="{ThemeResource BorderBrush}" Margin="0,12" />
+                  <TextBlock Text="标签" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,0,0,6" />
+                  <TextBox Text="{Binding EditTags, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTipService.ToolTip="多个标签用逗号分隔" AutomationProperties.Name="人物标签" />
+                  <TextBlock Text="备注" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,14,0,6" />
+                  <TextBox Text="{Binding EditNotes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="76" TextWrapping="Wrap" AcceptsReturn="True" ScrollViewer.VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" AutomationProperties.Name="人物备注" />
+                  <Button HorizontalAlignment="Stretch" Content="保存标签与备注" Margin="0,8,0,0" IsEnabled="{Binding CanModify}" x:Name="ActionMainWindow31" />
+                  <Border Height="1" Background="{ThemeResource BorderBrush}" Margin="0,12" />
+                  <TextBlock Text="文件信息" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,0,0,9" />
+                  <TextBlock Text="{Binding SelectedCard.DetailLine}" FontSize="12" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding SelectedCard.Modified}" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,8,0,0" />
+                  <TextBlock Text="{Binding SelectedCard.Folder}" IsTextSelectionEnabled="True" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding SelectedCard.Record.Error}" FontSize="12" Foreground="{ThemeResource WarningBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                  <Button AutomationProperties.Name="在资源管理器中显示" Style="{StaticResource QuietButton}" HorizontalAlignment="Left" Padding="0,10" x:Name="ActionMainWindow32">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <FontIcon Glyph="" Style="{StaticResource ActionIcon}" />
+                      <TextBlock Text="在资源管理器中显示" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                  <Border Height="1" Background="{ThemeResource BorderBrush}" Margin="0,12" />
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button Content="更新" Style="{StaticResource QuietButton}" Padding="5,0" IsEnabled="{Binding IsIdle}" Grid.Column="1" x:Name="ActionMainWindow33" />
+                    <TextBlock Text="MOD 与扩展数据" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource MutedBrush}" Grid.Column="0" />
+                  </Grid>
+                  <TextBlock Text="{Binding DependencySummary}" TextWrapping="Wrap" Foreground="{ThemeResource MutedBrush}" FontSize="12" Margin="0,7,0,10" />
+                  <ItemsControl ItemsSource="{Binding DetailDependencies}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Border BorderBrush="{ThemeResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,9">
+                          <StackPanel>
+                            <TextBlock Text="{Binding Label}" Foreground="{Binding Color}" FontSize="12" />
+                            <TextBlock Text="{Binding Guid}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0" />
+                            <TextBlock Text="{Binding Detail}" Foreground="{ThemeResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
+          </Border>
+        </Grid>
+      </Grid>
+      <Grid Visibility="{Binding IsPreview, Converter={StaticResource BoolVisible}}" Margin="24,20,24,12">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid Margin="0,0,0,18">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Orientation="Horizontal" Grid.Column="1">
+            <Button Content="编辑角色" Margin="0,0,8,0" x:Name="ActionMainWindow34" />
+            <Button Content="人物列表" Style="{StaticResource QuietButton}" x:Name="ActionMainWindow35" />
+            <Button Content="导出 3D 模型" IsEnabled="{Binding IsIdle}" Margin="8,0,0,0" x:Name="ActionMainWindow36" />
+            <Button x:Name="ScreenshotButton" Content="保存截图" IsEnabled="{Binding CanControlPreview}" Style="{StaticResource ToolbarButton}" Margin="10,0,0,0" />
+          </StackPanel>
+          <Grid Margin="0,0,12,0" Grid.Column="0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Button Width="36" Height="36" Margin="0,0,12,0" Padding="0" VerticalAlignment="Center" Style="{StaticResource QuietButton}" ToolTipService.ToolTip="关闭预览并返回资源库" AutomationProperties.Name="关闭预览并返回资源库" x:Name="ActionMainWindow37">
+              <FontIcon Glyph="" FontSize="18" />
+            </Button>
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="{Binding PreviewName}" ToolTipService.ToolTip="{Binding PreviewName}" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding PreviewFileName}" ToolTipService.ToolTip="{Binding PreviewFilePath}" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource MutedBrush}" FontSize="12" Margin="0,3,0,0" />
+            </StackPanel>
+          </Grid>
+        </Grid>
+        <Grid Grid.Row="1">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Width="190" Margin="0,0,14,0" Visibility="{Binding ShowPreviewRail, Converter={StaticResource BoolVisible}}">
+            <ListView x:Name="PreviewRail" ItemsSource="{Binding VisibleCards}">
+              <ListView.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="2,4" ToolTipService.ToolTip="{Binding Record.Path}">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="45" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border CornerRadius="5" Background="{ThemeResource SidebarBrush}" Height="62">
+                      <Image Source="{Binding Cover}" Stretch="Uniform" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="9,3,0,0">
+                      <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding DetailLine}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,6,0,0" />
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListView.ItemTemplate>
+            </ListView>
+          </Border>
+          <Border Grid.Column="1" Background="#10151B" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" CornerRadius="10">
+            <Grid x:Name="Viewport" CornerRadius="9" Background="{Binding PreviewBackground}">
+              <SwapChainPanel x:Name="CompositionViewport" Visibility="{Binding ShowNativeViewport, Converter={StaticResource BoolVisible}}" IsHitTestVisible="False" />
+              <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding PreviewBusy, Converter={StaticResource BoolVisible}}">
+                <TextBlock Text="正在准备人物预览" Foreground="#E9EDEB" FontSize="18" HorizontalAlignment="Center" />
+                <ProgressBar IsIndeterminate="True" Width="180" Height="3" Margin="0,20,0,15" Foreground="#9BB6A3" Background="#2E3834" />
+                <TextBlock Text="{Binding PreviewStatus}" Foreground="#A9B2B5" MaxWidth="380" TextWrapping="Wrap" TextAlignment="Center" />
+              </StackPanel>
+              <Border Background="#E510151B" RequestedTheme="Dark" Visibility="{Binding HasPreviewError, Converter={StaticResource BoolVisible}}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Margin="20">
+                  <TextBlock Text="预览暂时不可用" Foreground="#EDF0EB" FontSize="20" HorizontalAlignment="Center" />
+                  <TextBlock Text="{Binding PreviewError}" Foreground="#B8C0BA" TextWrapping="Wrap" TextAlignment="Center" Margin="0,16,0,20" />
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Content="重试" Margin="0,0,8,0" x:Name="ActionMainWindow38" />
+                    <Button Content="查看日志" x:Name="ActionMainWindow39" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </Grid>
+          </Border>
+        </Grid>
+        <StackPanel Grid.Row="2" Margin="0,12,0,0" Spacing="8">
+          <Border Background="{ThemeResource SurfaceBrush}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8,8,8,0">
+            <Grid x:Name="PreviewControlsPanel">
+              <StackPanel x:Name="CameraControls" Orientation="Horizontal" Margin="0,0,24,8">
+                <Button Content="正面" Tag="0" Style="{StaticResource QuietButton}" IsEnabled="{Binding CanControlPreview}" x:Name="ActionMainWindow40" />
+                <Button Content="侧面" Tag="90" Style="{StaticResource QuietButton}" IsEnabled="{Binding CanControlPreview}" x:Name="ActionMainWindow41" />
+                <Button Content="背面" Tag="180" Style="{StaticResource QuietButton}" IsEnabled="{Binding CanControlPreview}" x:Name="ActionMainWindow42" />
+                <Button Content="面部" Style="{StaticResource QuietButton}" IsEnabled="{Binding CanControlPreview}" x:Name="ActionMainWindow43" />
+                <Button Content="复位镜头" Style="{StaticResource QuietButton}" IsEnabled="{Binding CanControlPreview}" x:Name="ActionMainWindow44" />
+                <Button Content="{Binding PlaybackLabel}" Style="{StaticResource QuietButton}" IsEnabled="{Binding CanControlPreview}" x:Name="ActionMainWindow45" />
+              </StackPanel>
+              <StackPanel x:Name="EnvironmentControls" Orientation="Horizontal" Spacing="12" Margin="0,0,0,8">
+                <TextBlock Text="灯光" Foreground="{ThemeResource MutedBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                <Slider x:Name="LightSlider" Minimum="0.2" Maximum="2" Value="{Binding PreviewLightIntensity, Mode=TwoWay}" Width="100" VerticalAlignment="Center" IsEnabled="{Binding CanControlPreview}" AutomationProperties.Name="灯光强度" ToolTipService.ToolTip="相对游戏灯光强度；1 为原始亮度" />
+                <ComboBox x:Name="BackgroundChoice" Width="132" SelectedIndex="{Binding PreviewBackgroundIndex, Mode=TwoWay}" IsEnabled="{Binding CanControlPreview}" AutomationProperties.Name="预览背景">
+                  <ComboBoxItem Content="游戏背景" />
+                  <ComboBoxItem Content="深色背景" />
+                  <ComboBoxItem Content="灰色背景" />
+                  <ComboBoxItem Content="浅色背景" />
+                </ComboBox>
+                <Button Content="恢复游戏环境" Style="{StaticResource QuietButton}" IsEnabled="{Binding CanControlPreview}" x:Name="ActionMainWindow46" />
+              </StackPanel>
+            </Grid>
+          </Border>
+          <TextBlock Text="{Binding PreviewStatus}" Foreground="{ThemeResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding PreviewStatus}" Margin="3,0" />
+          <TextBlock Text="{Binding PreviewLimitations}" Foreground="{ThemeResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="3,0" />
+          <Expander Header="预览兼容性说明" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Visibility="{Binding HasPreviewWarnings, Converter={StaticResource BoolVisible}}" Foreground="{ThemeResource TextBrush}">
+            <ScrollViewer MaxHeight="90" VerticalScrollBarVisibility="Auto">
+              <TextBlock Text="{Binding PreviewWarnings}" FontSize="12" TextWrapping="Wrap" Margin="6" />
+            </ScrollViewer>
+          </Expander>
+        </StackPanel>
+      </Grid>
+      <Grid Grid.Row="1" Background="{ThemeResource SidebarBrush}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisible}}" Margin="0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="3" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ProgressBar Value="{Binding ProgressValue, Mode=OneWay}" IsIndeterminate="{Binding ProgressIndeterminate}" Height="3" Foreground="{ThemeResource SuccessBrush}" Background="Transparent" BorderThickness="0" />
+        <Grid Grid.Row="1" Margin="20,5">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <Button Content="取消" Style="{StaticResource QuietButton}" Padding="10,3" Grid.Column="1" x:Name="ActionMainWindow47" />
+          <TextBlock Text="{Binding WorkLabel}" FontSize="12" Foreground="{ThemeResource MutedBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Grid.Column="0" />
+        </Grid>
+      </Grid>
+      <Border Grid.Row="2" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="0,1,0,0">
+        <Grid Margin="22,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <Button Content="操作日志" Style="{StaticResource QuietButton}" FontSize="12" Padding="7,3" Grid.Column="1" x:Name="ActionMainWindow48" />
+          <TextBlock Text="{Binding Status}" ToolTipService.ToolTip="{Binding Status}" Foreground="{ThemeResource MutedBrush}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Grid.Column="0" />
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+  <ContentControl x:Name="EditorHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" Visibility="{Binding IsEditing, Converter={StaticResource BoolVisible}}" />
+  <Border VerticalAlignment="Bottom" Background="{ThemeResource SurfaceBrush}" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="0,1,0,0" Visibility="{Binding EditorBusy, Converter={StaticResource BoolVisible}}" Padding="20,12">
+    <Grid ColumnSpacing="16">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel Spacing="8">
+        <TextBlock Text="{Binding WorkLabel}" TextTrimming="CharacterEllipsis"/>
+        <ProgressBar Value="{Binding ProgressValue}" IsIndeterminate="{Binding ProgressIndeterminate}" Height="3"/>
+      </StackPanel>
+      <Button x:Name="EditorCancelWork" Grid.Column="1" Content="取消" VerticalAlignment="Center"/>
+    </Grid>
+  </Border>
+</Grid>

@@ -1,5 +1,7 @@
 # Unity 预览兼容性说明修复
 
+> 历史记录：本文的架构、命令、版本、性能和通过数量对应迁移前的 C# 实现及其当时的预览后端。旧源码现存于 `tests/reference/src`。本次 C++ 重写的实际检查见 [C++ 验证结果](CPP-VALIDATION.md)，当前构建与架构见 [C++ 迁移说明](CPP-MIGRATION.md)；本文数字不自动计入新版本验收。
+
 2026-11-08。检查范围为 `Z:\games\hs2\HS two DX - TSYMQ\UserData\chara\female` 当前层全部 79 张 PNG 人物卡，不递归。
 
 ## 修复内容

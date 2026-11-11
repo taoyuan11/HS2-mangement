@@ -4,6 +4,6 @@
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
     <IsPublishable>false</IsPublishable>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Core/HS2Manager.Core.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../reference/src/HS2Manager.Core/HS2Manager.Core.csproj" /></ItemGroup>
   <ItemGroup><InternalsVisibleTo Include="HS2Manager.Checks" /></ItemGroup>
 </Project>

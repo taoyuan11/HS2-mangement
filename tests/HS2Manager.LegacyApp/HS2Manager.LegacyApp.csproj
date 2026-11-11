@@ -15,9 +15,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest><Version>1.2.0-preview.2</Version>
     <ApplicationIcon>Assets\Brand\hs2-manager.ico</ApplicationIcon>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Core/HS2Manager.Core.csproj" /></ItemGroup>
-  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Rendering/HS2Manager.Rendering.csproj" /></ItemGroup>
-  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Export/HS2Manager.Export.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../reference/src/HS2Manager.Core/HS2Manager.Core.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../reference/src/HS2Manager.Rendering/HS2Manager.Rendering.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../reference/src/HS2Manager.Export/HS2Manager.Export.csproj" /></ItemGroup>
   <ItemGroup><PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" /></ItemGroup>
   <ItemGroup>
     <Content Include="Assets\Brand\hs2-manager.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

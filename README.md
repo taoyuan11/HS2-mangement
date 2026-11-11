@@ -1,11 +1,11 @@
 # HS2 Manager
 
-中文 Windows 11 人物卡管理器。C# / WinUI 3 / .NET 10，便携部署。采用进程内 Direct3D 11 原生 GPU 视口，读取本机游戏和 MOD 的原始资源；预览、角色编辑、模型导出与正式构建均无需 Unity Editor、Player 或 UnityEngine 程序集，不执行游戏及插件 DLL。
+中文 Windows 11 人物卡管理器。纯 C++20 / C++/WinRT / WinUI 3，便携部署。人物管理、编辑、Direct3D 11 预览和模型导出均由 C++ 实现，不加载 CLR、.NET 业务程序集或 Unity 引擎，不执行游戏及插件 DLL。模块与数据兼容规则见 [C++ 迁移说明](docs/CPP-MIGRATION.md)。
 
 ## 开始使用
 
-1. 将 `HS2Manager-1.3.0-native-win-x64*.zip` 解压到本机磁盘，例如 `D:\Apps\HS2Manager`。请完整解压，保持程序与其他文件相对位置。
-2. 双击 `HS2Manager.exe`。已包含 .NET 运行时，无需另行安装。
+1. 将 `HS2Manager-1.4.0-cpp-win-x64*.zip` 解压到本机磁盘，例如 `D:\Apps\HS2Manager`。请完整解压，保持程序与其他文件相对位置。
+2. 双击 `HS2Manager.exe`。已包含 WinUI 与 VC++ 运行库，无需安装 .NET。
 3. 默认游戏目录为 `Z:\games\hs2\HS two DX - TSYMQ`。在左下角“设置与连接”可修改，也可添加其他人物卡目录。
 4. 首次启动默认仅扫描女性人物卡目录 `UserData\chara\female` 的当前层，建立本地封面和元数据索引，再读取 MOD 清单。在“设置与连接”可开启“递归检索人物卡（包含子目录）”，该开关默认关闭，同时适用于默认目录和额外人物卡目录。关闭递归后，已索引的子目录内容仍会保留。NAS 首次扫描需要一些时间；底部显示进度并提供取消。
 
@@ -72,13 +72,13 @@ NAS 离线时保留既有索引与封面；完整目录枚举失败时不会把�
 
 Ctrl+S 默认在原目录另存“原文件名-编辑.png”，重名自动编号，并继承标签、备注、收藏和分类。“更多”提供其他目录、备份后覆盖及备份恢复。**原 PNG 封面始终逐字节保留**，不会随外观编辑更新。未保存离页会提示保存、放弃或取消，预览失败仍保留草稿。
 
-已通过 81 张原始样本的无损往返、1,467 条字段路径读写、保存事务和实际界面检查；3 张编辑副本的参数与资源选择也通过游戏实际读取验证。完整画面对照 84/84 张通过，操作、保留规则、字段清单与验证入口见 [角色编辑说明](docs/CHARACTER-EDITOR.md)。
+C++ 版本已执行真实人物字段、无损读写、保存事务和界面流程检查，具体数量与样本见 [C++ 验证结果](docs/CPP-VALIDATION.md)。操作、保留规则与字段清单见 [角色编辑说明](docs/CHARACTER-EDITOR.md)；其中旧版游戏读取和画面对照记录保留为历史参考。
 
 ## 原生 GPU 3D 预览
 
 双击有效人物卡，或点击详情中的“打开 3D 预览”。GPU 在管理器进程内直接绘制到 WinUI `SwapChainPanel`，截图仅在保存时回读同一渲染结果。预览与编辑共用场景、原始几何、材质、动画和独立物理实现。无需启动游戏或 Studio。
 
-固定 84 张卡采用四视角、种子 1979、30 Hz、360 帧及 24 个动态采样验证。人物和适用的面部区域要求 SSIM ≥ 0.99、平均通道误差 ≤ 2/255，并逐卡完成局部视觉复核。结论限定于冻结的卡片和资源配置，不表示逐像素相同。逐卡数值和差异见 [迁移验收](docs/NATIVE-MIGRATION-RESULTS.md)，架构及复现见 [原生 GPU 预览](docs/NATIVE-GPU-PREVIEW.md)，性能变化见 [性能测量](docs/NATIVE-PERFORMANCE.md)。
+本次 C++ 重写分别验证人物准备、GPU 画面、骨骼动态和界面交互，结果与复现入口见 [C++ 验证结果](docs/CPP-VALIDATION.md)。上一轮 [原生 GPU 迁移验收](docs/NATIVE-MIGRATION-RESULTS.md) 的 84 张卡及 360 帧数据属于历史 C# 实现，不能直接视为本次重写的通过结果。所有画面结论均限定于记录中的样本与资源配置。
 
 | 操作 | 功能 |
 | --- | --- |
@@ -94,7 +94,7 @@ Ctrl+S 默认在原目录另存“原文件名-编辑.png”，重名自动编�
 
 快速切卡和连续编辑仅提交最新加载与修订。隐藏视口停止绘制；缩放、DPI 变化和页面切换会更新视口。设备恢复从当前场景快照重建，失败时保留编辑草稿并提供重试；资源或效果诊断显示在预览提示中。不存在自动切回历史渲染器的入口。
 
-预览缓存位于 `Data/NativePreview-v1`。数据库、设置、封面、备份及旧缓存保留，旧缓存不会作为新格式直接复用。首次解析本机游戏和 MOD 清单可能较慢，界面显示阶段进度。旧版依赖诊断中已存在的缺失资源继续报告，不会据此伪称资源齐全。
+原生资源缓存位于 `Data/NativeCpp`。数据库、设置、封面、备份及旧缓存保留，旧缓存不会作为新格式直接复用。首次解析本机游戏和 MOD 清单可能较慢，界面显示阶段进度。旧版依赖诊断中已存在的缺失资源继续报告，不会据此伪称资源齐全。
 
 ## MOD 诊断
 
@@ -123,25 +123,26 @@ Ctrl+S 默认在原目录另存“原文件名-编辑.png”，重名自动编�
 
 ## 源码构建
 
-正式构建使用 Windows x64、.NET 10 SDK、Windows App SDK 1.8、Direct3D 11 与 Vortice。编译 C++ 适配层需要 Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake；脚本通过 Visual Studio Installer 定位已安装的 C++ 工具，使用已安装的默认 Windows SDK。独立布料适配层使用 PhysX 3.4.2 源码；FBX 适配层使用 Autodesk FBX SDK 2020.3.7。将按各自许可取得的 SDK 放入 `.tools/physx-3.4` 和 `.tools/fbx-native-2020.3.7`，或向 `build.ps1` / `build-desktop.ps1` 传入 `-PhysXSource` / `-FbxSdkRoot` 指定外部目录。单独运行适配层构建脚本时，分别使用 `-Source` / `-SdkRoot`。原生 DLL 在本机缓存中构建，发布包含必要的 VC143 运行库及许可文本。
+正式构建需要 Windows x64、Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake，无需 .NET SDK。脚本通过 Visual Studio Installer 定位工具，还原固定版本的 C++/WinRT 与 Windows App SDK 1.8。独立布料适配层使用 PhysX 3.4.2 源码；FBX 适配层使用 Autodesk FBX SDK 2020.3.7。将按各自许可取得的 SDK 放入 `.tools/physx-3.4` 和 `.tools/fbx-native-2020.3.7`，或向 `build.ps1` / `build-desktop.ps1` 传入 `-PhysXSource` / `-FbxSdkRoot` 指定外部目录。单独运行适配层构建脚本时，分别使用 `-Source` / `-SdkRoot`。
 
 ```powershell
-.\bootstrap-dotnet.ps1
 .\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ'
-# 追加真实资源的原生会话及 WinUI 预览检查
+# 追加真实人物的场景、动态及 GPU 帧检查
 .\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ' -PreviewTest
+# 日常编译原生模块及 WinUI 界面，不生成便携 ZIP
+.\build-cpp.ps1
 ```
 
-`build.ps1` 编译独立 FBX/物理适配层、运行核心与界面检查，然后发布自带 .NET 和 Windows App SDK 运行时的便携目录及 ZIP，写入 SHA-256。输出位于 `artifacts/release`；同名目录已有时创建新目录，保留原资料。`-SkipTests` 跳过核心和界面检查，发布包依赖审计与原生运行库检查始终执行。直接 `dotnet publish` 应用项目也执行依赖审计，拒绝引擎程序集、原生导入和旧通信端点。无需构建或下载 Unity。
+`build.ps1` 编译独立 FBX / 物理适配层、C++ 业务模块及 WinUI 程序，运行 CTest 和窗口启动 / 关闭检查，发布自带 Windows App SDK 与 VC++ 运行库的便携目录及 ZIP，并写入 SHA-256 清单。输出位于 `artifacts/release`；已有输出不会被覆盖，可用 `-OutputDirectory` 指定新目录。`-SkipTests` 跳过自动测试，发布包的纯原生依赖审计仍然执行。无需构建或下载 Unity。
 
-日常可双击 `start.cmd`，以 Release 配置构建并运行；首次启动前先构建原生适配层。源码在 NAS 时，编译产物和资料库放在 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
+日常可双击 `start.cmd`，以 Release 配置构建并运行；首次使用先运行一次完整 `build.ps1` 准备原生适配层。源码在 NAS 时，编译产物放在 `%LOCALAPPDATA%/HS2Manager/CppBuild/<项目标识>`，资料库保留原来的 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
 
 `build-desktop.ps1` 创建当前用户桌面的 `HS2Manager` 目录，不生成 ZIP；若已有安装，完整构建成功后替换程序并保留 `Data`，失败则保留或恢复旧目录。支持 `-GamePath`、`-SkipTests`、`-PreviewTest` 和 `-PreviewCard`。更新前关闭该安装的程序。
 
-生产项目为 `src/HS2Manager.App`（WinUI 与 SwapChainPanel）、`Core`（原始资源、场景、编辑和事务）、`Rendering`（D3D11 材质与呈现）及 `Export`（独立 FBX 生成）。`tests/HS2Manager.Legacy*`、原 Unity 工程和旧桥接仅作为显式选择的离线历史参考；它们不在正式构建、启动、发布链路中，也不提供自动回退。
+在 Visual Studio 打开 `HS2Manager.Native.sln` 或 `HS2Manager.slnx`。生产代码在 `src/HS2Manager.NativeApp`、`NativeCore`、`NativeScene`、`NativeRendering` 和 `NativeExport`；底层库也可通过根目录 `CMakeLists.txt` 构建。旧 C#、Unity 与桥接源代码保存在 `tests/reference/src`，独立参考解决方案为 `tests/reference/HS2Manager.Reference.slnx`；它们不在正式构建、启动、发布链路中，也不提供自动回退。
 
 ## 范围与兼容性
 
-此版提供人物管理、角色外观编辑及原生 GPU 动态预览，编辑入口为已有男女角色卡，支持原版和本机已安装 MOD 素材。性别转换、游戏玩法属性、姿势编辑、插件专属面板与扩展配饰槽的专属编辑不在范围内；未知数据和扩展槽继续保留。一致性范围及剩余差异见 [原生迁移验收](docs/NATIVE-MIGRATION-RESULTS.md)。Blender、Unreal 材质延续原有导出格式与转换行为，跨引擎画面仍有各自边界，见 [模型导出](docs/MODEL-EXPORT.md)。
+此版保留人物管理、角色外观编辑及原生 GPU 动态预览，编辑入口为已有男女角色卡，支持原版和本机已安装 MOD 素材。性别转换、游戏玩法属性、姿势编辑、插件专属面板与扩展配饰槽的专属编辑沿用原版范围；未知数据和扩展槽继续保留。本次迁移验证范围见 [C++ 验证结果](docs/CPP-VALIDATION.md)。Blender、Unreal 材质延续原有导出格式与转换行为，跨引擎画面仍有各自边界，见 [模型导出](docs/MODEL-EXPORT.md)。
 
 若曾使用旧桥接版本，遗留桥接插件不会被新版启用；可在游戏退出后手动移除游戏 `BepInEx/plugins/HS2Manager` 子目录。程序没有安装系统服务或计划任务。

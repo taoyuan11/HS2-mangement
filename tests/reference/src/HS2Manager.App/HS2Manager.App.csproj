@@ -39,7 +39,7 @@
     <Error Condition="!Exists('$(TargetDir)$(AssemblyName).pri')" Text="WinUI resource index is missing; build before publishing." />
   </Target>
   <Target Name="AuditNativePublishedPackage" AfterTargets="Publish">
-    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\Copy-NativeRuntime.ps1&quot; -Package &quot;$(PublishDir).&quot;" />
-    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\Test-NativePackage.ps1&quot; -Package &quot;$(PublishDir).&quot; -Report &quot;$(PublishDir)native-package-audit.json&quot; -LoadNative" />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\..\..\scripts\Copy-NativeRuntime.ps1&quot; -Package &quot;$(PublishDir).&quot;" />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\..\..\scripts\Test-NativePackage.ps1&quot; -Package &quot;$(PublishDir).&quot; -Report &quot;$(PublishDir)native-package-audit.json&quot; -LoadNative" />
   </Target>
 </Project>

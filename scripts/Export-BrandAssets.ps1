@@ -2,7 +2,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationCore, WindowsBase
-$assetDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../src/HS2Manager.App/Assets/Brand'))
+$assetDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../src/HS2Manager.NativeApp/Assets/Brand'))
 [xml]$svg = Get-Content -LiteralPath (Join-Path $assetDirectory 'hs2-manager.svg') -Raw
 $culture = [Globalization.CultureInfo]::InvariantCulture
 

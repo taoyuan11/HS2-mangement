@@ -1,5 +1,7 @@
 # 预览交互优化
 
+> 历史记录：本文的架构、命令、版本、性能和通过数量对应迁移前的 C# 实现及其当时的预览后端。旧源码现存于 `tests/reference/src`。本次 C++ 重写的实际检查见 [C++ 验证结果](CPP-VALIDATION.md)，当前构建与架构见 [C++ 迁移说明](CPP-MIGRATION.md)；本文数字不自动计入新版本验收。
+
 > 本文性能数字记录迁移前的 WPF 宿主，不代表 WinUI 3 的测量结果。当前界面和回归检查已迁移到 WinUI 3，见 [WINUI3-MIGRATION.md](WINUI3-MIGRATION.md)。
 
 2026-11-08，针对旋转、平移和缩放时的拖影及低帧率，修改 Unity 内核、共享帧传输及 WPF 视口。

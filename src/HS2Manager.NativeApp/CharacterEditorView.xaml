@@ -1,0 +1,151 @@
+<Grid Background="{ThemeResource PageBrush}" Padding="20,16" RowSpacing="12" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="using:HS2Manager.NativeApp" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+  <Grid.RowDefinitions>
+    <RowDefinition Height="Auto" />
+    <RowDefinition Height="*" />
+    <RowDefinition Height="Auto" />
+  </Grid.RowDefinitions>
+  <Grid ColumnSpacing="12">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="Auto" />
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="Auto" />
+    </Grid.ColumnDefinitions>
+    <Button Content="返回" VerticalAlignment="Center" AutomationProperties.Name="返回资源库" x:Name="ActionCharacterEditorView1" />
+    <StackPanel Grid.Column="1">
+      <TextBlock x:Name="EditorTitle" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+      <TextBlock x:Name="SaveState" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,4,0,0" />
+    </StackPanel>
+    <StackPanel x:Name="Actions" Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+      <Button x:Name="UndoButton" Content="撤销" ToolTipService.ToolTip="Ctrl+Z" />
+      <Button x:Name="RedoButton" Content="重做" ToolTipService.ToolTip="Ctrl+Y" />
+      <Button Content="恢复">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedRight" ShouldConstrainToRootBounds="True">
+            <MenuFlyoutItem Text="恢复当前分类" x:Name="ActionCharacterEditorView2" />
+            <MenuFlyoutItem Text="恢复全部到最近保存" x:Name="ActionCharacterEditorView3" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+      <Button x:Name="SaveButton" Content="另存新卡" Style="{StaticResource PrimaryButton}" ToolTipService.ToolTip="Ctrl+S · 原封面保持不变" />
+      <Button Content="更多">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedRight" ShouldConstrainToRootBounds="True">
+            <MenuFlyoutItem Text="导出 3D 模型…" x:Name="ActionCharacterEditorView4" />
+            <MenuFlyoutSeparator />
+            <MenuFlyoutItem Text="另存到其他文件夹…" x:Name="ActionCharacterEditorView5" />
+            <MenuFlyoutItem Text="备份后覆盖原卡" x:Name="ActionCharacterEditorView6" />
+            <MenuFlyoutSeparator />
+            <MenuFlyoutItem Text="恢复编辑备份…" x:Name="ActionCharacterEditorView7" />
+            <MenuFlyoutItem Text="切换人物卡…" x:Name="ActionCharacterEditorView8" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+    </StackPanel>
+  </Grid>
+  <Grid Grid.Row="1" ColumnSpacing="12">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="156" />
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="340" />
+    </Grid.ColumnDefinitions>
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+      <ListView x:Name="Categories" DisplayMemberPath="Label" />
+      <ListView Grid.Row="1" x:Name="Groups" Margin="0,12,0,0" FontSize="12" />
+    </Grid>
+    <Grid Grid.Column="1" RowSpacing="10">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <Border CornerRadius="10" Background="#292C30" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1">
+        <Grid x:Name="EditorViewport" Background="Transparent">
+          <SwapChainPanel x:Name="EditorCompositionViewport" IsHitTestVisible="False" />
+          <Border Background="#B8292C30" VerticalAlignment="Bottom" Padding="12" Visibility="{Binding PreviewBusy, Converter={StaticResource BoolVisible}}">
+            <StackPanel Spacing="6">
+              <ProgressBar IsIndeterminate="True" Height="3" />
+              <TextBlock Text="{Binding PreviewStatus}" Foreground="White" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Border>
+      <StackPanel Grid.Row="1" Spacing="6">
+        <Grid x:Name="WrapCharacterEditorView9">
+          <Button Content="正面" Tag="0" x:Name="ActionCharacterEditorView10" />
+          <Button Content="侧面" Tag="90" x:Name="ActionCharacterEditorView11" />
+          <Button Content="背面" Tag="180" x:Name="ActionCharacterEditorView12" />
+          <Button Content="面部" x:Name="ActionCharacterEditorView13" />
+          <Button Content="全身" x:Name="ActionCharacterEditorView14" />
+          <Button Content="{Binding PlaybackLabel}" x:Name="ActionCharacterEditorView15" />
+          <Button Content="环境">
+            <Button.Flyout>
+              <Flyout>
+                <StackPanel Spacing="12" Width="220">
+                  <TextBlock Text="灯光强度" />
+                  <Slider Minimum="0.2" Maximum="2" Value="{Binding PreviewLightIntensity, Mode=TwoWay}" />
+                  <ComboBox SelectedIndex="{Binding PreviewBackgroundIndex, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="游戏背景" />
+                    <ComboBoxItem Content="深色背景" />
+                    <ComboBoxItem Content="灰色背景" />
+                    <ComboBoxItem Content="浅色背景" />
+                  </ComboBox>
+                  <Button Content="恢复游戏环境" x:Name="ActionCharacterEditorView16" />
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+          <Button Content="显示" AutomationProperties.Name="编辑预览显示设置">
+            <Button.Flyout>
+              <Flyout>
+                <StackPanel Spacing="12" Width="220">
+                  <TextBlock Text="服装显示" />
+                  <ComboBox x:Name="ClothingVisibility" SelectedIndex="0" HorizontalAlignment="Stretch" AutomationProperties.Name="服装显示状态">
+                    <ComboBoxItem Content="自动（跟随编辑分类）" />
+                    <ComboBoxItem Content="完整着装" />
+                    <ComboBoxItem Content="内着" />
+                    <ComboBoxItem Content="不穿衣物" />
+                  </ComboBox>
+                  <ToggleSwitch x:Name="AccessoryVisibility" Header="配饰" IsOn="True" OnContent="显示" OffContent="隐藏" AutomationProperties.Name="显示配饰" />
+                  <TextBlock Text="仅影响编辑预览，保存时保留服装和配饰。" FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+        </Grid>
+        <TextBlock x:Name="VisibilityStatus" Text="自动 · 完整着装" FontSize="12" Foreground="{ThemeResource MutedBrush}" TextWrapping="Wrap" />
+      </StackPanel>
+      <StackPanel Grid.Row="2" Spacing="6">
+        <TextBlock Text="{Binding PreviewStatus}" FontSize="12" TextWrapping="Wrap" />
+        <InfoBar IsOpen="{Binding HasPreviewError}" Severity="Error" IsClosable="False" Title="预览更新失败" Message="{Binding PreviewError}">
+          <InfoBar.ActionButton>
+            <Button Content="重新连接" x:Name="ActionCharacterEditorView17" />
+          </InfoBar.ActionButton>
+        </InfoBar>
+        <Expander Header="预览兼容性说明" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+          <ScrollViewer MaxHeight="90">
+            <TextBlock Text="{Binding PreviewWarnings}" TextWrapping="Wrap" FontSize="12" />
+          </ScrollViewer>
+        </Expander>
+      </StackPanel>
+    </Grid>
+    <Border Grid.Column="2" Background="{ThemeResource SurfaceBrush}" CornerRadius="9" Padding="14" BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1">
+      <Grid RowSpacing="10">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="GroupTitle" FontSize="18" FontWeight="SemiBold" />
+        <TextBox x:Name="FieldSearch" Grid.Row="1" PlaceholderText="搜索本分类参数" AutomationProperties.Name="搜索编辑参数" />
+        <ScrollViewer x:Name="ParameterScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel x:Name="Parameters" Spacing="18" />
+        </ScrollViewer>
+      </Grid>
+    </Border>
+  </Grid>
+  <TextBlock x:Name="EditorMessage" Grid.Row="2" FontSize="12" Foreground="{ThemeResource MutedBrush}" TextWrapping="Wrap" />
+</Grid>

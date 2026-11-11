@@ -1,6 +1,6 @@
 # Shared with the application's data-location logic. Supports Windows PowerShell 5.1.
 if (!('HS2Manager.Core.StoragePaths' -as [type])) {
-    Add-Type -Path (Join-Path $PSScriptRoot '..\src\HS2Manager.Core\StoragePaths.cs')
+    Add-Type -Path (Join-Path $PSScriptRoot '..\tests\reference\src\HS2Manager.Core\StoragePaths.cs')
 }
 
 function Get-Hs2LocalCache([string]$Path, [string]$Category = 'Source') {

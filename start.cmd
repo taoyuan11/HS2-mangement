@@ -4,18 +4,9 @@ setlocal EnableExtensions DisableDelayedExpansion
 pushd "%~dp0"
 if errorlevel 1 goto directory_error
 
-set "DOTNET_CLI_TELEMETRY_OPTOUT=1"
 set "MSBUILDDISABLENODEREUSE=1"
-set "HS2_DOTNET=%~dp0.tools\dotnet\dotnet.exe"
-if exist "%HS2_DOTNET%" goto launch
-
-where.exe dotnet >nul 2>&1
-if errorlevel 1 goto missing_sdk
-set "HS2_DOTNET=dotnet"
-
-:launch
-echo Building and starting HS2 Manager (WinUI 3, native GPU)...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Start-Source.ps1" %*
+echo Building and starting HS2 Manager (C++ / WinUI 3)...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Start-CppSource.ps1" %*
 set "HS2_EXIT_CODE=%ERRORLEVEL%"
 popd
 if not "%HS2_EXIT_CODE%"=="0" (
@@ -24,13 +15,6 @@ if not "%HS2_EXIT_CODE%"=="0" (
     pause
 )
 exit /b %HS2_EXIT_CODE%
-
-:missing_sdk
-echo .NET 10 SDK was not found. Install it or run:
-echo powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bootstrap-dotnet.ps1"
-popd
-pause
-exit /b 1
 
 :directory_error
 echo Cannot open the project directory: "%~dp0"

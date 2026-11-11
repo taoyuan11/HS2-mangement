@@ -18,7 +18,7 @@ Set-Content -LiteralPath $uproject -Encoding utf8 -Value '{"FileVersion":3,"Plug
 # Isolated test project only. Do not change the user's rendering settings.
 Set-Content -LiteralPath (Join-Path $project 'Config/DefaultEngine.ini') -Encoding utf8 -Value "[/Script/Engine.RendererSettings]`nr.RayTracing=False`nr.AllowStaticLighting=False`n[Zen.AutoLaunch]`nAutoLaunch=False`n[DerivedDataBackendGraph]`nRoot=(Type=KeyLength, Length=120, Inner=Local)`nLocal=(Type=FileSystem, ReadOnly=false, Clean=false, Flush=false, Path=$cache)"
 $config=Join-Path $OutputDirectory 'request.json'
-@{Packages=@($PackageDirectory|ForEach-Object{(Resolve-Path -LiteralPath $_).Path});Importer=(Join-Path $repo 'src/HS2Manager.UnityPreview/Assets/Resources/UnrealImport.py.txt');Output=$OutputDirectory;Project=$uproject} | ConvertTo-Json | Set-Content -LiteralPath $config -Encoding utf8
+@{Packages=@($PackageDirectory|ForEach-Object{(Resolve-Path -LiteralPath $_).Path});Importer=(Join-Path $repo 'tests/reference/src/HS2Manager.UnityPreview/Assets/Resources/UnrealImport.py.txt');Output=$OutputDirectory;Project=$uproject} | ConvertTo-Json | Set-Content -LiteralPath $config -Encoding utf8
 if(!('HS2Manager.BuildTools.OwnedToolProcess' -as [type])){Add-Type -Path (Join-Path $repo 'scripts/OwnedToolProcess.cs')}
 $previous=$env:HS2_UNREAL_VALIDATION
 try {

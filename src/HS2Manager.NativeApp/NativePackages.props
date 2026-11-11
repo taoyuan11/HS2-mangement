@@ -1,0 +1,8 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(NativePackageRoot)microsoft.windows.cppwinrt/3.0.260818.1/build/native/Microsoft.Windows.CppWinRT.props" />
+  <Import Project="$(NativePackageRoot)microsoft.windowsappsdk.base/1.8.251216001/build/native/Microsoft.WindowsAppSDK.Base.props" />
+  <Import Project="$(NativePackageRoot)microsoft.windowsappsdk.foundation/1.8.260803002/build/native/Microsoft.WindowsAppSDK.Foundation.props" />
+  <Import Project="$(NativePackageRoot)microsoft.windowsappsdk.interactiveexperiences/1.8.260708001/build/native/Microsoft.WindowsAppSDK.InteractiveExperiences.props" />
+  <Import Project="$(NativePackageRoot)microsoft.windowsappsdk.winui/1.8.260803003/build/native/Microsoft.WindowsAppSDK.WinUI.props" />
+  <Import Project="$(NativePackageRoot)microsoft.windowsappsdk.runtime/1.8.260921001/build/native/Microsoft.WindowsAppSDK.Runtime.props" />
+</Project>

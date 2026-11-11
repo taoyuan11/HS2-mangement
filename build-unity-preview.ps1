@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$EditorPath = '',
     [string]$OutputPath = '',
@@ -16,10 +16,10 @@ if (!$OutputPath) { $OutputPath = Join-Path $PSScriptRoot ('artifacts\unity-prev
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 if (Test-Path -LiteralPath $OutputPath) { throw 'Use a new output directory so a failed build cannot reuse an old player or report.' }
 New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
-$project = Join-Path $PSScriptRoot 'src\HS2Manager.UnityPreview'
+$project = Join-Path $PSScriptRoot 'tests\reference\src\HS2Manager.UnityPreview'
 $generated = Join-Path $project 'Assets\Generated\Contracts'
 New-Item -ItemType Directory -Path $generated -Force | Out-Null
-Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src\HS2Manager.Preview.Contracts') -Filter '*.cs' -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $generated -Force }
+Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'tests\reference\src\HS2Manager.Preview.Contracts') -Filter '*.cs' -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $generated -Force }
 Set-Content -LiteralPath (Join-Path $generated 'HS2Manager.Preview.Contracts.asmdef') -Value '{"name":"HS2Manager.Preview.Contracts","references":[],"includePlatforms":[],"excludePlatforms":[]}' -Encoding UTF8
 if (!('HS2Manager.BuildTools.OwnedToolProcess' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'scripts\OwnedToolProcess.cs') }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'tests/HS2Manager.LegacyPreview/KernelProtocol.cs') -Destination $generated -Force

@@ -7,7 +7,7 @@
   <ItemGroup><ProjectReference Include="../HS2Manager.Preview.Contracts/HS2Manager.Preview.Contracts.csproj" /></ItemGroup>
   <!-- Historical Studio bridge stays as reference source, never in a production assembly. -->
   <ItemGroup><Compile Remove="PreviewSessionService.cs" /></ItemGroup>
-  <ItemGroup><Compile Include="../../scripts/OwnedToolProcess.cs" Link="OwnedToolProcess.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../../../scripts/OwnedToolProcess.cs" Link="OwnedToolProcess.cs" /></ItemGroup>
   <ItemGroup><InternalsVisibleTo Include="HS2Manager.Checks" /><InternalsVisibleTo Include="HS2Manager.LegacyPreview" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Resources/classdata.tpk" /></ItemGroup>
   <PropertyGroup>

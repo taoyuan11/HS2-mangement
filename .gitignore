@@ -9,9 +9,9 @@ artifacts/
 **/Temp/
 **/Logs/
 **/UserSettings/
-src/HS2Manager.UnityPreview/Assets/Generated/
-src/HS2Manager.UnityPreview/Assets/Generated.meta
-src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx/
+tests/reference/src/HS2Manager.UnityPreview/Assets/Generated/
+tests/reference/src/HS2Manager.UnityPreview/Assets/Generated.meta
+tests/reference/src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx/
 *.alf
 *.ulf
 __pycache__/

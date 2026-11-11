@@ -1,8 +1,9 @@
-﻿# Called by start.cmd; all arguments belong to the application (including --data).
+﻿# Historical C# reference launcher; start.cmd uses Start-CppSource.ps1.
+# All arguments belong to the reference application (including --data).
 $ErrorActionPreference = 'Stop'
 $workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $PSScriptRoot 'LocalWorkspace.ps1')
-$project = Join-Path $workspace 'src\HS2Manager.App\HS2Manager.App.csproj'
+$project = Join-Path $workspace 'tests\reference\src\HS2Manager.App\HS2Manager.App.csproj'
 $dotnetArguments = @('run', '--project', $project, '--configuration', 'Release', '--no-launch-profile', '--disable-build-servers', '-p:UseSharedCompilation=false', '-p:BuildInParallel=false')
 $env:HS2MANAGER_SOURCE_ROOT = $workspace
 $env:HS2MANAGER_SOURCE_OUTPUT = $null

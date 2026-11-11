@@ -6,8 +6,8 @@ if(!$EditorPath){$EditorPath=Join-Path $repo '.tools/unity/2018.4.11f1/Editor/Un
 $OutputDirectory=(Resolve-Path -LiteralPath $OutputDirectory).Path
 $validationProject=Join-Path $OutputDirectory ('unity-validation-project-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $validationProject 'Assets/Editor'),(Join-Path $validationProject 'ProjectSettings'),(Join-Path $validationProject 'Packages') -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $repo 'src/HS2Manager.UnityPreview/Assets/Editor/ModelExportValidation.cs') -Destination (Join-Path $validationProject 'Assets/Editor/ModelExportValidation.cs')
-Copy-Item -LiteralPath (Join-Path $repo 'src/HS2Manager.Preview.Contracts/ModelExport.cs') -Destination (Join-Path $validationProject 'Assets/ModelExport.cs')
+Copy-Item -LiteralPath (Join-Path $repo 'tests/reference/src/HS2Manager.UnityPreview/Assets/Editor/ModelExportValidation.cs') -Destination (Join-Path $validationProject 'Assets/Editor/ModelExportValidation.cs')
+Copy-Item -LiteralPath (Join-Path $repo 'tests/reference/src/HS2Manager.Preview.Contracts/ModelExport.cs') -Destination (Join-Path $validationProject 'Assets/ModelExport.cs')
 Set-Content -LiteralPath (Join-Path $validationProject 'Packages/manifest.json') -Value '{"dependencies":{"com.unity.modules.animation":"1.0.0","com.unity.modules.imageconversion":"1.0.0"}}' -Encoding UTF8
 $editorVersion=[regex]::Match($EditorPath,'[0-9]+\.[0-9]+\.[0-9]+[abfp][0-9]+').Value
 if($editorVersion){Set-Content -LiteralPath (Join-Path $validationProject 'ProjectSettings/ProjectVersion.txt') -Value ('m_EditorVersion: '+$editorVersion) -Encoding UTF8}

@@ -1,5 +1,27 @@
 # Third-party components
 
+## C++ application and portable package
+
+- C++/WinRT 3.0.260818.1: Microsoft, MIT. See `licenses/CppWinRT-LICENSE.txt`. Source: https://github.com/microsoft/cppwinrt. Used to project the Windows and WinUI APIs into native C++; no C#/WinRT runtime is loaded.
+- Windows App SDK 1.8, including WinUI 3: Microsoft. See `licenses/WindowsAppSDK-LICENSE.txt` and `licenses/WindowsAppSDK-NOTICE.txt`. Source: https://github.com/microsoft/WindowsAppSDK and https://github.com/microsoft/microsoft-ui-xaml.
+- nlohmann/json 3.12.0: Niels Lohmann and contributors, MIT. See `licenses/nlohmann-json-LICENSE.txt`. Source: https://github.com/nlohmann/json/tree/v3.12.0.
+- miniz inflate implementation: Rich Geldreich, RAD Game Tools and contributors, MIT. See `licenses/miniz-LICENSE.txt`. Source: https://github.com/richgel999/miniz. Used for reading ZIP / ZIPMOD archives.
+- LZMA SDK decoder: Igor Pavlov, public domain. See `licenses/LZMA-PUBLIC-DOMAIN.txt`. Source: https://www.7-zip.org/sdk.html.
+- SQLite: public domain. The C++ application uses the Windows `winsqlite3.dll` system API. See `licenses/sqlite-LICENSE.txt` and https://www.sqlite.org/copyright.html.
+- AssetRipper TPK class database: MIT. See `licenses/AssetRipper-Tpk.txt`. The database describes serialized asset layouts; no Unity runtime is included.
+- Independent cloth adapter: NVIDIA PhysX SDK 3.4.2, BSD-style license. See `licenses/NVIDIA-PhysX-3.4.txt`. Source: https://github.com/NVIDIAGameWorks/PhysX-3.4.
+- Native FBX adapter: Autodesk FBX SDK 2020.3.7. See the supplied SDK terms in `licenses/Autodesk-FBX-SDK-2020.3.7.rtf`. Source/download: https://aps.autodesk.com/developer/overview/fbx-sdk.
+- Microsoft Visual C++ 2022 VC143 x64 redistributable binaries: Microsoft Corporation. Copied unchanged from the installed Visual Studio redistributable directory. See the [distributable list](https://learn.microsoft.com/visualstudio/releases/2022/redistribution) and [redistribution terms](https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files).
+- Unity Post Processing reference: 2.1.7, Unity Companion License; see `licenses/Unity-PostProcessing.md`. The renderer reads the user's installed effect resources; game shader packages are not distributed.
+
+Blender and Unreal Engine are optional, separately installed user tools. Their automation templates are shipped as text resources and run only inside the selected editor. Neither editor nor a standalone Python interpreter is bundled.
+
+HS2 Manager is an independent utility. HoneySelect 2, Studio, Unity assets and game assemblies belong to their respective owners. No game DLLs, MOD archives, character cards or reference screenshots are distributed. PE / CLI metadata is read as data with a restricted numeric evaluator; game or plugin code is not loaded or invoked.
+
+## Historical C# comparison sources
+
+The components below are retained for historical source and validation references. They are excluded from the C++ application's build, runtime and portable package. Their original license texts remain available in `licenses`.
+
 - Native rendering modules: Vortice.Direct3D11, Vortice.DXGI and Vortice.D3DCompiler 3.8.3, and Vortice.Mathematics 2.1.0, Amer Koleci and contributors, MIT. See `licenses/Vortice.Windows-LICENSE.txt`. Source: https://github.com/amerkoleci/Vortice.Windows.
 - SharpGen.Runtime and SharpGen.Runtime.COM 2.4.2-beta: Alexandre Mutel, Jeremy Koritzinsky and Amer Koleci, MIT. See `licenses/SharpGen.Runtime-LICENSE.txt`. Source: https://github.com/SharpGenTools/SharpGenTools.
 - Independent cloth adapter: NVIDIA PhysX SDK 3.4.2, Copyright (c) 2018 NVIDIA Corporation, BSD-style license. See `licenses/NVIDIA-PhysX-3.4.txt`. Source: https://github.com/NVIDIAGameWorks/PhysX-3.4. This adapter is built directly from the SDK and contains no Unity engine components.

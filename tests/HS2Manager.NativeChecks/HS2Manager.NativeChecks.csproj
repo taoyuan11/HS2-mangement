@@ -3,8 +3,8 @@
     <OutputType>Exe</OutputType><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Rendering/HS2Manager.Rendering.csproj" /></ItemGroup>
-  <ItemGroup><ProjectReference Include="../../src/HS2Manager.Export/HS2Manager.Export.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../reference/src/HS2Manager.Rendering/HS2Manager.Rendering.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../reference/src/HS2Manager.Export/HS2Manager.Export.csproj" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Fixtures/native-math-reference.json" LogicalName="native-math-reference.json" /></ItemGroup>
   <ItemGroup><EmbeddedResource Include="Fixtures/native-curve-reference.json" LogicalName="native-curve-reference.json" /></ItemGroup>
   <PropertyGroup>

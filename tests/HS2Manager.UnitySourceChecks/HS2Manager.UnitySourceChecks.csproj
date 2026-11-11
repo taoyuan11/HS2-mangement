@@ -12,16 +12,16 @@
   </PropertyGroup>
   <Target Name="RequireOfficialEditor" BeforeTargets="ResolveReferences">
     <Error Condition="!Exists('$(UnityEditorRoot)/Unity.exe')" Text="Install the official Unity 2018.4.11f1 editor with bootstrap-unity.ps1." />
-    <Error Condition="!Exists('$(MSBuildThisFileDirectory)../../src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx/Runtime/Scripts/FbxManager.cs')" Text="Prepare the FBX SDK with scripts/Prepare-FbxSdk.ps1 or build-unity-preview.ps1 before running Unity source checks." />
+    <Error Condition="!Exists('$(MSBuildThisFileDirectory)../reference/src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx/Runtime/Scripts/FbxManager.cs')" Text="Prepare the FBX SDK with scripts/Prepare-FbxSdk.ps1 or build-unity-preview.ps1 before running Unity source checks." />
   </Target>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
-    <Compile Include="../../src/HS2Manager.Preview.Contracts/*.cs" />
-    <Compile Include="../../src/HS2Manager.UnityPreview/Assets/Runtime/*.cs" />
-    <Compile Include="../../src/HS2Manager.UnityPreview/Assets/Editor/*.cs" />
-    <Compile Include="../../src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx/Runtime/Scripts/*.cs" />
+    <Compile Include="../reference/src/HS2Manager.Preview.Contracts/*.cs" />
+    <Compile Include="../reference/src/HS2Manager.UnityPreview/Assets/Runtime/*.cs" />
+    <Compile Include="../reference/src/HS2Manager.UnityPreview/Assets/Editor/*.cs" />
+    <Compile Include="../reference/src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx/Runtime/Scripts/*.cs" />
     <Reference Include="$(UnityEditorRoot)/Data/Managed/UnityEngine/*.dll"><Private>false</Private></Reference>
     <Reference Include="UnityEditor"><HintPath>$(UnityEditorRoot)/Data/Managed/UnityEditor.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="Unity.Postprocessing.Runtime"><HintPath>../../src/HS2Manager.UnityPreview/Library/ScriptAssemblies/Unity.Postprocessing.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.Postprocessing.Runtime"><HintPath>../reference/src/HS2Manager.UnityPreview/Library/ScriptAssemblies/Unity.Postprocessing.Runtime.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

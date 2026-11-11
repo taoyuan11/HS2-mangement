@@ -1,5 +1,7 @@
 # 通用、Blender 与 Unreal 模型导出
 
+本文说明当前 C++ 版本的模型导出流程。本次重写的实测结果见 [C++ 验证结果](CPP-VALIDATION.md)；[旧原生 GPU 迁移验收](NATIVE-MIGRATION-RESULTS.md) 和 [旧模型导出验证](MODEL-EXPORT-VALIDATION.md) 属于 C# 实现的历史证据。
+
 人物列表的操作栏、右键菜单、3D 预览工具栏及编辑页“更多”均提供“导出 3D 模型…”。选择导出类型、服装和配饰范围，再选择游戏目录之外的输出位置。列表支持单张及批量；编辑页捕获点击时的未保存草稿，不写入原人物卡。
 
 | 类型 | 打开的文件 | 内容 |
@@ -14,7 +16,7 @@
 
 在 **设置 → 模型导出** 中选择 `blender.exe` 或 `UnrealEditor-Cmd.exe`；选择 `UnrealEditor.exe` 时自动使用同目录的命令行程序。自动检测常见安装目录、注册信息和 PATH，Blender 也检测桌面或下载目录中的便携版。导出弹窗允许调整并保存路径。
 
-导出前运行软件能力检查。工具缺失、必要接口不可用或转换失败时明确报错，不将中间 FBX 当作原生结果发布。通用 FBX 无需安装目标软件。实际测试版本见[迁移验收](NATIVE-MIGRATION-RESULTS.md)，其他版本不默认视为兼容。
+导出前运行软件能力检查。工具缺失、必要接口不可用或转换失败时明确报错，不将中间 FBX 当作原生结果发布。通用 FBX 无需安装目标软件。实际测试版本见 [C++ 验证结果](CPP-VALIDATION.md)，其他版本不默认视为兼容。
 
 Blender 打开 `character.blend`，使用 Rendered 视图或 F12 查看。模型与预览场景分组，灯光、相机和材质可编辑；贴图及环境资源已打包，环境光探针可重新烘焙。
 
@@ -54,16 +56,16 @@ Unreal 打开项目后默认进入 `/Game/HS2Character/Preview`。角色资产�
 
 ## 构建与验证
 
-通用 FBX 由独立 Autodesk FBX SDK 2020.3.7 适配层直接从共享场景生成。Blender 与 Unreal 的转换、独立重开和事务发布继续使用同一流程；没有 Unity Player、编辑器或 UnityEngine 依赖。转换脚本嵌入 `Core/ModelExport`，不再从历史工程路径取用。
+通用 FBX 由独立 Autodesk FBX SDK 2020.3.7 适配层直接从共享场景生成。Blender 与 Unreal 的转换、独立重开和事务发布由 C++ 服务管理；没有 CLR、Unity Player、编辑器或 UnityEngine 依赖。转换脚本位于 `src/HS2Manager.NativeExport/Resources/ModelExport`，构建时复制到应用的 `Resources/ModelExport`，由目标软件自己的 Python 接口执行。
 
-本机四组男女、复杂材质及布料样本已比较完整几何、蒙皮、表情、材质清单、489 张贴图及环境资源，并验证 Blender 5.3.0 Release Candidate、Unreal 5.8.4 的转换及搬移后独立重开。这里验证的是延续旧导出语义，不代表 Blender/Unreal 画面与预览逐像素相同。逐项差异与证据见 [迁移验收](NATIVE-MIGRATION-RESULTS.md)。
+C++ 版本已使用同一张真实人物卡执行通用 FBX、Blender 5.3.0 Release Candidate 和 Unreal 5.8.4 的完整服务导出，原生结果由独立进程重新打开，包内文件逐项核对 SHA-256。该卡缺少一项原始配饰资源，报告正确标记为“不完整”。本次样本数量、几何和资产统计见 [C++ 验证结果](CPP-VALIDATION.md) 及 [导出模块记录](../src/HS2Manager.NativeExport/MIGRATION.md)。旧版四组样本、489 张贴图及搬移检查保留在历史验收中，不扩展为本次重写的通过结论；结构验证也不表示跨引擎画面逐像素相同。
 
 ```powershell
-.\scripts\Build-NativeFbx.ps1
-.\scripts\Build-NativePhysics.ps1
-.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --model-export --card '<人物卡.png>' --target Blender --tool '<blender.exe>' --draft --output '<输出目录>'
-.tools\dotnet\dotnet.exe run --project tests\HS2Manager.NativeChecks -c Release -- --session-check '<角色定义.json>' --output '<新检查目录>'
-.tools\dotnet\dotnet.exe run --project tests\HS2Manager.Checks -c Release -- --native-export-lifecycle --output '<新检查目录>'
+.\build-cpp.ps1 -BuildDirectory C:\Build\HS2Manager
+# 不带参数运行合成 GPU、图像及导出选项检查；完整构建也通过 CTest 运行该检查。
+C:\Build\HS2Manager\modules\src\HS2Manager.NativeExport\Release\hs2_model_export_checks.exe
+# 可选实际服务导出：使用完整运行目录、本机独立测试资料及游戏目录之外的新输出位置。
+C:\Build\HS2Manager\modules\src\HS2Manager.NativeExport\Release\hs2_model_export_checks.exe --real '<应用运行目录>' '<游戏目录>' '<本机测试资料目录>' '<人物卡.png>' '<新输出目录>' Blender
 ```
 
 测试和转换启动的工具通过 Windows Job Object 登记所有权，正常结束、失败、超时、取消和宿主退出均回收本次启动的进程及后代，不终止用户已有程序。

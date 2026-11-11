@@ -1,0 +1,5 @@
+add_executable(hs2_core_checks Checks.cpp)
+target_compile_features(hs2_core_checks PRIVATE cxx_std_20)
+target_compile_options(hs2_core_checks PRIVATE /utf-8 /W4 /permissive- /EHsc)
+target_link_libraries(hs2_core_checks PRIVATE hs2_core hs2_card_export hs2_core_components)
+add_test(NAME hs2_core_checks COMMAND hs2_core_checks)

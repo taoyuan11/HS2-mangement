@@ -1,5 +1,7 @@
 # 模型加载性能验证
 
+> 历史记录：本文的架构、命令、版本、性能和通过数量对应迁移前的 C# 实现及其当时的预览后端。旧源码现存于 `tests/reference/src`。本次 C++ 重写的实际检查见 [C++ 验证结果](CPP-VALIDATION.md)，当前构建与架构见 [C++ 迁移说明](CPP-MIGRATION.md)；本文数字不自动计入新版本验收。
+
 > 本文性能数字记录迁移前的 WPF 宿主，不代表 WinUI 3 的测量结果。当前界面和回归检查已迁移到 WinUI 3，见 [WINUI3-MIGRATION.md](WINUI3-MIGRATION.md)。
 
 2026-11-08，在同一台 Windows 电脑、同一套 `Z:\games\hs2\HS two DX - TSYMQ` NAS 资源上比较。基线为修改前 `9ee317b` 的 Release 管理器及 `safe-diagnostics-30` Player；优化版为本次 Release 管理器及 `loading-performance-release` Player，Unity 2018.4.11f1、Direct3D 11。

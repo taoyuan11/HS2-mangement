@@ -7,8 +7,8 @@ $OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $project=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('HS2Manager/Tests/MaterialBake/'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $project 'Assets/Editor'),(Join-Path $project 'Packages') -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $repo 'src/HS2Manager.UnityPreview/Assets/Resources/ModelExportBake.shader') -Destination (Join-Path $project 'Assets/ModelExportBake.shader')
-Copy-Item -LiteralPath (Join-Path $repo 'src/HS2Manager.UnityPreview/Assets/Editor/ModelMaterialBakeValidation.cs') -Destination (Join-Path $project 'Assets/Editor/ModelMaterialBakeValidation.cs')
+Copy-Item -LiteralPath (Join-Path $repo 'tests/reference/src/HS2Manager.UnityPreview/Assets/Resources/ModelExportBake.shader') -Destination (Join-Path $project 'Assets/ModelExportBake.shader')
+Copy-Item -LiteralPath (Join-Path $repo 'tests/reference/src/HS2Manager.UnityPreview/Assets/Editor/ModelMaterialBakeValidation.cs') -Destination (Join-Path $project 'Assets/Editor/ModelMaterialBakeValidation.cs')
 Set-Content -LiteralPath (Join-Path $project 'Packages/manifest.json') -Value '{"dependencies":{"com.unity.modules.imageconversion":"1.0.0"}}' -Encoding utf8
 if(!('HS2Manager.BuildTools.OwnedToolProcess' -as [type])){Add-Type -Path (Join-Path $repo 'scripts/OwnedToolProcess.cs')}
 $previous=$env:HS2_BAKE_VALIDATION_REPORT

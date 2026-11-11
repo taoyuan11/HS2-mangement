@@ -2,7 +2,7 @@
 # verified official package without its tests; runtime/editor binaries are unchanged.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$embedded = Join-Path $repo 'src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx'
+$embedded = Join-Path $repo 'tests/reference/src/HS2Manager.UnityPreview/Packages/com.autodesk.fbx'
 if (Test-Path -LiteralPath (Join-Path $embedded 'package.json')) { return }
 $archive = Join-Path $repo '.tools/fbx-4.2.0.tgz'
 New-Item -ItemType Directory -Path (Split-Path -Parent $archive) -Force | Out-Null
