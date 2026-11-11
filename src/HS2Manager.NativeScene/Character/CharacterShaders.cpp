@@ -211,13 +211,12 @@ namespace hs2
             {
                 CheckCancelled(cancellation);
                 auto reader = assets.Reader(path);
+                assets.IndexShaderNames(reader);
                 for (auto &object : reader->AssetIndex())
                     if (object.ClassId == 48)
                     {
-                        auto &value = reader->Metadata(object.PathId);
-                        auto name = value.String("m_Name");
-                        if (name.empty())
-                            name = value.Get("m_ParsedForm").String("m_Name");
+                        // 自动替换只需要名称，完整着色器参数和程序在实际使用时再解析。
+                        auto name = reader->AssetName(object.PathId);
                         if (!name.empty())
                             automatic.insert(std::move(name));
                     }

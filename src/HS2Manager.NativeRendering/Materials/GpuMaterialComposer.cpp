@@ -294,6 +294,16 @@ namespace hs2
 
     std::shared_ptr<NativeShaderAsset> GpuMaterialComposer::Shader(const std::string &name)
     {
+        if (auto found = namedShaders_.find(name); found != namedShaders_.end())
+            return found->second;
+        // 每个人物场景独立保存名称解析结果，多个后处理通道无需重复遍历所有资源包。
+        auto shader = FindShader(name);
+        namedShaders_.emplace(name, shader);
+        return shader;
+    }
+
+    std::shared_ptr<NativeShaderAsset> GpuMaterialComposer::FindShader(const std::string &name)
+    {
         auto entry = std::find_if(definition_.Shaders.begin(), definition_.Shaders.end(),
                                   [&](const auto &s)
                                   {
@@ -321,7 +331,7 @@ namespace hs2
             }
         }
         for (const auto &path : store_.Paths())
-            if (auto p = store_.Reader(path)->TryFind(name, 48))
+            if (auto p = store_.FindShader(path, name))
                 return Shader(*p);
         return Shader(store_.GameResource(name, 48));
     }

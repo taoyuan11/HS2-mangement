@@ -7,6 +7,7 @@
 #include <set>
 #include <cmath>
 #include <algorithm>
+#include <chrono>
 
 using namespace hs2;
 
@@ -62,19 +63,27 @@ int wmain(int argc, wchar_t **argv)
         auto card = CardParser().Parse(argv[4]);
         if (card.Status != CardStatus::Valid)
             throw std::runtime_error(card.Error);
+        auto started = std::chrono::steady_clock::now();
+        auto elapsed = [&]
+        {
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+        };
         NativeCharacterService service(argv[1], argv[2], argv[3]);
         auto prepared = service.Prepare(card, nullptr, {},
                                         [](const auto &p)
                                         {
                                             std::cout << p.Message << " " << p.Completed << "/" << p.Total << std::endl;
                                         });
+        auto prepareSeconds = elapsed();
         std::cout << "prepared parts=" << prepared.Scene->Parts.size()
                   << " renderers=" << prepared.Scene->Renderers.size()
                   << " selections=" << prepared.Scene->Definition->Selections.size() << std::endl;
         GraphicsDevice graphics;
         NativeCharacterRuntime runtime(prepared.Scene, prepared.Assets,
                                        argc == 7 ? std::filesystem::path(argv[6]) : std::filesystem::path{});
+        auto runtimeSeconds = elapsed() - prepareSeconds;
         NativeFramePipeline pipeline(graphics, *prepared.Scene, *prepared.Assets);
+        auto pipelineSeconds = elapsed() - prepareSeconds - runtimeSeconds;
         runtime.Update(0);
         Vector3 lo{INFINITY, INFINITY, INFINITY}, hi{-INFINITY, -INFINITY, -INFINITY};
         for (const auto &renderer : prepared.Scene->Renderers)
@@ -106,6 +115,19 @@ int wmain(int argc, wchar_t **argv)
             runtime.Update(time);
             const auto &frame = pipeline.Draw(camera, 512, 640, time);
             auto pixels = graphics.Readback(frame.Texture.Get());
+            if (i == 0)
+            {
+                auto stats = prepared.Assets->ReaderStats();
+                WriteJson(output / "loading-performance.json", {{"PrepareSeconds", prepareSeconds},
+                                                                {"RuntimeSeconds", runtimeSeconds},
+                                                                {"PipelineSeconds", pipelineSeconds},
+                                                                {"FirstFrameSeconds", elapsed()},
+                                                                {"ReaderLoads", stats.Loads},
+                                                                {"ReaderHits", stats.Hits},
+                                                                {"ReaderEvictions", stats.Evictions},
+                                                                {"ReaderLoadSeconds", stats.LoadSeconds},
+                                                                {"ReaderResources", stats.Resources}});
+            }
             if (pixels.size() != 512 * 640 * 4)
                 throw std::runtime_error("Unexpected output frame size.");
             if (i == 0 || i == 7)

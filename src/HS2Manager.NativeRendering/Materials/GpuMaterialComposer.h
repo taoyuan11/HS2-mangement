@@ -94,12 +94,13 @@ namespace hs2
         const CharacterDefinition &definition_;
         int anisotropicFiltering_;
         std::unordered_map<std::string, std::shared_ptr<GpuTexture>> textures_, defaults_, embedded_;
-        std::unordered_map<std::string, std::shared_ptr<NativeShaderAsset>> shaders_;
+        std::unordered_map<std::string, std::shared_ptr<NativeShaderAsset>> shaders_, namedShaders_;
         std::unordered_map<std::string, AssetReference> selections_;
         std::unique_ptr<GpuCopyPass> copy_;
         const AssetReference &Selection(const std::string &key) const;
         std::shared_ptr<GpuTexture> LooseImage(const AssetReference &reference);
         GpuCopyPass &Copier();
+        std::shared_ptr<NativeShaderAsset> FindShader(const std::string &name);
     };
 
     Vector4 ParameterColor(const Parameter &value, Vector4 fallback);

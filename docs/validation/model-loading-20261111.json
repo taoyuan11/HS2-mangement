@@ -1,0 +1,137 @@
+{
+  "Date": "2026-11-11",
+  "BaselineCommit": "53799410e607c91748060f6156effb1a3c95d3f2",
+  "Configuration": "Release x64",
+  "Endpoint": "Process exit after character preparation, GPU pipeline, 8 frames, PNG capture and resize/history checks; not WinUI presentation",
+  "BeforeExecutableSHA256": "7a3a0cff206cbe680fea02c30737009b124630df75c768c7f2c0ba4eaed6f169",
+  "AfterExecutableSHA256": "e05aff138ada753d61df2eab7772dbfaf12c91ba690a1fcf4dc9e628fa06bac9",
+  "SamplesPerVersionPerCard": 3,
+  "ColdApplicationCacheComparison": false,
+  "OSAndNASFileCachesCleared": false,
+  "FramePairs": 12,
+  "Cards": [
+    {
+      "Case": "female",
+      "BeforeWallSeconds": 31.234899300000052,
+      "AfterWallSeconds": 16.413860699999987,
+      "ReductionPercent": 47.45025254491549,
+      "FramesIdentical": true,
+      "BeforePeakPrivateMiB": 2149.1796875,
+      "AfterPeakPrivateMiB": 2313.59765625,
+      "Card": "UserData/chara/navi/navi.png",
+      "AfterMedianFirstFrameReadbackSeconds": 15.9719757,
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      },
+      "Samples": [
+        {
+          "Repeat": 0,
+          "Version": "before",
+          "WallSeconds": 33.66650379999987,
+          "PeakPrivateMiB": 2149.1796875
+        },
+        {
+          "Repeat": 0,
+          "Version": "after",
+          "WallSeconds": 16.413860699999987,
+          "PeakPrivateMiB": 2310.65625
+        },
+        {
+          "Repeat": 1,
+          "Version": "after",
+          "WallSeconds": 17.20403209999995,
+          "PeakPrivateMiB": 2298.703125
+        },
+        {
+          "Repeat": 1,
+          "Version": "before",
+          "WallSeconds": 31.234899300000052,
+          "PeakPrivateMiB": 2147.17578125
+        },
+        {
+          "Repeat": 2,
+          "Version": "before",
+          "WallSeconds": 30.561101000000008,
+          "PeakPrivateMiB": 2144.69921875
+        },
+        {
+          "Repeat": 2,
+          "Version": "after",
+          "WallSeconds": 16.336652000000186,
+          "PeakPrivateMiB": 2313.59765625
+        }
+      ],
+      "AfterReaderLoads": [
+        175,
+        175,
+        175
+      ]
+    },
+    {
+      "Case": "male",
+      "BeforeWallSeconds": 24.873158100000182,
+      "AfterWallSeconds": 13.827562599999965,
+      "ReductionPercent": 44.407692242345924,
+      "FramesIdentical": true,
+      "BeforePeakPrivateMiB": 1447.19140625,
+      "AfterPeakPrivateMiB": 1883.7890625,
+      "Card": "UserData/chara/male/HS2_ill_M_000.png",
+      "AfterMedianFirstFrameReadbackSeconds": 13.4433632,
+      "Frames": {
+        "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+        "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+      },
+      "Samples": [
+        {
+          "Repeat": 0,
+          "Version": "before",
+          "WallSeconds": 24.913075900000422,
+          "PeakPrivateMiB": 1413.953125
+        },
+        {
+          "Repeat": 0,
+          "Version": "after",
+          "WallSeconds": 13.827562599999965,
+          "PeakPrivateMiB": 1883.7890625
+        },
+        {
+          "Repeat": 1,
+          "Version": "after",
+          "WallSeconds": 14.1813788999998,
+          "PeakPrivateMiB": 1836.01171875
+        },
+        {
+          "Repeat": 1,
+          "Version": "before",
+          "WallSeconds": 24.873158100000182,
+          "PeakPrivateMiB": 1420.03125
+        },
+        {
+          "Repeat": 2,
+          "Version": "before",
+          "WallSeconds": 23.55074539999987,
+          "PeakPrivateMiB": 1447.19140625
+        },
+        {
+          "Repeat": 2,
+          "Version": "after",
+          "WallSeconds": 13.755970800000341,
+          "PeakPrivateMiB": 1879.3203125
+        }
+      ],
+      "AfterReaderLoads": [
+        111,
+        111,
+        111
+      ]
+    }
+  ],
+  "Validation": {
+    "ReleaseCMakeAndWinUIBuildPassed": true,
+    "NativePackageAuditPEFiles": 71,
+    "CTestPassed": 10,
+    "CTestFailed": 0,
+    "RealDHHShaderNamesAndAliasesCompared": 4
+  }
+}

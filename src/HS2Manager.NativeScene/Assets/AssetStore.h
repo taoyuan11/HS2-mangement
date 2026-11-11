@@ -11,6 +11,8 @@ namespace hs2
         NativeGpuAssetStore(std::vector<std::filesystem::path> bundles, std::filesystem::path game,
                             std::shared_ptr<const UnityClassDatabase> database, std::stop_token cancellation = {});
         std::shared_ptr<NativeGpuAssetReader> Reader(const std::filesystem::path &path);
+        void IndexShaderNames(const std::shared_ptr<NativeGpuAssetReader> &reader);
+        std::optional<GpuAssetPointer> FindShader(const std::filesystem::path &path, std::string_view name);
         void SetScriptSchema(
             std::function<std::vector<UnityTypeNode>(const GpuAssetPointer &, std::string_view)> resolver);
         void AddPath(const std::filesystem::path &path);
@@ -22,6 +24,18 @@ namespace hs2
         bool ContainsAsset(const GpuAssetPointer &pointer);
         std::optional<int> AssetClass(const GpuAssetPointer &pointer);
         GpuAssetPointer GameResource(std::string_view name, int classId, int textureSize = 0);
+
+        struct ReaderStatistics
+        {
+            std::size_t Loads = 0, Hits = 0, Evictions = 0;
+            double LoadSeconds = 0;
+            std::unordered_map<std::string, std::pair<size_t, double>> Resources;
+        };
+
+        const ReaderStatistics &ReaderStats() const
+        {
+            return readerStats_;
+        }
 
         const std::vector<std::filesystem::path> &Paths() const
         {
@@ -36,12 +50,16 @@ namespace hs2
         std::unordered_map<std::string, std::shared_ptr<NativeGpuAssetReader>> readers_;
         std::list<std::string> recent_;
         std::unordered_map<std::string, std::vector<std::filesystem::path>> cabs_;
+        std::unordered_map<std::string, std::string> cabNames_;
+        std::unordered_map<std::string, NativeGpuAssetReader::NameLookup> shaderNames_;
         std::unordered_map<std::string, std::shared_ptr<GpuMeshData>> meshes_;
         std::unordered_map<std::string, std::shared_ptr<GpuMaterialData>> materials_;
         std::unordered_map<std::string, GpuAssetPointer> resolved_, gameResources_;
         std::unordered_map<std::string, std::optional<int>> classes_;
         size_t indexed_ = 0;
+        ReaderStatistics readerStats_;
         std::function<std::vector<UnityTypeNode>(const GpuAssetPointer &, std::string_view)> scriptSchema_;
         void Cancel() const;
+        void TrimReaders(const std::string &keep);
     };
 }

@@ -17,6 +17,15 @@ namespace hs2
     {
         constexpr std::uint64_t MaxResource = 1024ULL * 1024 * 1024;
 
+        size_t ParameterBytes(const Parameter &value)
+        {
+            size_t bytes = sizeof(Parameter) + value.Name.capacity() + value.Encoding.capacity() +
+                           value.Text.capacity() + value.Bytes.capacity();
+            for (auto &child : value.Children)
+                bytes += ParameterBytes(child);
+            return bytes + (value.Children.capacity() - value.Children.size()) * sizeof(Parameter);
+        }
+
         void Require(bool value, const char *error)
         {
             if (!value)
@@ -502,21 +511,19 @@ namespace hs2
         Reader h(header, true);
         h.Skip(16);
 
-        struct Block
-        {
-            uint32_t unpacked, packed;
-            uint16_t flags;
-        };
-
-        std::vector<Block> blocks;
         auto count = h.Count(100000);
         uint64_t size = 0;
         for (size_t i = 0; i < count; ++i)
         {
-            Block b{h.Read<uint32_t>(), h.Read<uint32_t>(), h.Read<uint16_t>()};
-            Require(b.unpacked <= MaxResource - size, "UnityFS payload exceeds limit.");
-            size += b.unpacked;
-            blocks.push_back(b);
+            Block b;
+            b.Offset = static_cast<size_t>(size);
+            b.Size = h.Read<uint32_t>();
+            b.PackedSize = h.Read<uint32_t>();
+            b.Compression = h.Read<uint16_t>() & 63;
+            Require(b.Compression <= 3, "Unsupported UnityFS block compression.");
+            Require(b.Size <= MaxResource - size, "UnityFS payload exceeds limit.");
+            size += b.Size;
+            blocks_.push_back(b);
         }
         auto entries = h.Count(100000);
         for (size_t i = 0; i < entries; ++i)
@@ -536,19 +543,27 @@ namespace hs2
             entries_.push_back(std::move(e));
         }
         Require(h.Position == header.size(), "Unexpected trailing UnityFS directory data.");
-        data_.reserve(static_cast<size_t>(size));
-        for (auto &b : blocks)
+        // 目录、骨架和着色器查询无需解压同包中的全部贴图。仅保留压缩数据，按访问范围解码块。
+        auto payloadStart = r.Position;
+        auto payloadEnd = static_cast<size_t>((flags & 0x80) ? total - compressed : total);
+        Require(payloadStart <= payloadEnd, "UnityFS payload offset is invalid.");
+        for (auto &b : blocks_)
         {
-            auto data = DecompressUnityBlock(r.Take(b.packed), b.unpacked, b.flags & 63);
-            data_.insert(data_.end(), data.begin(), data.end());
+            Require(b.PackedSize <= payloadEnd - r.Position, "UnityFS block exceeds payload.");
+            b.PackedOffset = r.Position - payloadStart;
+            r.Skip(b.PackedSize);
         }
+        auto payload = bytes.subspan(payloadStart, r.Position - payloadStart);
+        packed_.assign(payload.begin(), payload.end());
     }
 
     std::span<const uint8_t> UnityBundle::Entry(size_t index) const
     {
         Require(index < entries_.size(), "UnityFS entry index is invalid.");
+        if (auto found = entryData_.find(index); found != entryData_.end())
+            return found->second;
         auto &e = entries_[index];
-        return std::span(data_).subspan(static_cast<size_t>(e.Offset), static_cast<size_t>(e.Size));
+        return entryData_.emplace(index, ReadRange(e.Offset, e.Size)).first->second;
     }
 
     std::span<const uint8_t> UnityBundle::Entry(std::string_view name) const
@@ -557,6 +572,54 @@ namespace hs2
             if (entries_[i].Name == name)
                 return Entry(i);
         throw std::runtime_error("UnityFS resource entry is missing: " + std::string(name));
+    }
+
+    std::vector<uint8_t> UnityBundle::ReadEntry(std::string_view name, uint64_t offset, uint64_t size) const
+    {
+        for (auto &entry : entries_)
+            if (entry.Name == name)
+            {
+                Require(offset <= entry.Size && size <= entry.Size - offset, "Resource stream is truncated.");
+                return ReadRange(entry.Offset + offset, size);
+            }
+        throw std::runtime_error("UnityFS resource entry is missing: " + std::string(name));
+    }
+
+    std::vector<uint8_t> UnityBundle::ReadRange(uint64_t offset, uint64_t size) const
+    {
+        std::vector<uint8_t> result(static_cast<size_t>(size));
+        if (size == 0)
+            return result;
+        for (size_t i = 0; i < blocks_.size(); ++i)
+        {
+            auto &block = blocks_[i];
+            auto begin = std::max<uint64_t>(offset, block.Offset);
+            auto end = std::min<uint64_t>(offset + size, uint64_t(block.Offset) + block.Size);
+            if (begin >= end)
+                continue;
+            if (recentBlock_ != i)
+            {
+                auto decoded = DecompressUnityBlock(std::span(packed_).subspan(block.PackedOffset, block.PackedSize),
+                                                    block.Size, block.Compression);
+                blockData_ = std::move(decoded);
+                recentBlock_ = i;
+                // 单块 LZMA 包已完整驻留，后续所有区间均来自该块，无需再保存压缩副本。
+                if (blocks_.size() == 1)
+                    std::vector<uint8_t>().swap(packed_);
+            }
+            std::memcpy(result.data() + static_cast<size_t>(begin - offset),
+                        blockData_.data() + static_cast<size_t>(begin - block.Offset),
+                        static_cast<size_t>(end - begin));
+        }
+        return result;
+    }
+
+    size_t UnityBundle::ResidentBytes() const
+    {
+        size_t size = packed_.capacity() + blockData_.capacity();
+        for (auto &[index, data] : entryData_)
+            size += data.capacity();
+        return size;
     }
 
     UnityClassDatabase::UnityClassDatabase(const std::filesystem::path &path)
@@ -677,7 +740,12 @@ namespace hs2
     }
 
     UnitySerializedFile::UnitySerializedFile(std::span<const uint8_t> bytes, const UnityClassDatabase *database)
-        : bytes_(bytes.begin(), bytes.end())
+        : UnitySerializedFile(std::vector<uint8_t>(bytes.begin(), bytes.end()), database)
+    {
+    }
+
+    UnitySerializedFile::UnitySerializedFile(std::vector<uint8_t> &&bytes, const UnityClassDatabase *database)
+        : bytes_(std::move(bytes))
     {
         Reader r(bytes_, true);
         auto metadataSize = r.Read<uint32_t>();
@@ -694,7 +762,7 @@ namespace hs2
             dataOffset = r.Read<uint64_t>();
             r.Skip(8);
         }
-        Require(fileSize <= bytes.size() && dataOffset <= fileSize && metadataSize <= fileSize,
+        Require(fileSize <= bytes_.size() && dataOffset <= fileSize && metadataSize <= fileSize,
                 "Invalid serialized file bounds.");
         r.Big = bigEndian_;
         UnityVersion = r.CString();
@@ -773,6 +841,11 @@ namespace hs2
         return assets_[i->second];
     }
 
+    size_t UnitySerializedFile::ResidentBytes() const
+    {
+        return bytes_.capacity();
+    }
+
     std::span<const uint8_t> UnitySerializedFile::Bytes(int64_t id) const
     {
         auto &a = Asset(id);
@@ -821,12 +894,13 @@ namespace hs2
         {
             bundle_ = std::make_unique<UnityBundle>(bytes);
             Require(!bundle_->Entries().empty(), "Empty UnityFS bundle.");
-            file_ = std::make_unique<UnitySerializedFile>(bundle_->Entry(0), database);
-            CabName = bundle_->Entries()[0].Name;
+            auto &entry = bundle_->Entries()[0];
+            file_ = std::make_unique<UnitySerializedFile>(bundle_->ReadEntry(entry.Name, 0, entry.Size), database);
+            CabName = entry.Name;
         }
         else
         {
-            file_ = std::make_unique<UnitySerializedFile>(bytes, database);
+            file_ = std::make_unique<UnitySerializedFile>(std::move(bytes), database);
             auto u = Path.filename().u8string();
             CabName.assign(reinterpret_cast<const char *>(u.data()), u.size());
         }
@@ -845,7 +919,11 @@ namespace hs2
 
     const Parameter &NativeGpuAssetReader::ReadScript(int64_t id, const std::vector<UnityTypeNode> &schema)
     {
-        return fields_.insert_or_assign(id, file_->ReadScript(id, schema)).first->second;
+        auto value = file_->ReadScript(id, schema);
+        if (auto previous = fields_.find(id); previous != fields_.end())
+            fieldBytes_ -= ParameterBytes(previous->second);
+        fieldBytes_ += ParameterBytes(value);
+        return fields_.insert_or_assign(id, std::move(value)).first->second;
     }
 
     const Parameter &NativeGpuAssetReader::Metadata(int64_t id)
@@ -855,7 +933,9 @@ namespace hs2
             return f->second;
         try
         {
-            return fields_.emplace(id, file_->Read(id)).first->second;
+            auto value = file_->Read(id);
+            fieldBytes_ += ParameterBytes(value);
+            return fields_.emplace(id, std::move(value)).first->second;
         }
         catch (const std::exception &)
         {
@@ -869,6 +949,11 @@ namespace hs2
     const std::vector<UnityAssetInfo> &NativeGpuAssetReader::AssetIndex() const
     {
         return file_->Assets();
+    }
+
+    size_t NativeGpuAssetReader::ResidentBytes() const
+    {
+        return file_->ResidentBytes() + (bundle_ ? bundle_->ResidentBytes() : 0) + fieldBytes_;
     }
 
     std::optional<int> UnitySerializedFile::AssetClass(int64_t id) const
@@ -895,6 +980,37 @@ namespace hs2
     GpuAssetPointer NativeGpuAssetReader::Pointer(const Parameter &p) const
     {
         return {Path, static_cast<int>(p.Int("m_FileID")), p.Int("m_PathID")};
+    }
+
+    std::string NativeGpuAssetReader::AssetName(int64_t id)
+    {
+        auto prefix = file_->NamedPrefix(id);
+        auto name = prefix ? *prefix : Metadata(id).String("m_Name");
+        if (name.empty() && AssetClass(id) == 48)
+            name = Metadata(id).Get("m_ParsedForm").String("m_Name");
+        return name;
+    }
+
+    NativeGpuAssetReader::NameLookup NativeGpuAssetReader::ShaderNames()
+    {
+        NameLookup names;
+        // 保留 TryFind 的优先级：包内导出名称及其别名优先，然后才是对象名称。
+        for (auto &asset : file_->Assets())
+            if (asset.ClassId == 142)
+                for (auto &entry : Metadata(asset.PathId).Get("m_Container").Array())
+                {
+                    auto pointer = Pointer(entry.Get("second").Get("asset"));
+                    if (pointer.FileId != 0 || AssetClass(pointer.PathId) != 48)
+                        continue;
+                    auto name = entry.Get("first").Text;
+                    auto base = Basename(name);
+                    for (auto &alias : {name, base, base.substr(0, base.find_last_of('.'))})
+                        names[Lower(alias)].push_back(pointer.PathId);
+                }
+        for (auto &asset : file_->Assets())
+            if (asset.ClassId == 48)
+                names[Lower(AssetName(asset.PathId))].push_back(asset.PathId);
+        return names;
     }
 
     std::optional<GpuAssetPointer> NativeGpuAssetReader::TryFind(std::string_view name, int classId, int textureSize)
@@ -925,11 +1041,7 @@ namespace hs2
             for (auto &a : file_->Assets())
                 if (a.ClassId == classId)
                 {
-                    auto prefix = file_->NamedPrefix(a.PathId);
-                    auto assetName = prefix ? *prefix : Metadata(a.PathId).String("m_Name");
-                    if (classId == 48 && assetName.empty())
-                        assetName = Metadata(a.PathId).Get("m_ParsedForm").String("m_Name");
-                    index[Lower(std::move(assetName))].push_back(a.PathId);
+                    index[Lower(AssetName(a.PathId))].push_back(a.PathId);
                 }
             names = names_.emplace(classId, std::move(index)).first;
         }
@@ -966,20 +1078,29 @@ namespace hs2
         Require(size <= 512ULL * 1024 * 1024, "Resource stream exceeds limit.");
         auto entry = Basename(std::string(name));
         std::vector<uint8_t> file;
-        std::span<const uint8_t> bytes;
         if (bundle_)
-            bytes = bundle_->Entry(entry);
+            return bundle_->ReadEntry(entry, offset, size);
         else
         {
             Require(entry != "." && entry != ".." && entry.find(':') == std::string::npos,
                     "Invalid resource stream path.");
-            file = ReadFile(Path.parent_path() / std::filesystem::path(std::u8string(
-                                                     reinterpret_cast<const char8_t *>(entry.data()), entry.size())));
-            bytes = file;
+            auto path =
+                Path.parent_path() /
+                std::filesystem::path(std::u8string(reinterpret_cast<const char8_t *>(entry.data()), entry.size()));
+            std::ifstream input(path, std::ios::binary | std::ios::ate);
+            Require(bool(input), "Cannot read resource stream.");
+            auto length = input.tellg();
+            Require(length >= 0 && offset <= static_cast<uint64_t>(length) &&
+                        size <= static_cast<uint64_t>(length) - offset,
+                    "Resource stream is truncated.");
+            // 外部 .resS 可能包含大量无关贴图；只读取当前资源的有效区间。
+            file.resize(static_cast<size_t>(size));
+            input.seekg(static_cast<std::streamoff>(offset));
+            if (!file.empty())
+                input.read(reinterpret_cast<char *>(file.data()), static_cast<std::streamsize>(file.size()));
+            Require(bool(input), "Resource stream read was incomplete.");
+            return file;
         }
-        Require(offset <= bytes.size() && size <= bytes.size() - offset, "Resource stream is truncated.");
-        auto b = bytes.subspan(static_cast<size_t>(offset), static_cast<size_t>(size));
-        return {b.begin(), b.end()};
     }
 
     GpuMeshData NativeGpuAssetReader::Mesh(int64_t id)

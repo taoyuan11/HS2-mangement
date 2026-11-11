@@ -1,5 +1,6 @@
 #include "Assets/AssetStore.h"
 #include <algorithm>
+#include <chrono>
 #include <cwctype>
 #include <stdexcept>
 
@@ -67,28 +68,78 @@ namespace hs2
             paths_.push_back(absolute);
     }
 
+    void NativeGpuAssetStore::TrimReaders(const std::string &keep)
+    {
+        // 按原始数据和解析字段的内存预算淘汰，避免小包也只能保留三个而反复解压。
+        // 读取器可能在两次请求间增长，因此每次请求均重新统计；当前正在使用的单包允许超预算。
+        size_t bytes = 0;
+        for (auto &[name, reader] : readers_)
+            bytes += reader->ResidentBytes();
+        while (readers_.size() > 1 && (bytes > 512ULL * 1024 * 1024 || readers_.size() > 64))
+        {
+            auto last = recent_.back();
+            if (last == keep)
+            {
+                recent_.pop_back();
+                recent_.push_front(last);
+                continue;
+            }
+            bytes -= readers_.at(last)->ResidentBytes();
+            recent_.pop_back();
+            readers_.erase(last);
+            ++readerStats_.Evictions;
+        }
+    }
+
     std::shared_ptr<NativeGpuAssetReader> NativeGpuAssetStore::Reader(const std::filesystem::path &path)
     {
         Cancel();
         auto key = Key(path);
+        TrimReaders(key);
         auto found = readers_.find(key);
         if (found != readers_.end())
         {
             recent_.remove(key);
             recent_.push_front(key);
+            ++readerStats_.Hits;
             return found->second;
         }
-        while (readers_.size() >= 3)
-        {
-            auto last = recent_.back();
-            recent_.pop_back();
-            readers_.erase(last);
-        }
+        auto started = std::chrono::steady_clock::now();
         auto reader = std::make_shared<NativeGpuAssetReader>(path, database_.get());
+        ++readerStats_.Loads;
+        auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+        readerStats_.LoadSeconds += elapsed;
+        auto &resource = readerStats_.Resources[key];
+        ++resource.first;
+        resource.second += elapsed;
         reader->ScriptSchema = scriptSchema_;
+        cabNames_[key] = reader->CabName;
         readers_[key] = reader;
         recent_.push_front(key);
+        TrimReaders(key);
         return reader;
+    }
+
+    void NativeGpuAssetStore::IndexShaderNames(const std::shared_ptr<NativeGpuAssetReader> &reader)
+    {
+        Cancel();
+        auto key = Key(reader->Path);
+        if (!shaderNames_.contains(key))
+            shaderNames_.emplace(key, reader->ShaderNames());
+    }
+
+    std::optional<GpuAssetPointer> NativeGpuAssetStore::FindShader(const std::filesystem::path &path,
+                                                                   std::string_view name)
+    {
+        Cancel();
+        auto key = Key(path);
+        if (!shaderNames_.contains(key))
+            IndexShaderNames(Reader(path));
+        auto &names = shaderNames_.at(key);
+        auto found = names.find(Lower(std::string(name)));
+        if (found == names.end() || found->second.empty())
+            return {};
+        return GpuAssetPointer{std::filesystem::absolute(path), 0, found->second.front()};
     }
 
     GpuAssetPointer NativeGpuAssetStore::Resolve(const GpuAssetPointer &pointer)
@@ -129,9 +180,12 @@ namespace hs2
             while (indexed_ < paths_.size())
             {
                 Cancel();
-                auto path = paths_[indexed_++];
-                auto reader = Reader(path);
-                cabs_[Lower(reader->CabName)].push_back(path);
+                auto path = paths_[indexed_];
+                auto pathKey = Key(path);
+                if (!cabNames_.contains(pathKey))
+                    Reader(path);
+                cabs_[Lower(cabNames_.at(pathKey))].push_back(path);
+                ++indexed_;
             }
             auto found = cabs_.find(identity);
             if (found == cabs_.end())

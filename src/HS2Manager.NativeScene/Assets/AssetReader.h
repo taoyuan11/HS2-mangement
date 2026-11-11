@@ -27,11 +27,25 @@ namespace hs2
 
         std::span<const std::uint8_t> Entry(std::string_view name) const;
         std::span<const std::uint8_t> Entry(std::size_t index) const;
+        std::vector<std::uint8_t> ReadEntry(std::string_view name, std::uint64_t offset, std::uint64_t size) const;
+        std::size_t ResidentBytes() const;
         std::string UnityVersion;
 
     private:
+        struct Block
+        {
+            std::size_t Offset = 0, PackedOffset = 0;
+            std::uint32_t Size = 0, PackedSize = 0;
+            unsigned Compression = 0;
+        };
+
         std::vector<UnityBundleEntry> entries_;
-        std::vector<std::uint8_t> data_;
+        std::vector<Block> blocks_;
+        mutable std::vector<std::uint8_t> packed_;
+        mutable std::unordered_map<std::size_t, std::vector<std::uint8_t>> entryData_;
+        mutable std::size_t recentBlock_ = SIZE_MAX;
+        mutable std::vector<std::uint8_t> blockData_;
+        std::vector<std::uint8_t> ReadRange(std::uint64_t offset, std::uint64_t size) const;
     };
 
     struct UnityTypeNode
@@ -81,6 +95,7 @@ namespace hs2
     {
     public:
         explicit UnitySerializedFile(std::span<const std::uint8_t> bytes, const UnityClassDatabase *database = nullptr);
+        explicit UnitySerializedFile(std::vector<std::uint8_t> &&bytes, const UnityClassDatabase *database = nullptr);
 
         const std::vector<UnityAssetInfo> &Assets() const noexcept
         {
@@ -93,6 +108,7 @@ namespace hs2
         Parameter ReadScript(std::int64_t id, const std::vector<UnityTypeNode> &schema) const;
         std::optional<std::string> NamedPrefix(std::int64_t id) const;
         std::span<const std::uint8_t> Bytes(std::int64_t id) const;
+        std::size_t ResidentBytes() const;
         std::string UnityVersion;
         std::vector<std::string> ExternalNames;
 
@@ -125,6 +141,9 @@ namespace hs2
         const std::vector<UnityAssetInfo> &AssetIndex() const;
         std::optional<int> AssetClass(std::int64_t id) const;
         std::vector<std::string> ExportNames();
+        std::string AssetName(std::int64_t id);
+        using NameLookup = std::unordered_map<std::string, std::vector<std::int64_t>>;
+        NameLookup ShaderNames();
         GpuAssetPointer Find(std::string_view name, int classId, int textureSize = 0);
         std::optional<GpuAssetPointer> TryFind(std::string_view name, int classId, int textureSize = 0);
         std::vector<std::uint8_t> ReadText(std::string_view name);
@@ -133,11 +152,13 @@ namespace hs2
         GpuMaterialData Material(std::int64_t id);
         GpuPrefabData Prefab(std::string_view name);
         std::vector<std::uint8_t> ResourceStream(std::string_view name, std::uint64_t offset, std::uint64_t size) const;
+        std::size_t ResidentBytes() const;
 
     private:
         std::unique_ptr<UnityBundle> bundle_;
         std::unique_ptr<UnitySerializedFile> file_;
         std::unordered_map<std::int64_t, Parameter> fields_;
+        std::size_t fieldBytes_ = 0;
         std::unordered_map<int, std::unordered_map<std::string, std::vector<std::int64_t>>> names_;
         GpuAssetPointer Pointer(const Parameter &p) const;
     };
