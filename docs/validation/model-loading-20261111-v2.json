@@ -1,0 +1,375 @@
+{
+  "Date": "2026-11-11",
+  "BaselineCommit": "43f11a9e066d967056ec9c281b7a37b1d680344b",
+  "Configuration": "Release x64",
+  "Endpoint": "Process exit after character preparation, GPU pipeline, 8 frames, PNG capture and resize/history checks; not WinUI presentation",
+  "BeforeExecutableSHA256": "e05aff138ada753d61df2eab7772dbfaf12c91ba690a1fcf4dc9e628fa06bac9",
+  "AfterExecutableSHA256": "9bea52c3969fc277bf23d7a91f3387f181064ea7f16be098e4ca306141d47449",
+  "SamplesPerVersionPerCard": 3,
+  "AlternatingVersionOrder": true,
+  "FreshProcessForEachSample": true,
+  "ExistingModIndexAndResourceCache": true,
+  "DecompressedBlockDiskCachePopulatedForComparison": true,
+  "OSAndNASFileCachesCleared": false,
+  "FramePairs": 12,
+  "Cards": [
+    {
+      "Case": "female",
+      "BeforeWallSeconds": 16.796063400000094,
+      "AfterWallSeconds": 5.651293599999917,
+      "ReductionPercent": 66.35346351455254,
+      "FramesIdentical": true,
+      "BeforePeakPrivateMiB": 2296.96484375,
+      "AfterPeakPrivateMiB": 2167.859375,
+      "Card": "UserData/chara/navi/navi.png",
+      "BeforeMedianFirstFrameReadbackSeconds": 16.3698323,
+      "AfterMedianFirstFrameReadbackSeconds": 5.198402,
+      "Frames": {
+        "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+        "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+      },
+      "Samples": [
+        {
+          "Repeat": 0,
+          "Version": "before",
+          "WallSeconds": 19.320469100000082,
+          "PeakPrivateMiB": 2296.96484375,
+          "Loading": {
+            "FirstFrameSeconds": 18.9148249,
+            "PipelineSeconds": 8.1128286,
+            "PrepareSeconds": 9.8488667,
+            "ReaderEvictions": 151,
+            "ReaderHits": 9006,
+            "ReaderLoadSeconds": 14.941414300000002,
+            "ReaderLoads": 175,
+            "RuntimeSeconds": 0.08319790000000005
+          }
+        },
+        {
+          "Repeat": 0,
+          "Version": "after",
+          "WallSeconds": 5.676621399999931,
+          "PeakPrivateMiB": 2089.23828125,
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 5.2441138,
+            "PipelineSeconds": 1.1162624,
+            "PrepareSeconds": 3.5030031,
+            "ReaderEvictions": 110,
+            "ReaderHits": 9029,
+            "ReaderLoadSeconds": 1.4365371000000013,
+            "ReaderLoads": 152,
+            "RuntimeSeconds": 0.06431189999999987
+          }
+        },
+        {
+          "Repeat": 1,
+          "Version": "after",
+          "WallSeconds": 5.170365599999968,
+          "PeakPrivateMiB": 2167.859375,
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 4.7442267,
+            "PipelineSeconds": 1.0969533999999999,
+            "PrepareSeconds": 3.0276562,
+            "ReaderEvictions": 110,
+            "ReaderHits": 9029,
+            "ReaderLoadSeconds": 1.2103389999999998,
+            "ReaderLoads": 152,
+            "RuntimeSeconds": 0.06395390000000001
+          }
+        },
+        {
+          "Repeat": 1,
+          "Version": "before",
+          "WallSeconds": 16.45411570000033,
+          "PeakPrivateMiB": 2279.7890625,
+          "Loading": {
+            "FirstFrameSeconds": 16.0544076,
+            "PipelineSeconds": 7.9135869,
+            "PrepareSeconds": 7.2003067,
+            "ReaderEvictions": 151,
+            "ReaderHits": 9006,
+            "ReaderLoadSeconds": 12.341722799999994,
+            "ReaderLoads": 175,
+            "RuntimeSeconds": 0.06603320000000057
+          }
+        },
+        {
+          "Repeat": 2,
+          "Version": "before",
+          "WallSeconds": 16.796063400000094,
+          "PeakPrivateMiB": 2265.30078125,
+          "Loading": {
+            "FirstFrameSeconds": 16.3698323,
+            "PipelineSeconds": 7.8694565999999995,
+            "PrepareSeconds": 7.5616829,
+            "ReaderEvictions": 151,
+            "ReaderHits": 9006,
+            "ReaderLoadSeconds": 12.5235539,
+            "ReaderLoads": 175,
+            "RuntimeSeconds": 0.06392859999999967
+          }
+        },
+        {
+          "Repeat": 2,
+          "Version": "after",
+          "WallSeconds": 5.651293599999917,
+          "PeakPrivateMiB": 2120.95703125,
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 5.198402,
+            "PipelineSeconds": 1.0868577,
+            "PrepareSeconds": 3.4844539,
+            "ReaderEvictions": 110,
+            "ReaderHits": 9029,
+            "ReaderLoadSeconds": 1.4713134999999997,
+            "ReaderLoads": 152,
+            "RuntimeSeconds": 0.06571360000000004
+          }
+        }
+      ]
+    },
+    {
+      "Case": "male",
+      "BeforeWallSeconds": 14.38306650000004,
+      "AfterWallSeconds": 4.261990700000297,
+      "ReductionPercent": 70.36799697755492,
+      "FramesIdentical": true,
+      "BeforePeakPrivateMiB": 1861.984375,
+      "AfterPeakPrivateMiB": 1672.60546875,
+      "Card": "UserData/chara/male/HS2_ill_M_000.png",
+      "BeforeMedianFirstFrameReadbackSeconds": 14.0275878,
+      "AfterMedianFirstFrameReadbackSeconds": 3.8907396,
+      "Frames": {
+        "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+        "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+      },
+      "Samples": [
+        {
+          "Repeat": 0,
+          "Version": "before",
+          "WallSeconds": 14.896946599999865,
+          "PeakPrivateMiB": 1861.984375,
+          "Loading": {
+            "FirstFrameSeconds": 14.4677062,
+            "PipelineSeconds": 7.069436200000001,
+            "PrepareSeconds": 6.8570056,
+            "ReaderEvictions": 76,
+            "ReaderHits": 8880,
+            "ReaderLoadSeconds": 11.678587899999995,
+            "ReaderLoads": 111,
+            "RuntimeSeconds": 0.0600953999999998
+          }
+        },
+        {
+          "Repeat": 0,
+          "Version": "after",
+          "WallSeconds": 4.30558689999998,
+          "PeakPrivateMiB": 1665.25,
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 3.9429488,
+            "PipelineSeconds": 0.8833346999999998,
+            "PrepareSeconds": 2.6152102,
+            "ReaderEvictions": 72,
+            "ReaderHits": 8884,
+            "ReaderLoadSeconds": 0.9361356999999997,
+            "ReaderLoads": 107,
+            "RuntimeSeconds": 0.057733400000000046
+          }
+        },
+        {
+          "Repeat": 1,
+          "Version": "after",
+          "WallSeconds": 3.989336699999967,
+          "PeakPrivateMiB": 1672.60546875,
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 3.6262889,
+            "PipelineSeconds": 0.8955118,
+            "PrepareSeconds": 2.2856633,
+            "ReaderEvictions": 72,
+            "ReaderHits": 8884,
+            "ReaderLoadSeconds": 0.8031489,
+            "ReaderLoads": 107,
+            "RuntimeSeconds": 0.05900179999999988
+          }
+        },
+        {
+          "Repeat": 1,
+          "Version": "before",
+          "WallSeconds": 14.323565099999996,
+          "PeakPrivateMiB": 1857.24609375,
+          "Loading": {
+            "FirstFrameSeconds": 13.9502209,
+            "PipelineSeconds": 7.073060300000001,
+            "PrepareSeconds": 6.3291235,
+            "ReaderEvictions": 76,
+            "ReaderHits": 8880,
+            "ReaderLoadSeconds": 11.048463399999997,
+            "ReaderLoads": 111,
+            "RuntimeSeconds": 0.05879659999999998
+          }
+        },
+        {
+          "Repeat": 2,
+          "Version": "before",
+          "WallSeconds": 14.38306650000004,
+          "PeakPrivateMiB": 1817.26953125,
+          "Loading": {
+            "FirstFrameSeconds": 14.0275878,
+            "PipelineSeconds": 7.3377409,
+            "PrepareSeconds": 6.1523921,
+            "ReaderEvictions": 76,
+            "ReaderHits": 8880,
+            "ReaderLoadSeconds": 10.925713100000001,
+            "ReaderLoads": 111,
+            "RuntimeSeconds": 0.0563994000000001
+          }
+        },
+        {
+          "Repeat": 2,
+          "Version": "after",
+          "WallSeconds": 4.261990700000297,
+          "PeakPrivateMiB": 1618.27734375,
+          "Loading": {
+            "BlockDecodes": 0,
+            "BlockDiskHits": 1,
+            "BlockMemoryHits": 2,
+            "BlockResidentBytes": 134372236,
+            "FirstFrameSeconds": 3.8907396,
+            "PipelineSeconds": 0.8754981000000002,
+            "PrepareSeconds": 2.5623156,
+            "ReaderEvictions": 72,
+            "ReaderHits": 8884,
+            "ReaderLoadSeconds": 0.9561125999999998,
+            "ReaderLoads": 107,
+            "RuntimeSeconds": 0.056848200000000126
+          }
+        }
+      ]
+    }
+  ],
+  "ColdBlockCache": {
+    "Samples": 1,
+    "ExistingModIndexAndResourceCache": true,
+    "OSAndNASFileCachesCleared": false,
+    "Case": "female",
+    "Loading": {
+      "BlockDecodes": 1,
+      "BlockDiskHits": 0,
+      "BlockMemoryHits": 2,
+      "BlockResidentBytes": 134372236,
+      "FirstFrameSeconds": 8.2183687,
+      "PipelineSeconds": 1.3021136000000002,
+      "PrepareSeconds": 6.2980768,
+      "ReaderEvictions": 110,
+      "ReaderHits": 9029,
+      "ReaderLoadSeconds": 4.4498203,
+      "ReaderLoads": 152,
+      "RuntimeSeconds": 0.06557190000000013
+    },
+    "Frames": {
+      "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+      "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+    },
+    "FramesIdenticalToBaseline": true
+  },
+  "SameServiceSequence": {
+    "Samples": 1,
+    "NewSceneAndGpuPipelinePerCard": true,
+    "CountersAreCumulativeForBlockCache": true,
+    "Runs": [
+      {
+        "Case": "female",
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 2,
+          "BlockResidentBytes": 134372236,
+          "FirstFrameSeconds": 6.803281,
+          "PipelineSeconds": 1.3898032000000002,
+          "PrepareSeconds": 4.2878621,
+          "ReaderEvictions": 110,
+          "ReaderHits": 9029,
+          "ReaderLoadSeconds": 2.3163126,
+          "ReaderLoads": 152,
+          "RuntimeSeconds": 0.06510339999999992
+        },
+        "Frames": {
+          "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+          "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+        },
+        "FramesIdenticalToBaseline": true
+      },
+      {
+        "Case": "male",
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 5,
+          "BlockResidentBytes": 134372236,
+          "FirstFrameSeconds": 3.2990865,
+          "PipelineSeconds": 0.9307944999999997,
+          "PrepareSeconds": 1.668432,
+          "ReaderEvictions": 72,
+          "ReaderHits": 8884,
+          "ReaderLoadSeconds": 0.8769202000000004,
+          "ReaderLoads": 107,
+          "RuntimeSeconds": 0.04150850000000017
+        },
+        "Frames": {
+          "frame-000.png": "ce624d3e0340360359739088870dd939abe7ad07a15406d6c6e88569bcab1617",
+          "frame-007.png": "e5c9a34aab04e27679345d964641b6ee5ee563117541d48370e6391609fad50b"
+        },
+        "FramesIdenticalToBaseline": true
+      },
+      {
+        "Case": "female",
+        "Loading": {
+          "BlockDecodes": 0,
+          "BlockDiskHits": 1,
+          "BlockMemoryHits": 8,
+          "BlockResidentBytes": 134372236,
+          "FirstFrameSeconds": 3.7967345,
+          "PipelineSeconds": 1.0930937000000003,
+          "PrepareSeconds": 2.1006378,
+          "ReaderEvictions": 110,
+          "ReaderHits": 9029,
+          "ReaderLoadSeconds": 1.1195114,
+          "ReaderLoads": 152,
+          "RuntimeSeconds": 0.049320199999999925
+        },
+        "Frames": {
+          "frame-000.png": "d48c01f00e02f7687e447df1222d0ecbf5c1291ca9a5aaf45985ff816d9208b3",
+          "frame-007.png": "325f59c53124374ebbbe8ed404976ca34f0704eddb881d6ff44ea64a7292386a"
+        },
+        "FramesIdenticalToBaseline": true
+      }
+    ]
+  },
+  "Validation": {
+    "ReleaseCMakeAndWinUIBuildPassed": true,
+    "NativePackageAuditPEFiles": 71,
+    "CTestPassed": 11,
+    "CTestFailed": 0,
+    "WinUISmokeRunsPassedAndClosed": 4,
+    "RealDHHShaderNamesAndAliasesCompared": 4
+  }
+}

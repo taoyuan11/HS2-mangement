@@ -44,10 +44,10 @@ int wmain(int argc, wchar_t **argv)
 {
     try
     {
-        if (argc < 6 || argc > 7)
+        if (argc < 6 || argc > 8)
         {
             std::cerr << "Usage: hs2_render_frame_checks game data classdata.tpk card.png output-directory "
-                         "[physics-directory]\n";
+                         "[physics-directory [comparison-card.png]]\n";
             return 2;
         }
         CheckHResult(CoInitializeEx(nullptr, COINIT_MULTITHREADED), "Initialize COM");
@@ -69,89 +69,108 @@ int wmain(int argc, wchar_t **argv)
             return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         };
         NativeCharacterService service(argv[1], argv[2], argv[3]);
-        auto prepared = service.Prepare(card, nullptr, {},
-                                        [](const auto &p)
-                                        {
-                                            std::cout << p.Message << " " << p.Completed << "/" << p.Total << std::endl;
-                                        });
-        auto prepareSeconds = elapsed();
-        std::cout << "prepared parts=" << prepared.Scene->Parts.size()
-                  << " renderers=" << prepared.Scene->Renderers.size()
-                  << " selections=" << prepared.Scene->Definition->Selections.size() << std::endl;
-        GraphicsDevice graphics;
-        NativeCharacterRuntime runtime(prepared.Scene, prepared.Assets,
-                                       argc == 7 ? std::filesystem::path(argv[6]) : std::filesystem::path{});
-        auto runtimeSeconds = elapsed() - prepareSeconds;
-        NativeFramePipeline pipeline(graphics, *prepared.Scene, *prepared.Assets);
-        auto pipelineSeconds = elapsed() - prepareSeconds - runtimeSeconds;
-        runtime.Update(0);
-        Vector3 lo{INFINITY, INFINITY, INFINITY}, hi{-INFINITY, -INFINITY, -INFINITY};
-        for (const auto &renderer : prepared.Scene->Renderers)
-            if (renderer->Visible() && renderer->HasGeometry())
-            {
-                auto bounds = renderer->Bounds();
-                lo.x = std::min(lo.x, bounds.Center.x - bounds.Extents.x);
-                lo.y = std::min(lo.y, bounds.Center.y - bounds.Extents.y);
-                lo.z = std::min(lo.z, bounds.Center.z - bounds.Extents.z);
-                hi.x = std::max(hi.x, bounds.Center.x + bounds.Extents.x);
-                hi.y = std::max(hi.y, bounds.Center.y + bounds.Extents.y);
-                hi.z = std::max(hi.z, bounds.Center.z + bounds.Extents.z);
-            }
-        NativeRenderCamera camera;
-        camera.Target = {(lo.x + hi.x) * .5f, (lo.y + hi.y) * .5f, (lo.z + hi.z) * .5f};
-        camera.FieldOfView = 35;
-        float distance =
-            std::max(hi.y - lo.y, (hi.x - lo.x) * 640 / 512) / (2 * std::tan(35 * DirectX::XM_PI / 360)) * 1.2f +
-            (hi.z - lo.z) * .5f;
-        camera.Position = {camera.Target.x, camera.Target.y, camera.Target.z + distance};
-        camera.Near = .08f;
-        camera.Far = 1000;
-        std::filesystem::path output = argv[5];
-        std::filesystem::create_directories(output);
-        std::set<std::uint32_t> unique;
-        for (int i = 0; i < 8; ++i)
+        auto original = card;
+        for (int run = 0; run < (argc == 8 ? 3 : 1); ++run)
         {
-            float time = i / 30.f;
-            runtime.Update(time);
-            const auto &frame = pipeline.Draw(camera, 512, 640, time);
-            auto pixels = graphics.Readback(frame.Texture.Get());
-            if (i == 0)
+            if (run > 0)
             {
-                auto stats = prepared.Assets->ReaderStats();
-                WriteJson(output / "loading-performance.json", {{"PrepareSeconds", prepareSeconds},
-                                                                {"RuntimeSeconds", runtimeSeconds},
-                                                                {"PipelineSeconds", pipelineSeconds},
-                                                                {"FirstFrameSeconds", elapsed()},
-                                                                {"ReaderLoads", stats.Loads},
-                                                                {"ReaderHits", stats.Hits},
-                                                                {"ReaderEvictions", stats.Evictions},
-                                                                {"ReaderLoadSeconds", stats.LoadSeconds},
-                                                                {"ReaderResources", stats.Resources}});
+                card = run == 1 ? CardParser().Parse(argv[7]) : original;
+                if (card.Status != CardStatus::Valid)
+                    throw std::runtime_error(card.Error);
+                started = std::chrono::steady_clock::now();
             }
-            if (pixels.size() != 512 * 640 * 4)
-                throw std::runtime_error("Unexpected output frame size.");
-            if (i == 0 || i == 7)
-            {
-                for (size_t p = 0; p < pixels.size(); p += 4)
+            auto prepared = service.Prepare(card, nullptr, {},
+                                            [](const auto &p)
+                                            {
+                                                std::cout << p.Message << " " << p.Completed << "/" << p.Total
+                                                          << std::endl;
+                                            });
+            auto prepareSeconds = elapsed();
+            std::cout << "prepared parts=" << prepared.Scene->Parts.size()
+                      << " renderers=" << prepared.Scene->Renderers.size()
+                      << " selections=" << prepared.Scene->Definition->Selections.size() << std::endl;
+            GraphicsDevice graphics;
+            NativeCharacterRuntime runtime(prepared.Scene, prepared.Assets,
+                                           argc >= 7 ? std::filesystem::path(argv[6]) : std::filesystem::path{});
+            auto runtimeSeconds = elapsed() - prepareSeconds;
+            NativeFramePipeline pipeline(graphics, *prepared.Scene, *prepared.Assets);
+            auto pipelineSeconds = elapsed() - prepareSeconds - runtimeSeconds;
+            runtime.Update(0);
+            Vector3 lo{INFINITY, INFINITY, INFINITY}, hi{-INFINITY, -INFINITY, -INFINITY};
+            for (const auto &renderer : prepared.Scene->Renderers)
+                if (renderer->Visible() && renderer->HasGeometry())
                 {
-                    pixels[p + 3] = 255;
-                    unique.insert((std::uint32_t(pixels[p]) << 16) | (std::uint32_t(pixels[p + 1]) << 8) |
-                                  pixels[p + 2]);
+                    auto bounds = renderer->Bounds();
+                    lo.x = std::min(lo.x, bounds.Center.x - bounds.Extents.x);
+                    lo.y = std::min(lo.y, bounds.Center.y - bounds.Extents.y);
+                    lo.z = std::min(lo.z, bounds.Center.z - bounds.Extents.z);
+                    hi.x = std::max(hi.x, bounds.Center.x + bounds.Extents.x);
+                    hi.y = std::max(hi.y, bounds.Center.y + bounds.Extents.y);
+                    hi.z = std::max(hi.z, bounds.Center.z + bounds.Extents.z);
                 }
-                Png(output / (i == 0 ? L"frame-000.png" : L"frame-007.png"), 512, 640, pixels);
+            NativeRenderCamera camera;
+            camera.Target = {(lo.x + hi.x) * .5f, (lo.y + hi.y) * .5f, (lo.z + hi.z) * .5f};
+            camera.FieldOfView = 35;
+            float distance =
+                std::max(hi.y - lo.y, (hi.x - lo.x) * 640 / 512) / (2 * std::tan(35 * DirectX::XM_PI / 360)) * 1.2f +
+                (hi.z - lo.z) * .5f;
+            camera.Position = {camera.Target.x, camera.Target.y, camera.Target.z + distance};
+            camera.Near = .08f;
+            camera.Far = 1000;
+            std::filesystem::path output = argv[5];
+            if (argc == 8)
+                output /= "sequence-" + std::to_string(run);
+            std::filesystem::create_directories(output);
+            std::set<std::uint32_t> unique;
+            for (int i = 0; i < 8; ++i)
+            {
+                float time = i / 30.f;
+                runtime.Update(time);
+                const auto &frame = pipeline.Draw(camera, 512, 640, time);
+                auto pixels = graphics.Readback(frame.Texture.Get());
+                if (i == 0)
+                {
+                    auto stats = prepared.Assets->ReaderStats();
+                    auto blocks = prepared.Assets->BlockStats();
+                    WriteJson(output / "loading-performance.json", {{"PrepareSeconds", prepareSeconds},
+                                                                    {"RuntimeSeconds", runtimeSeconds},
+                                                                    {"PipelineSeconds", pipelineSeconds},
+                                                                    {"FirstFrameSeconds", elapsed()},
+                                                                    {"ReaderLoads", stats.Loads},
+                                                                    {"ReaderHits", stats.Hits},
+                                                                    {"ReaderEvictions", stats.Evictions},
+                                                                    {"ReaderLoadSeconds", stats.LoadSeconds},
+                                                                    {"ReaderResources", stats.Resources},
+                                                                    {"BlockMemoryHits", blocks.MemoryHits},
+                                                                    {"BlockDiskHits", blocks.DiskHits},
+                                                                    {"BlockDecodes", blocks.Decodes},
+                                                                    {"BlockResidentBytes", blocks.ResidentBytes}});
+                }
+                if (pixels.size() != 512 * 640 * 4)
+                    throw std::runtime_error("Unexpected output frame size.");
+                if (i == 0 || i == 7)
+                {
+                    for (size_t p = 0; p < pixels.size(); p += 4)
+                    {
+                        pixels[p + 3] = 255;
+                        unique.insert((std::uint32_t(pixels[p]) << 16) | (std::uint32_t(pixels[p + 1]) << 8) |
+                                      pixels[p + 2]);
+                    }
+                    Png(output / (i == 0 ? L"frame-000.png" : L"frame-007.png"), 512, 640, pixels);
+                }
+                std::cout << "frame " << i << " complete\n";
             }
-            std::cout << "frame " << i << " complete\n";
+            if (unique.size() < 128)
+                throw std::runtime_error("Rendered frame has insufficient colour variation.");
+            pipeline.SetInteractive(true);
+            pipeline.Draw(camera, 321, 385, .3f);
+            pipeline.SetInteractive(false);
+            pipeline.ResetHistory();
+            pipeline.Draw(camera, 512, 640, .3f);
+            std::cout << "PASS: real card, HDR/deferred/forward frame pipeline, frame histories, resize, interaction "
+                         "reset; colours="
+                      << unique.size() << "\n";
         }
-        if (unique.size() < 128)
-            throw std::runtime_error("Rendered frame has insufficient colour variation.");
-        pipeline.SetInteractive(true);
-        pipeline.Draw(camera, 321, 385, .3f);
-        pipeline.SetInteractive(false);
-        pipeline.ResetHistory();
-        pipeline.Draw(camera, 512, 640, .3f);
-        std::cout << "PASS: real card, HDR/deferred/forward frame pipeline, frame histories, resize, interaction "
-                     "reset; colours="
-                  << unique.size() << "\n";
         return 0;
     }
     catch (const std::exception &error)

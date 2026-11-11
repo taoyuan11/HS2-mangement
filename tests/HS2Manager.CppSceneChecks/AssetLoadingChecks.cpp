@@ -193,6 +193,33 @@ namespace
             }
         } cleanup{root};
 
+        for (bool atEnd : {false, true})
+        {
+            auto path = root / (atEnd ? "tail.bundle" : "head.bundle");
+            Write(path, Bundle(atEnd));
+            UnityBundle streamed(path);
+            Check(streamed.ResidentBytes() == 0, "Streamed bundle retained an entire source file.");
+            Check(Text(streamed.ReadEntry("CAB-test.resS", 1, 5)) == "ghijk", "Streamed cross-block range mismatch.");
+            Check(Text(streamed.Entry(0)) == "abcde", "Streamed serialized entry mismatch.");
+            Check(Text(streamed.ReadEntry("CAB-test.resS", 0, 7)) == "fghijkl", "Streamed backward range mismatch.");
+            auto modified = std::filesystem::last_write_time(path);
+            std::filesystem::last_write_time(path, modified + std::chrono::hours(1));
+            Reject(
+                [&]
+                {
+                    streamed.ReadEntry("CAB-test", 0, 4);
+                });
+            std::filesystem::last_write_time(path, modified);
+            std::stop_source cancellation;
+            UnityBundle cancelled(path, {}, cancellation.get_token());
+            cancellation.request_stop();
+            Reject(
+                [&]
+                {
+                    cancelled.ReadEntry("CAB-test", 0, 4);
+                });
+        }
+
         NativeGpuAssetStore store({}, {}, {});
         std::vector<std::filesystem::path> paths;
         for (int i = 0; i < 66; ++i)

@@ -1,5 +1,6 @@
 #pragma once
 #include "Scene/SceneTypes.h"
+#include "Assets/UnityBlockCache.h"
 #include <functional>
 
 namespace hs2
@@ -18,7 +19,10 @@ namespace hs2
     class UnityBundle
     {
     public:
-        explicit UnityBundle(std::span<const std::uint8_t> bytes);
+        explicit UnityBundle(std::span<const std::uint8_t> bytes, std::shared_ptr<UnityBlockCache> cache = {},
+                             std::stop_token cancellation = {});
+        explicit UnityBundle(const std::filesystem::path &path, std::shared_ptr<UnityBlockCache> cache = {},
+                             std::stop_token cancellation = {});
 
         const std::vector<UnityBundleEntry> &Entries() const noexcept
         {
@@ -41,10 +45,14 @@ namespace hs2
 
         std::vector<UnityBundleEntry> entries_;
         std::vector<Block> blocks_;
-        mutable std::vector<std::uint8_t> packed_;
+        struct Source;
+        mutable std::shared_ptr<Source> source_;
         mutable std::unordered_map<std::size_t, std::vector<std::uint8_t>> entryData_;
         mutable std::size_t recentBlock_ = SIZE_MAX;
-        mutable std::vector<std::uint8_t> blockData_;
+        mutable std::shared_ptr<const UnityBlockCache::Bytes> blockData_;
+        std::shared_ptr<UnityBlockCache> cache_;
+        std::stop_token cancellation_;
+        void ReadDirectory();
         std::vector<std::uint8_t> ReadRange(std::uint64_t offset, std::uint64_t size) const;
     };
 
@@ -129,7 +137,8 @@ namespace hs2
     class NativeGpuAssetReader
     {
     public:
-        explicit NativeGpuAssetReader(const std::filesystem::path &path, const UnityClassDatabase *database = nullptr);
+        explicit NativeGpuAssetReader(const std::filesystem::path &path, const UnityClassDatabase *database = nullptr,
+                                      std::shared_ptr<UnityBlockCache> cache = {}, std::stop_token cancellation = {});
         std::filesystem::path Path;
         std::string CabName;
         std::vector<std::string> ExternalNames;

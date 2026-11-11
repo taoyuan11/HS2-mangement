@@ -99,7 +99,8 @@ namespace hs2
     }
 
     NativeCharacterService::NativeCharacterService(fs::path game, fs::path data, fs::path tpk)
-        : game_(fs::absolute(game)), data_(fs::absolute(data)), catalog_(game_, data_, std::move(tpk))
+        : game_(fs::absolute(game)), data_(fs::absolute(data)), catalog_(game_, data_, std::move(tpk)),
+          blockCache_(std::make_shared<UnityBlockCache>(data_ / "NativeCpp/blocks-v1"))
     {
     }
 
@@ -135,8 +136,8 @@ namespace hs2
         unlockedFlag.Number = unlocked ? 1 : 0;
         definition->Hair.Children.push_back(unlockedFlag);
         NativeShapeRig shapes(game_, unlocked);
-        auto assets =
-            std::make_shared<NativeGpuAssetStore>(std::vector<fs::path>{}, game_, catalog_.Database(), cancellation);
+        auto assets = std::make_shared<NativeGpuAssetStore>(std::vector<fs::path>{}, game_, catalog_.Database(),
+                                                            cancellation, blockCache_);
         std::set<fs::path> paths;
         auto schemas = std::make_shared<NativeMonoSchema>(game_ / "HoneySelect2_Data/Managed", catalog_.Database());
         assets->SetScriptSchema(

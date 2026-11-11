@@ -9,7 +9,8 @@ namespace hs2
     {
     public:
         NativeGpuAssetStore(std::vector<std::filesystem::path> bundles, std::filesystem::path game,
-                            std::shared_ptr<const UnityClassDatabase> database, std::stop_token cancellation = {});
+                            std::shared_ptr<const UnityClassDatabase> database, std::stop_token cancellation = {},
+                            std::shared_ptr<UnityBlockCache> blockCache = {});
         std::shared_ptr<NativeGpuAssetReader> Reader(const std::filesystem::path &path);
         void IndexShaderNames(const std::shared_ptr<NativeGpuAssetReader> &reader);
         std::optional<GpuAssetPointer> FindShader(const std::filesystem::path &path, std::string_view name);
@@ -37,6 +38,11 @@ namespace hs2
             return readerStats_;
         }
 
+        UnityBlockCache::Statistics BlockStats() const
+        {
+            return blockCache_ ? blockCache_->Stats() : UnityBlockCache::Statistics{};
+        }
+
         const std::vector<std::filesystem::path> &Paths() const
         {
             return paths_;
@@ -45,6 +51,7 @@ namespace hs2
     private:
         std::filesystem::path game_;
         std::shared_ptr<const UnityClassDatabase> database_;
+        std::shared_ptr<UnityBlockCache> blockCache_;
         std::stop_token cancellation_;
         std::vector<std::filesystem::path> paths_;
         std::unordered_map<std::string, std::shared_ptr<NativeGpuAssetReader>> readers_;

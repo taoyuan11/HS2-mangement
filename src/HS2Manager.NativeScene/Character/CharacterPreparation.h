@@ -26,5 +26,6 @@ namespace hs2
     private:
         std::filesystem::path game_, data_;
         CharacterCatalog catalog_;
+        std::shared_ptr<UnityBlockCache> blockCache_;
     };
 }

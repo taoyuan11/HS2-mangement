@@ -1,6 +1,7 @@
 #include "Assets/AssetReader.h"
 #include "ThirdParty/Lzma/LzmaDec.h"
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstdlib>
@@ -484,9 +485,75 @@ namespace hs2
         return output;
     }
 
-    UnityBundle::UnityBundle(std::span<const uint8_t> bytes)
+    struct UnityBundle::Source
     {
-        Reader r(bytes, true);
+        std::vector<uint8_t> Memory;
+        std::filesystem::path Path;
+        std::ifstream File;
+        std::filesystem::file_time_type Modified;
+        size_t Size = 0;
+        std::stop_token Cancellation;
+
+        Source(std::span<const uint8_t> bytes, std::stop_token token) : Size(bytes.size()), Cancellation(token)
+        {
+            Require(Size <= MaxResource, "UnityFS source exceeds limit.");
+            Memory.assign(bytes.begin(), bytes.end());
+        }
+
+        Source(const std::filesystem::path &path, std::stop_token token)
+            : Path(path), File(path, std::ios::binary | std::ios::ate), Cancellation(token)
+        {
+            Require(bool(File), "Cannot open UnityFS source.");
+            auto size = File.tellg();
+            Require(size >= 0 && static_cast<uint64_t>(size) <= MaxResource, "UnityFS source exceeds limit.");
+            Size = static_cast<size_t>(size);
+            Modified = std::filesystem::last_write_time(Path);
+        }
+
+        std::vector<uint8_t> ReadAt(size_t offset, size_t size)
+        {
+            Require(offset <= Size && size <= Size - offset, "UnityFS read exceeds source bounds.");
+            if (Cancellation.stop_requested())
+                throw std::runtime_error("Resource loading cancelled.");
+            if (Path.empty())
+                return {Memory.begin() + offset, Memory.begin() + offset + size};
+            Require(std::filesystem::file_size(Path) == Size && std::filesystem::last_write_time(Path) == Modified,
+                    "UnityFS source changed during loading.");
+            File.clear();
+            File.seekg(static_cast<std::streamoff>(offset));
+            std::vector<uint8_t> result(size);
+            for (size_t copied = 0; copied < size;)
+            {
+                if (Cancellation.stop_requested())
+                    throw std::runtime_error("Resource loading cancelled.");
+                auto count = std::min<size_t>(size - copied, 1024 * 1024);
+                File.read(reinterpret_cast<char *>(result.data() + copied), count);
+                Require(bool(File), "UnityFS source read was incomplete.");
+                copied += count;
+            }
+            return result;
+        }
+    };
+
+    UnityBundle::UnityBundle(std::span<const uint8_t> bytes, std::shared_ptr<UnityBlockCache> cache,
+                             std::stop_token cancellation)
+        : source_(std::make_shared<Source>(bytes, cancellation)), cache_(std::move(cache)), cancellation_(cancellation)
+    {
+        ReadDirectory();
+    }
+
+    UnityBundle::UnityBundle(const std::filesystem::path &path, std::shared_ptr<UnityBlockCache> cache,
+                             std::stop_token cancellation)
+        : source_(std::make_shared<Source>(path, cancellation)), cache_(std::move(cache)), cancellation_(cancellation)
+    {
+        ReadDirectory();
+    }
+
+    void UnityBundle::ReadDirectory()
+    {
+        // 头部字符串有长度限制，256 KiB 足以容纳有效头部；目录及压缩块分别按实际偏移读取。
+        auto prefix = source_->ReadAt(0, std::min<size_t>(source_->Size, 256 * 1024));
+        Reader r(prefix, true);
         Require(r.CString() == "UnityFS", "Only UnityFS bundles are supported.");
         auto version = r.Read<uint32_t>();
         Require(version >= 6 && version <= 8, "Unsupported UnityFS format.");
@@ -494,20 +561,16 @@ namespace hs2
         UnityVersion = r.CString();
         auto total = r.Read<uint64_t>();
         auto compressed = r.Read<uint32_t>(), uncompressed = r.Read<uint32_t>(), flags = r.Read<uint32_t>();
-        Require(total <= bytes.size() && total >= r.Position, "UnityFS file size is invalid.");
+        Require(total <= source_->Size && total >= r.Position, "UnityFS file size is invalid.");
         if (version >= 7)
             r.Align(16);
         auto start = r.Position;
-        if (flags & 0x80)
-        {
-            Require(compressed <= total - start, "UnityFS directory exceeds file.");
-            r.Seek(static_cast<size_t>(total - compressed));
-        }
-        auto header = DecompressUnityBlock(r.Take(compressed), uncompressed, flags & 63);
-        if (flags & 0x80)
-            r.Seek(start);
+        Require(start <= total && compressed <= total - start, "UnityFS directory exceeds file.");
+        auto directory = source_->ReadAt(static_cast<size_t>((flags & 0x80) ? total - compressed : start), compressed);
+        auto header = DecompressUnityBlock(directory, uncompressed, flags & 63);
+        size_t payloadStart = (flags & 0x80) ? start : start + compressed;
         if (flags & 0x200)
-            r.Align(16);
+            payloadStart = (payloadStart + 15) & ~size_t(15);
         Reader h(header, true);
         h.Skip(16);
 
@@ -543,18 +606,16 @@ namespace hs2
             entries_.push_back(std::move(e));
         }
         Require(h.Position == header.size(), "Unexpected trailing UnityFS directory data.");
-        // 目录、骨架和着色器查询无需解压同包中的全部贴图。仅保留压缩数据，按访问范围解码块。
-        auto payloadStart = r.Position;
+        // 目录、骨架和着色器查询无需读取同包中的全部贴图。
         auto payloadEnd = static_cast<size_t>((flags & 0x80) ? total - compressed : total);
         Require(payloadStart <= payloadEnd, "UnityFS payload offset is invalid.");
+        auto offset = payloadStart;
         for (auto &b : blocks_)
         {
-            Require(b.PackedSize <= payloadEnd - r.Position, "UnityFS block exceeds payload.");
-            b.PackedOffset = r.Position - payloadStart;
-            r.Skip(b.PackedSize);
+            Require(b.PackedSize <= payloadEnd - offset, "UnityFS block exceeds payload.");
+            b.PackedOffset = offset;
+            offset += b.PackedSize;
         }
-        auto payload = bytes.subspan(payloadStart, r.Position - payloadStart);
-        packed_.assign(payload.begin(), payload.end());
     }
 
     std::span<const uint8_t> UnityBundle::Entry(size_t index) const
@@ -590,7 +651,25 @@ namespace hs2
         std::vector<uint8_t> result(static_cast<size_t>(size));
         if (size == 0)
             return result;
+        if (cancellation_.stop_requested())
+            throw std::runtime_error("Resource loading cancelled.");
+        // 将相邻压缩块合并为一次区间读取，避免网络盘上逐块寻址产生大量往返。
+        size_t first = blocks_.size(), last = 0;
         for (size_t i = 0; i < blocks_.size(); ++i)
+            if (blocks_[i].Offset < offset + size && uint64_t(blocks_[i].Offset) + blocks_[i].Size > offset)
+            {
+                first = std::min(first, i);
+                last = i;
+            }
+        Require(first < blocks_.size(), "UnityFS range has no payload blocks.");
+        size_t packedStart = blocks_[first].PackedOffset;
+        std::vector<uint8_t> packed;
+        if (first != last || recentBlock_ != first)
+        {
+            Require(bool(source_), "UnityFS source has been released.");
+            packed = source_->ReadAt(packedStart, blocks_[last].PackedOffset + blocks_[last].PackedSize - packedStart);
+        }
+        for (size_t i = first; i <= last; ++i)
         {
             auto &block = blocks_[i];
             auto begin = std::max<uint64_t>(offset, block.Offset);
@@ -599,16 +678,20 @@ namespace hs2
                 continue;
             if (recentBlock_ != i)
             {
-                auto decoded = DecompressUnityBlock(std::span(packed_).subspan(block.PackedOffset, block.PackedSize),
-                                                    block.Size, block.Compression);
-                blockData_ = std::move(decoded);
+                auto compressed = std::span(packed).subspan(block.PackedOffset - packedStart, block.PackedSize);
+                // LZMA 大块重解压昂贵，复用只读字节；小块与 LZ4 仍直接按需解压。
+                if (cache_ && block.Compression == 1 && block.Size >= 1024 * 1024)
+                    blockData_ = cache_->Get(compressed, block.Size, block.Compression, cancellation_);
+                else
+                    blockData_ = std::make_shared<const UnityBlockCache::Bytes>(
+                        DecompressUnityBlock(compressed, block.Size, block.Compression));
                 recentBlock_ = i;
-                // 单块 LZMA 包已完整驻留，后续所有区间均来自该块，无需再保存压缩副本。
+                // 单块包已完整驻留，后续所有区间均来自该块，可以释放源文件句柄。
                 if (blocks_.size() == 1)
-                    std::vector<uint8_t>().swap(packed_);
+                    source_.reset();
             }
             std::memcpy(result.data() + static_cast<size_t>(begin - offset),
-                        blockData_.data() + static_cast<size_t>(begin - block.Offset),
+                        blockData_->data() + static_cast<size_t>(begin - block.Offset),
                         static_cast<size_t>(end - begin));
         }
         return result;
@@ -616,7 +699,7 @@ namespace hs2
 
     size_t UnityBundle::ResidentBytes() const
     {
-        size_t size = packed_.capacity() + blockData_.capacity();
+        size_t size = (source_ ? source_->Memory.capacity() : 0) + (blockData_ ? blockData_->capacity() : 0);
         for (auto &[index, data] : entryData_)
             size += data.capacity();
         return size;
@@ -886,13 +969,20 @@ namespace hs2
         return std::string(reinterpret_cast<const char *>(bytes.data()), bytes.size());
     }
 
-    NativeGpuAssetReader::NativeGpuAssetReader(const std::filesystem::path &path, const UnityClassDatabase *database)
+    NativeGpuAssetReader::NativeGpuAssetReader(const std::filesystem::path &path, const UnityClassDatabase *database,
+                                               std::shared_ptr<UnityBlockCache> cache, std::stop_token cancellation)
         : Path(std::filesystem::absolute(path))
     {
-        auto bytes = ReadFile(Path);
-        if (bytes.size() >= 8 && std::memcmp(bytes.data(), "UnityFS", 7) == 0)
+        std::array<char, 8> signature{};
+        std::ifstream input(Path, std::ios::binary);
+        Require(bool(input), "Cannot read asset source.");
+        input.read(signature.data(), signature.size());
+        bool isBundle = input.gcount() == static_cast<std::streamsize>(signature.size()) &&
+                        std::memcmp(signature.data(), "UnityFS", 7) == 0;
+        input.close();
+        if (isBundle)
         {
-            bundle_ = std::make_unique<UnityBundle>(bytes);
+            bundle_ = std::make_unique<UnityBundle>(Path, std::move(cache), cancellation);
             Require(!bundle_->Entries().empty(), "Empty UnityFS bundle.");
             auto &entry = bundle_->Entries()[0];
             file_ = std::make_unique<UnitySerializedFile>(bundle_->ReadEntry(entry.Name, 0, entry.Size), database);
@@ -900,7 +990,7 @@ namespace hs2
         }
         else
         {
-            file_ = std::make_unique<UnitySerializedFile>(std::move(bytes), database);
+            file_ = std::make_unique<UnitySerializedFile>(ReadFile(Path), database);
             auto u = Path.filename().u8string();
             CabName.assign(reinterpret_cast<const char *>(u.data()), u.size());
         }

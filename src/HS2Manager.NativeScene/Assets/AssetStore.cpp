@@ -35,8 +35,9 @@ namespace hs2
 
     NativeGpuAssetStore::NativeGpuAssetStore(std::vector<std::filesystem::path> paths, std::filesystem::path game,
                                              std::shared_ptr<const UnityClassDatabase> database,
-                                             std::stop_token cancellation)
-        : game_(std::move(game)), database_(std::move(database)), cancellation_(cancellation)
+                                             std::stop_token cancellation, std::shared_ptr<UnityBlockCache> blockCache)
+        : game_(std::move(game)), database_(std::move(database)), blockCache_(std::move(blockCache)),
+          cancellation_(cancellation)
     {
         for (auto &path : paths)
             AddPath(path);
@@ -105,7 +106,7 @@ namespace hs2
             return found->second;
         }
         auto started = std::chrono::steady_clock::now();
-        auto reader = std::make_shared<NativeGpuAssetReader>(path, database_.get());
+        auto reader = std::make_shared<NativeGpuAssetReader>(path, database_.get(), blockCache_, cancellation_);
         ++readerStats_.Loads;
         auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         readerStats_.LoadSeconds += elapsed;

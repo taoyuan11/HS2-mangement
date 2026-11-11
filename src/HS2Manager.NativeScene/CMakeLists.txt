@@ -21,6 +21,7 @@ add_library(
     Scene/SceneTypes.cpp
     Assets/AssetReader.cpp
     Assets/AssetStore.cpp
+    Assets/UnityBlockCache.cpp
     Animation/Animation.cpp
     Animation/ShapeRig.cpp
     Character/CharacterAssembly.cpp
@@ -31,6 +32,7 @@ add_library(
     ThirdParty/Lzma/LzmaDec.c
 )
 target_compile_features(hs2_scene PUBLIC cxx_std_20)
+target_link_libraries(hs2_scene PUBLIC bcrypt)
 target_include_directories(hs2_scene PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(hs2_scene PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 if(MSVC)
@@ -48,4 +50,8 @@ if(BUILD_TESTING OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     target_link_libraries(hs2_asset_loading_checks PRIVATE hs2_scene)
     target_compile_options(hs2_asset_loading_checks PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
     add_test(NAME hs2_asset_loading_checks COMMAND hs2_asset_loading_checks)
+    add_executable(hs2_block_cache_checks ../../tests/HS2Manager.CppSceneChecks/UnityBlockCacheChecks.cpp)
+    target_link_libraries(hs2_block_cache_checks PRIVATE hs2_scene)
+    target_compile_options(hs2_block_cache_checks PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+    add_test(NAME hs2_block_cache_checks COMMAND hs2_block_cache_checks)
 endif()
