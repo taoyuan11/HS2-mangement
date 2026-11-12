@@ -20,11 +20,6 @@
         "sha512": "+OF0UmXNF8U2qoGbm5kfjGvlgrwdLTJCqhwO7YD6Lp6/+Atjp7ZAHgivktSUCk8RC/q5piBpcdo2Mgy5DKIwrg=="
     },
     {
-        "id": "Microsoft.WindowsAppSDK.DWrite",
-        "version": "1.8.25122902",
-        "sha512": "5oKIKDYnc8ENNRCKb8D8jbNB0b2GLtq9rzVlnWUFpSvulW51zzsIdOZ8NW0H5WXI/cmJt4pquHOYyV3HVPaWUw=="
-    },
-    {
         "id": "Microsoft.Web.WebView2",
         "version": "1.0.3179.45",
         "sha512": "AqvMjM6eGVbfvi4k/dTOYlqz4f8BOcm6mr7SZDOxnxZw9RNrpxwq+R8pjd5QeynZ3MZfCQ5d2bXrzsIZvk6A6Q=="

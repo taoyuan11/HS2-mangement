@@ -97,11 +97,6 @@ namespace hs2
         return result;
     }
 
-    int CharacterEditSchema::ExtraAccessoryCount(const CharacterDocument &doc)
-    {
-        return (std::max)(0, static_cast<int>(doc.Node("accessory.parts").Count()) - 20);
-    }
-
     CharacterSliderLimits CharacterSliderLimits::Read(const fs::path &game)
     {
         auto plugins = game / L"BepInEx" / L"plugins";

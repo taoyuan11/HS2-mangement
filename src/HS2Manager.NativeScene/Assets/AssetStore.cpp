@@ -383,11 +383,6 @@ namespace hs2
         return Reader(p.Bundle)->Metadata(p.PathId);
     }
 
-    bool NativeGpuAssetStore::ContainsAsset(const GpuAssetPointer &pointer)
-    {
-        return AssetClass(pointer).has_value();
-    }
-
     std::optional<int> NativeGpuAssetStore::AssetClass(const GpuAssetPointer &pointer)
     {
         auto p = Resolve(pointer);

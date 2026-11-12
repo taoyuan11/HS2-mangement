@@ -10,7 +10,6 @@ namespace hs2
         ~NativeClothRuntime();
         void Reset();
         void Step(float seconds);
-        bool HasCloth() const;
 
     private:
         struct Impl;

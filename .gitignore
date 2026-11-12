@@ -6,6 +6,6 @@ artifacts/
 *.user
 *.suo
 **/Logs/
-# 忽略已停用参考项目在本机缓存的输出。
+# 忽略旧参考程序遗留的本机资料库。
 tests/reference/
 __pycache__/

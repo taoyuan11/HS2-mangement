@@ -8,7 +8,6 @@
 #include <dwmapi.h>
 #include <fstream>
 #include <microsoft.ui.xaml.window.h>
-#include <shellapi.h>
 #include <sstream>
 #include <unordered_map>
 
@@ -130,14 +129,6 @@ namespace hs2::ui
             for (auto const &value : values)
                 result.Append(box_value(to_hstring(value)));
             return result;
-        }
-
-        void OpenDirectory(fs::path const &path, HWND window)
-        {
-            fs::create_directories(path);
-            auto result = ShellExecuteW(window, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-            if (reinterpret_cast<INT_PTR>(result) <= 32)
-                throw std::runtime_error("无法打开目录");
         }
     } // 命名空间
 

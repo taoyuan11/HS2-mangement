@@ -471,6 +471,5 @@ namespace hs2
         static const std::vector<CharacterChoice> &AccessoryParents();
         static int AutoClothingState(const std::string &category, const std::string &group);
         static std::vector<float> ColorValue(const CharacterDocument &document, const std::string &path);
-        static int ExtraAccessoryCount(const CharacterDocument &document);
     };
 }

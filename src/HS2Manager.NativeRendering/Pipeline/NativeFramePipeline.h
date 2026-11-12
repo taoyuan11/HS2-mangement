@@ -31,7 +31,6 @@ namespace hs2
         GpuCharacterAppearance &Appearance();
         GpuMaterialComposer &Composer();
         NativeForwardRenderer &Renderer();
-        std::span<const float> AmbientProbe() const;
         const NativePostSettings &PostSettings() const;
         const GpuVolume *GradingLut() const;
         const std::unordered_set<std::string> &SourceReferenceDiagnostics() const;

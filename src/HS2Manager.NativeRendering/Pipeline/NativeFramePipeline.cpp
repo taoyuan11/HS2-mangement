@@ -207,11 +207,6 @@ namespace hs2
         return state_->Renderer;
     }
 
-    std::span<const float> NativeFramePipeline::AmbientProbe() const
-    {
-        return state_->Probe;
-    }
-
     const NativePostSettings &NativeFramePipeline::PostSettings() const
     {
         return state_->Post.Settings();

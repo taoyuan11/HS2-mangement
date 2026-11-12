@@ -31,7 +31,6 @@ namespace hs2
         GpuTextureData Texture(const GpuAssetPointer &pointer);
         std::shared_ptr<GpuMaterialData> Material(const GpuAssetPointer &pointer);
         Parameter Metadata(const GpuAssetPointer &pointer);
-        bool ContainsAsset(const GpuAssetPointer &pointer);
         std::optional<int> AssetClass(const GpuAssetPointer &pointer);
         GpuAssetPointer GameResource(std::string_view name, int classId, int textureSize = 0);
 

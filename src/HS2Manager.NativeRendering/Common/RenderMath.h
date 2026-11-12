@@ -52,13 +52,6 @@ namespace hs2
         return m;
     }
 
-    inline Matrix4x4 MatrixTranspose(const Matrix4x4 &m)
-    {
-        Matrix4x4 result;
-        DirectX::XMStoreFloat4x4(&result, DirectX::XMMatrixTranspose(DirectX::XMLoadFloat4x4(&m)));
-        return result;
-    }
-
     inline std::vector<float> Values(Vector3 v)
     {
         return {v.x, v.y, v.z};

@@ -136,3 +136,9 @@ GUI 启动和退出检查通过 `tests/ui/Invoke-CppWinUiSmoke.ps1 -Executable <
 便携目录和 ZIP 只携带 Windows App SDK 的 `zh-CN` 简体中文 MUI 资源及 `en-US` 英文回退资源，其他语言的独立 MUI 文件在发布复制时排除；开发构建目录仍可包含 SDK 的完整语言资源。`Test-CppPackage.ps1` 会检查必需的中英文资源，并拒绝发布包中多余的语言文件。公共 PRI、XAML 和运行库保留完整。
 
 真实游戏资源、GPU、FBX 或 PhysX 相关检查需要相应的本机依赖。历史画面对照和外部软件验证脚本已按职责放入 `tests` 的子目录，具体参数和样本范围见各验证文档。测试和工具必须等待其启动的子进程退出，并在失败或取消时完成清理。
+
+## 依赖与旧产物清理
+
+`packages.lock.json` 只锁定当前构建导入及其传递依赖。WebView2 仍由 WinUI 的元数据和构建目标引用；独立的 `Microsoft.WindowsAppSDK.DWrite` 开发包未被导入，已移除。界面所需的 `DWriteCore.dll` 仍由 Windows App SDK 自包含运行库提供，不应从发布目录删除。
+
+旧 C# / Unity 工具链、参考工程的编译缓存及对应许可文本已退出当前依赖集合，可在 Git 历史中查看原实现和许可。清理本机旧输出时保留其中的 `Data`、备份和操作日志。`tests/fixtures` 的冻结样本、`tests/unity` 的画面对比脚本及历史验证记录仍用于回归对照；PhysX、原生 FBX SDK、RenderDoc 和 Python 格式化／图像比较工具也继续保留。

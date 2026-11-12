@@ -159,11 +159,6 @@ namespace hs2
 
     NativeClothRuntime::~NativeClothRuntime() = default;
 
-    bool NativeClothRuntime::HasCloth() const
-    {
-        return !impl_->Entries.empty();
-    }
-
     void NativeClothRuntime::Reset()
     {
         impl_->Reset = true;
