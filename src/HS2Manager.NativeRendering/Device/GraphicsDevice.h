@@ -34,11 +34,6 @@ namespace hs2
             return context_.Get();
         }
 
-        const std::wstring &AdapterName() const noexcept
-        {
-            return adapterName_;
-        }
-
         std::vector<std::uint8_t> Readback(ID3D11Texture2D *source) const;
         std::vector<float> ReadbackFloat(ID3D11Texture2D *source) const;
         std::vector<std::uint8_t> ClearAndReadback(int width, int height, const std::array<float, 4> &color) const;
@@ -48,6 +43,5 @@ namespace hs2
         std::thread::id owner_;
         ComPtr<ID3D11Device> device_;
         ComPtr<ID3D11DeviceContext> context_;
-        std::wstring adapterName_;
     };
 }

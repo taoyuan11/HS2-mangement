@@ -31,13 +31,6 @@ namespace hs2
                                        nullptr, &context_);
         }
         CheckHResult(result, "D3D11CreateDevice");
-        ComPtr<IDXGIDevice> dxgi;
-        ComPtr<IDXGIAdapter> adapter;
-        CheckHResult(device_.As(&dxgi), "Query IDXGIDevice");
-        CheckHResult(dxgi->GetAdapter(&adapter), "GetAdapter");
-        DXGI_ADAPTER_DESC description{};
-        CheckHResult(adapter->GetDesc(&description), "Get adapter description");
-        adapterName_ = description.Description;
     }
 
     GraphicsDevice::~GraphicsDevice()

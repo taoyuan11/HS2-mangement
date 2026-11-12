@@ -16,7 +16,8 @@ HS2-mangement/
             Views/                     XAML 视图和共享样式
             Assets/                    图标等界面资源
         HS2Manager.NativeAgent/        独立 C++ MCP 服务、生成会话、渲染与素材构建
-            Resources/                 受管 Blender／Unity 构建脚本
+        HS2Manager.NativeAssetBuild/   原生素材配方、模型导入与 UnityFS 资源包写入
+            ThirdParty/                保持上游原样的 cgltf 依赖
         HS2Manager.NativeCore/         人物卡管理与数据服务
             Common/                    公共类型和基础工具
             Editing/                   编辑规则、字段与组件
@@ -144,3 +145,5 @@ GUI 启动和退出检查通过 `tests/ui/Invoke-CppWinUiSmoke.ps1 -Executable <
 `packages.lock.json` 只锁定当前构建导入及其传递依赖。WebView2 仍由 WinUI 的元数据和构建目标引用；独立的 `Microsoft.WindowsAppSDK.DWrite` 开发包未被导入，已移除。界面所需的 `DWriteCore.dll` 仍由 Windows App SDK 自包含运行库提供，不应从发布目录删除。
 
 旧 C# / Unity 工具链、参考工程的编译缓存及对应许可文本已退出当前依赖集合，可在 Git 历史中查看原实现和许可。清理本机旧输出时保留其中的 `Data`、备份和操作日志。`tests/fixtures` 的冻结样本、`tests/unity` 的画面对比脚本及历史验证记录仍用于回归对照；PhysX、原生 FBX SDK、RenderDoc 和 Python 格式化／图像比较工具也继续保留。
+
+原生素材构建也不再依赖旧 Agent 的 Unity 2018.4 编辑器及安装包。`.tools/agent-tools` 中的旧编辑器可清理；素材工程、已生成素材、游戏验收数据与本机配置需分别核对用途，不能随工具链一并删除。
