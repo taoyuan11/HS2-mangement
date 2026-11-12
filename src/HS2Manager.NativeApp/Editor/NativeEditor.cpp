@@ -1,4 +1,5 @@
 #include "Editor/NativeEditor.h"
+#include "Creation/NativeCreation.h"
 #include "Infrastructure/ProcessLifetime.h"
 #include "Editing/CharacterEditComponents.h"
 #include "Preview/NativePreview.h"
@@ -82,6 +83,12 @@ namespace hs2::ui
         {
             if (auto self = weak.lock())
             {
+                if (self->project_ && !self->project_->State().Character->ContentEquals(self->session_.Document))
+                    self->project_->Edit("角色外观",
+                                         [&](creation::CreationState &s)
+                                         {
+                                             s.Character = self->session_.Document;
+                                         });
                 self->UpdateState();
                 self->QueuePreview();
             }
@@ -151,6 +158,52 @@ namespace hs2::ui
             });
         owner->preview_ = NativePreview::Create(owner);
         owner->preview_->Load(session_.Card, root_, true, session_.Document);
+        LoadInformationChoices();
+    }
+
+    void NativeEditor::BindProject(std::shared_ptr<creation::CreationProject> project)
+    {
+        project_ = std::move(project);
+        root_.as<Grid>().Children().GetAt(0).Visibility(Visibility::Collapsed);
+        root_.as<Grid>().RowDefinitions().GetAt(0).Height({0, GridUnitType::Pixel});
+        Get<TextBlock>(L"EditorMessage").Text(L"角色外观纳入工程历史 · 导出时生成当前版本封面");
+        Get<Button>(L"SaveButton").Content(box_value(L"保存工程"));
+        for (const auto &event : UiEvents)
+            if (event.View == L"CharacterEditorView" &&
+                (event.Handler == L"SwitchCard_Click" || event.Handler == L"RestoreBackup_Click" ||
+                 event.Handler == L"Overwrite_Click" || event.Handler == L"SaveFolder_Click"))
+                if (auto control = root_.FindName(hstring(event.Name)).try_as<Control>())
+                    control.IsEnabled(false);
+        UpdateState();
+    }
+
+    void NativeEditor::SyncProject()
+    {
+        if (!project_)
+            return;
+        bool changed = !session_.Document.ContentEquals(*project_->State().Character);
+        session_.Document = *project_->State().Character;
+        session_.Card.Name = project_->State().Name;
+        if (changed)
+        {
+            RefreshFields();
+            QueuePreview();
+        }
+        UpdateState();
+    }
+
+    void NativeEditor::BeginGesture()
+    {
+        session_.BeginGesture();
+        if (project_)
+            project_->BeginGesture();
+    }
+
+    void NativeEditor::EndGesture()
+    {
+        session_.EndGesture();
+        if (project_)
+            project_->EndGesture();
     }
 
     void NativeEditor::QueuePreview()
@@ -221,10 +274,10 @@ namespace hs2::ui
     void NativeEditor::UpdateState()
     {
         Get<TextBlock>(L"SaveState")
-            .Text(to_hstring(std::string(session_.IsDirty() ? "● 未保存" : "已保存") + " · 草稿 r" +
+            .Text(to_hstring(std::string(IsDirty() ? "● 未保存" : "已保存") + " · 草稿 r" +
                              std::to_string(session_.Revision) + " · " + session_.Card.FileName()));
-        Get<Button>(L"UndoButton").IsEnabled(!saving_ && session_.CanUndo());
-        Get<Button>(L"RedoButton").IsEnabled(!saving_ && session_.CanRedo());
+        Get<Button>(L"UndoButton").IsEnabled(!saving_ && (project_ ? project_->CanUndo() : session_.CanUndo()));
+        Get<Button>(L"RedoButton").IsEnabled(!saving_ && (project_ ? project_->CanRedo() : session_.CanRedo()));
         if (auto owner = owner_.lock())
             owner->Control<ContentControl>(L"EditorHost").IsEnabled(!saving_ && !owner->busy_);
     }
@@ -235,6 +288,13 @@ namespace hs2::ui
             return;
         building_ = true;
         fields_ = CharacterEditSchema::Build(session_.Document, limits_);
+        for (auto &field : fields_)
+            if (field.Category == "parameter" && field.Kind == CharacterFieldKind::Choice)
+            {
+                auto key = field.Path.substr(field.Path.rfind('.') + 1);
+                if (informationChoices_.contains(key))
+                    field.Choices = informationChoices_.at(key);
+            }
         std::erase_if(fields_,
                       [&](auto const &field)
                       {
@@ -276,7 +336,7 @@ namespace hs2::ui
         building_ = true;
         try
         {
-            session_.EndGesture();
+            EndGesture();
             auto panel = Get<StackPanel>(L"Parameters");
             panel.Children().Clear();
             auto group = to_string(unbox_value_or<hstring>(Get<ListView>(L"Groups").SelectedItem(), L"")),
@@ -329,14 +389,38 @@ namespace hs2::ui
         Grid::SetColumn(restore, 1);
         header.Children().Append(restore);
         panel.Children().Append(header);
-        if (field.Kind == CharacterFieldKind::Number)
+        if (field.Kind == CharacterFieldKind::Text)
+        {
+            TextBox input;
+            input.Text(to_hstring(session_.Document.Node(field.Path).Text()));
+            input.MaxLength(256);
+            Automation::AutomationProperties::SetName(input, to_hstring(field.Label));
+            input.LostFocus(
+                [weak, field](auto const &sender, auto &&)
+                {
+                    if (auto self = weak.lock())
+                        if (!self->building_ && !self->saving_)
+                        {
+                            try
+                            {
+                                self->session_.SetValue(field.Path, to_string(sender.template as<TextBox>().Text()));
+                            }
+                            catch (const std::exception &e)
+                            {
+                                self->Get<TextBlock>(L"EditorMessage").Text(to_hstring(e.what()));
+                            }
+                        }
+                });
+            panel.Children().Append(input);
+        }
+        else if (field.Kind == CharacterFieldKind::Number)
         {
             double value = Numeric(session_.Document.Node(field.Path).ScalarValue) * field.DisplayScale;
             Slider slider;
             slider.Minimum(std::min(field.Minimum * field.DisplayScale, value));
             slider.Maximum(std::max(field.Maximum * field.DisplayScale, value));
             slider.Value(value);
-            slider.StepFrequency(.1);
+            slider.StepFrequency(field.DisplayScale == 1 ? 1 : .1);
             slider.IsThumbToolTipEnabled(false);
             NumberBox input;
             winrt::Windows::Globalization::NumberFormatting::DecimalFormatter formatter;
@@ -362,7 +446,7 @@ namespace hs2::ui
                                   [weak](auto &&, auto &&)
                                   {
                                       if (auto self = weak.lock())
-                                          self->session_.BeginGesture();
+                                          self->BeginGesture();
                                   })),
                               true);
             slider.AddHandler(UIElement::PointerCaptureLostEvent(),
@@ -370,7 +454,7 @@ namespace hs2::ui
                                   [weak](auto &&, auto &&)
                                   {
                                       if (auto self = weak.lock())
-                                          self->session_.EndGesture();
+                                          self->EndGesture();
                                   })),
                               true);
             slider.AddHandler(UIElement::PointerReleasedEvent(),
@@ -378,14 +462,14 @@ namespace hs2::ui
                                   [weak](auto &&, auto &&)
                                   {
                                       if (auto self = weak.lock())
-                                          self->session_.EndGesture();
+                                          self->EndGesture();
                                   })),
                               true);
             slider.LostFocus(
                 [weak](auto &&, auto &&)
                 {
                     if (auto self = weak.lock())
-                        self->session_.EndGesture();
+                        self->EndGesture();
                 });
             slider.ValueChanged(
                 [weak, field, syncing, weakInput](auto &&, auto const &args)
@@ -422,7 +506,7 @@ namespace hs2::ui
                         *syncing = true;
                         try
                         {
-                            self->session_.EndGesture();
+                            self->EndGesture();
                             if (auto slider = weakSlider.get())
                             {
                                 slider.Minimum(std::min(slider.Minimum(), args.NewValue()));
@@ -526,6 +610,22 @@ namespace hs2::ui
                         self->ChooseAsset(field);
                 });
             panel.Children().Append(button);
+            if (project_ && field.Kind == CharacterFieldKind::Asset &&
+                (field.Path.starts_with("hair.") || field.Path.starts_with("clothes.") ||
+                 field.Path.starts_with("accessory.")))
+            {
+                Button create;
+                create.Content(box_value(L"从此槽位创建 Mod"));
+                create.Click(
+                    [weak, field](auto &&, auto &&)
+                    {
+                        if (auto self = weak.lock())
+                            if (auto owner = self->owner_.lock())
+                                if (owner->creation_)
+                                    owner->creation_->CreateAssetAt(field.Path);
+                    });
+                panel.Children().Append(create);
+            }
         }
         return panel;
     }
@@ -543,7 +643,7 @@ namespace hs2::ui
             ColorPicker picker;
             picker.Color(Color(CharacterEditSchema::ColorValue(before, field.Path)));
             picker.IsAlphaEnabled(true);
-            session_.BeginGesture();
+            BeginGesture();
             std::weak_ptr<NativeEditor> weak = shared_from_this();
             picker.ColorChanged(
                 [weak, field](auto &&, auto const &args)
@@ -564,7 +664,7 @@ namespace hs2::ui
             auto result = co_await dialog.ShowAsync();
             if (result != ContentDialogResult::Primary)
                 session_.Apply(before);
-            session_.EndGesture();
+            EndGesture();
             RefreshFields();
         }
         catch (hresult_error const &e)
@@ -583,6 +683,13 @@ namespace hs2::ui
         auto owner = owner_.lock();
         if (!owner || saving_ || stopped_ || owner->busy_ || owner->dialogOpen_ || owner->closing_)
             return;
+        if (project_)
+        {
+            EndGesture();
+            project_->Undo();
+            SyncProject();
+            return;
+        }
         session_.Undo();
         RefreshFields();
     }
@@ -592,6 +699,13 @@ namespace hs2::ui
         auto owner = owner_.lock();
         if (!owner || saving_ || stopped_ || owner->busy_ || owner->dialogOpen_ || owner->closing_)
             return;
+        if (project_)
+        {
+            EndGesture();
+            project_->Redo();
+            SyncProject();
+            return;
+        }
         session_.Redo();
         RefreshFields();
     }
@@ -663,7 +777,7 @@ namespace hs2::ui
                                       Category(),
                                       to_string(unbox_value_or<hstring>(Get<ListView>(L"Groups").SelectedItem(), L"")))
                                 : choice - 1;
-                session_.EndGesture();
+                EndGesture();
                 owner->ExportModels({{session_.Card, session_.Document, static_cast<int64_t>(session_.Revision)}},
                                     clothing, Get<ToggleSwitch>(L"AccessoryVisibility").IsOn());
             }
@@ -684,6 +798,25 @@ namespace hs2::ui
         auto owner = owner_.lock();
         if (!owner || saving_ || stopped_ || owner->busy_ || owner->dialogOpen_ || owner->closing_)
             co_return false;
+        if (project_)
+        {
+            try
+            {
+                EndGesture();
+                project_->Save();
+                UpdateState();
+                if (owner->creation_)
+                    owner->creation_->Saved();
+                co_return true;
+            }
+            catch (const std::exception &e)
+            {
+                Get<TextBlock>(L"EditorMessage").Text(to_hstring(e.what()));
+                if (owner->creation_)
+                    owner->creation_->Saved(e.what());
+                co_return false;
+            }
+        }
         std::optional<fs::path> destination;
         if (chooseFolder)
         {
@@ -698,7 +831,7 @@ namespace hs2::ui
             co_return false;
         if (saving_ || stopped_ || owner->busy_ || owner->closing_)
             co_return false;
-        session_.EndGesture();
+        EndGesture();
         auto document = session_.Document;
         auto card = session_.Card;
         auto revision = session_.Revision;
@@ -841,7 +974,8 @@ namespace hs2::ui
             ContentDialog dialog;
             dialog.XamlRoot(root_.XamlRoot());
             dialog.Title(box_value(L"保留未保存修改？"));
-            dialog.Content(box_value(L"保存为新卡、放弃本次修改，或取消并继续编辑。"));
+            dialog.Content(box_value(creation_ ? L"保存创作工程、放弃本次修改，或取消并继续编辑。"
+                                               : L"保存为新卡、放弃本次修改，或取消并继续编辑。"));
             dialog.PrimaryButtonText(L"保存");
             dialog.SecondaryButtonText(L"放弃修改");
             dialog.CloseButtonText(L"取消");
@@ -857,6 +991,11 @@ namespace hs2::ui
         }
         if (closePrompt_)
             BeginProcessShutdown();
+        if (creation_)
+        {
+            co_await creation_->Stop();
+            creation_.reset();
+        }
         editor_->Stop();
         if (preview_)
         {

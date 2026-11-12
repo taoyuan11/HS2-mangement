@@ -137,6 +137,9 @@
                 </StackPanel>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Grid.Row="1">
                     <StackPanel>
+                        <Button x:Name="CreateCharacter" Content="创建角色" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                        <Button x:Name="CreateMod" Content="创建 Mod" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                        <Button x:Name="CreationProjects" Content="创作工程" HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
                         <Button
                             x:Name="NavAll"
                             Tag="all"
@@ -463,6 +466,7 @@
                                 <MenuFlyout>
                                     <MenuFlyoutItem Text="打开 3D 预览" x:Name="ActionMainWindow8"/>
                                     <MenuFlyoutItem Text="编辑角色" x:Name="ActionMainWindow9"/>
+                            <MenuFlyoutItem x:Name="CreateFromCard" Text="以此创建新角色"/>
                                     <MenuFlyoutItem Text="收藏 / 取消收藏" x:Name="ActionMainWindow10"/>
                                     <MenuFlyoutSeparator/>
                                     <MenuFlyoutItem Text="添加标签…" x:Name="ActionMainWindow11"/>
@@ -657,6 +661,7 @@
                                             <TextBlock Text="{Binding FavoriteText}" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
+                                    <Button x:Name="CreateFromDetails" Content="以此创建新角色" Style="{StaticResource QuietButton}" HorizontalAlignment="Left" Margin="0,4,0,0" IsEnabled="{Binding IsIdle}"/>
                                     <Border Height="1" Background="{ThemeResource BorderBrush}" Margin="0,12"/>
                                     <TextBlock
                                         Text="标签"

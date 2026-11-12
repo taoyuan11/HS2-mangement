@@ -570,8 +570,8 @@ namespace hs2::asset
             ComPtr<IWICBitmapDecoder> decoder;
             ComPtr<IWICBitmapFrameDecode> frame;
             check(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)));
-            check(factory->CreateDecoderFromFilename(file.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
-                                                     &decoder));
+            check(factory->CreateDecoderFromFilename(NativeFilePath(file).c_str(), nullptr, GENERIC_READ,
+                                                     WICDecodeMetadataCacheOnLoad, &decoder));
             GUID format{};
             check(decoder->GetContainerFormat(&format));
             Require(format == GUID_ContainerFormatPng || format == GUID_ContainerFormatJpeg, "素材贴图只支持 PNG/JPEG");
@@ -809,16 +809,49 @@ namespace hs2::asset
                 Point(At(*it, "second"), "m_Texture", textureId);
             }
         }
+        for (const auto &property : spec.value("material_values", Json::array()))
+        {
+            int slot = property.at("slot");
+            Require(slot >= 0 && slot < materialCount, "材质参数槽位越界");
+            auto name = property.at("property").get<std::string>();
+            auto &saved = At(graph.Get(materials.at(slot)), "m_SavedProperties");
+            bool color = property.at("value").is_array();
+            auto &entries = Array(At(saved, color ? "m_Colors" : "m_Floats")).Children;
+            auto entry = std::find_if(entries.begin(), entries.end(),
+                                      [&](const auto &value)
+                                      {
+                                          return value.Get("first").Text == name;
+                                      });
+            Require(entry != entries.end(), "模板材质不支持指定参数");
+            if (color)
+                Vector(At(*entry, "second"), Vector4Of(property.at("value")));
+            else
+            {
+                auto value = property.at("value").get<double>();
+                Require(std::isfinite(value), "材质参数必须为有限数值");
+                At(*entry, "second").Number = value;
+            }
+        }
+        bool independentHalf = spec.value("independent_half", false);
+        Require(!independentHalf || kind == "clothes", "只有服装可设置独立半脱网格");
+        if (independentHalf)
+            Require(std::any_of(geometry.Meshes.begin(), geometry.Meshes.end(),
+                                [](const auto &mesh)
+                                {
+                                    return mesh.Role == "clothes_half";
+                                }),
+                    "缺少独立半脱网格");
         std::vector<std::int64_t> renderers;
         for (const auto &mesh : geometry.Meshes)
         {
             std::vector<std::string> used;
             auto meshId = MeshObject(graph, mesh, definitions, used);
             auto slotCount = *std::max_element(mesh.Materials.begin(), mesh.Materials.end()) + 1;
-            auto node = graph.Node(mesh.Name, full);
+            bool halfMesh = independentHalf && mesh.Role == "clothes_half";
+            auto node = graph.Node(mesh.Name, halfMesh ? half : full);
             renderers.push_back(RendererObject(graph, node, meshId, mesh, std::span(materials).first(slotCount), used,
                                                bones, rootBone));
-            if (half)
+            if (half && !independentHalf)
             {
                 auto halfNode = graph.Node(mesh.Name + "_half", half);
                 renderers.push_back(RendererObject(graph, halfNode, meshId, mesh, std::span(materials).first(slotCount),
@@ -860,11 +893,19 @@ namespace hs2::asset
                 if (field.Name.ends_with("Distrib") && field.Has("m_Curve"))
                     Clear(At(field, "m_Curve"));
             Float(value, "m_UpdateRate", 60);
-            Float(value, "m_Damping", .1f);
-            Float(value, "m_Elasticity", .1f);
-            Float(value, "m_Stiffness", .1f);
-            Float(value, "m_Inert", 0);
-            Float(value, "m_Radius", 0);
+            auto settings =
+                spec.value("dynamic_settings", Json::object()).value(name.get<std::string>(), Json::object());
+            for (auto [key, field, fallback] : {std::tuple{"damping", "m_Damping", .1f},
+                                                {"elasticity", "m_Elasticity", .1f},
+                                                {"stiffness", "m_Stiffness", .1f},
+                                                {"inertia", "m_Inert", 0.f},
+                                                {"radius", "m_Radius", 0.f}})
+            {
+                float amount = settings.value(key, fallback);
+                Require(std::isfinite(amount) && amount >= 0 && amount <= (std::string(key) == "radius" ? 10.f : 1.f),
+                        "动态骨骼参数超出范围");
+                Float(value, field, amount);
+            }
         }
         std::vector<std::string> additionalRoots;
         for (const auto &[name, id] : bones)
@@ -936,8 +977,13 @@ namespace hs2::asset
         for (const auto &dependency : graph.Dependencies)
             description += HashFile(Path(dependency), token);
         fingerprint.insert(fingerprint.end(), description.begin(), description.end());
-        auto hash = Sha256(fingerprint), guid = "hs2agent." + hash;
-        auto slot = 100000 + static_cast<int>(std::stoul(hash.substr(0, 6), nullptr, 16));
+        auto hash = Sha256(fingerprint), guid = spec.value("package_guid", "hs2agent." + hash);
+        Require(!guid.empty() && guid.size() <= 128 &&
+                    guid.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-") ==
+                        guid.npos,
+                "素材包 GUID 无效");
+        auto slot = spec.value("slot_id", 100000 + static_cast<int>(std::stoul(hash.substr(0, 6), nullptr, 16)));
+        Require(slot >= 100000 && slot < 1000000000, "素材编号越界");
         auto prefabName = "hs2agent_" + std::to_string(slot);
         if (additional)
         {
@@ -946,7 +992,8 @@ namespace hs2::asset
                 content += '\t' + name;
             Text(graph.Get(additional), "m_Script", content + "\r\n");
         }
-        auto bundleName = "hs2agent/" + guid + ".unity3d";
+        auto bundleName =
+            "hs2agent/" + guid + (spec.contains("package_guid") ? "/" + std::to_string(slot) : "") + ".unity3d";
         std::transform(bundleName.begin(), bundleName.end(), bundleName.begin(),
                        [](unsigned char c)
                        {

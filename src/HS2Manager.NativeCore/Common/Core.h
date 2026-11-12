@@ -42,6 +42,7 @@ namespace hs2
     void CheckCancelled(std::stop_token cancellation);
     std::string Utf8(const fs::path &path);
     fs::path Path(std::string_view utf8);
+    std::wstring NativeFilePath(const fs::path &path);
     std::string NewId();
     std::string UtcNow();
     std::int64_t ModifiedTicks(const fs::path &path);
@@ -383,6 +384,8 @@ namespace hs2
 
         CardEditSaveResult Save(const CharacterDocument &document, const CardRecord &source, bool overwrite,
                                 std::optional<fs::path> destination = {}, std::stop_token cancellation = {});
+        CardEditSaveResult SaveNew(const CharacterDocument &document, const fs::path &destination,
+                                   std::stop_token cancellation = {});
         CardEditSaveResult RestoreBackup(const FileOperationRecord &operation, std::stop_token cancellation = {});
 
     private:
@@ -439,7 +442,8 @@ namespace hs2
         Toggle,
         Asset,
         Choice,
-        Preset
+        Preset,
+        Text
     };
 
     struct CharacterChoice

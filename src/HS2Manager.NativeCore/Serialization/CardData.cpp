@@ -330,7 +330,6 @@ namespace hs2
         std::vector<Block> Blocks;
         std::map<std::string, Section> Sections, SourceSections;
         std::optional<MessagePack> Extensions, SourceExtensions;
-        std::optional<MessagePack> Parameter;
         std::optional<Bytes> Cover;
     };
 
@@ -394,6 +393,7 @@ namespace hs2
                 throw std::runtime_error("人物块重叠，无法安全编辑");
             lastEnd = block.Offset + block.Length;
             if (block.Name == "Custom" || block.Name == "Coordinate" || block.Name == "Parameter" ||
+                block.Name == "Parameter2" || block.Name == "GameInfo" || block.Name == "GameInfo2" ||
                 block.Name == "KKEx")
                 if (!known.insert(block.Name).second)
                     throw std::runtime_error("重复的人物块无法安全编辑");
@@ -425,6 +425,22 @@ namespace hs2
         };
         addSections("Custom", {"face", "body", "hair"});
         addSections("Coordinate", {"clothes", "accessory"});
+        data->Sections.emplace("parameter", Data::Section{"Parameter", 0, std::move(parameter)});
+        for (auto [block, name] :
+             {std::pair{"Parameter2", "parameter2"}, {"GameInfo", "gameinfo"}, {"GameInfo2", "gameinfo2"}})
+            if (known.contains(block))
+            {
+                // 新版本的未知布局仍原样保存，不把它误当作可编辑字典。
+                try
+                {
+                    auto node = MessagePack::Parse(blockBytes(block));
+                    if (node.Type == MessagePack::Kind::Map)
+                        data->Sections.emplace(name, Data::Section{block, 0, std::move(node)});
+                }
+                catch (const std::exception &)
+                {
+                }
+            }
         if (known.contains("KKEx"))
         {
             data->Extensions = MessagePack::Parse(blockBytes("KKEx"));
@@ -514,7 +530,7 @@ namespace hs2
 
     bool CharacterDocument::IsOriginal() const
     {
-        if (data_->Parameter || data_->Cover)
+        if (data_->Cover)
             return false;
         for (auto &[name, section] : data_->Sections)
             if (!section.Node.ContentEquals(data_->SourceSections.at(name).Node))
@@ -529,8 +545,7 @@ namespace hs2
             return true;
         if (SourceHash() != other.SourceHash())
             return false;
-        if (data_->Parameter.has_value() != other.data_->Parameter.has_value() || data_->Cover != other.data_->Cover ||
-            (data_->Parameter && !data_->Parameter->ContentEquals(*other.data_->Parameter)))
+        if (data_->Cover != other.data_->Cover)
             return false;
         for (auto &[name, section] : data_->Sections)
             if (!section.Node.ContentEquals(other.data_->Sections.at(name).Node))
@@ -557,6 +572,8 @@ namespace hs2
                        : current.Set(tokens[depth], replace(current.Require(tokens[depth]), depth + 1));
         };
         auto updated = replace(root, 1);
+        if (name == "parameter" && updated.Require(std::string("sex")).Integer() != data_->Sex)
+            throw std::invalid_argument("性别在创建工程时确定，不能直接修改已有角色的性别字段");
         if (updated.ContentEquals(root))
             return *this;
         auto next = std::make_shared<Data>(*data_);
@@ -577,10 +594,8 @@ namespace hs2
     {
         if (name.empty() || name.size() > 1024 || name.find('\0') != std::string::npos)
             throw std::invalid_argument("人物姓名为空或过长");
-        auto next = std::make_shared<Data>(*data_);
-        auto parameter = next->Parameter.value_or(MessagePack::Parse(BlockBytes("Parameter")));
-        next->Parameter = parameter.Set(std::string("fullname"), MessagePack::Scalar(std::move(name)), true);
-        return CharacterDocument(next);
+        return WithNode("parameter",
+                        Node("parameter").Set(std::string("fullname"), MessagePack::Scalar(std::move(name)), true));
     }
 
     CharacterDocument CharacterDocument::WithCover(Bytes png) const
@@ -639,11 +654,13 @@ namespace hs2
                     Append(replacement, raw.subspan(old.Position));
                 }
             }
-            else if (block.Name == "Parameter" && data_->Parameter)
-                replacement = data_->Parameter->ToBytes();
             else if (block.Name == "KKEx" && (!data_->Extensions || !data_->SourceExtensions ||
                                               !data_->Extensions->ContentEquals(*data_->SourceExtensions)))
                 replacement = data_->Extensions ? data_->Extensions->ToBytes() : MessagePack::Map().ToBytes();
+            else
+                for (auto &[name, section] : data_->Sections)
+                    if (section.Block == block.Name && !section.Node.ContentEquals(data_->SourceSections.at(name).Node))
+                        replacement = section.Node.ToBytes();
             auto row = entries.Require(static_cast<std::int64_t>(block.TableIndex));
             row = row.Set(std::string("pos"),
                           row.Require(std::string("pos")).WithScalar(static_cast<std::int64_t>(offset)));
@@ -659,7 +676,7 @@ namespace hs2
             auto extension = data_->Extensions->ToBytes();
             auto row = MessagePack::Map(
                 {{std::string("name"), MessagePack::Scalar(std::string("KKEx"))},
-                 {std::string("version"), MessagePack::Scalar(std::string("1"))},
+                 {std::string("version"), MessagePack::Scalar(std::string("3"))},
                  {std::string("pos"), MessagePack::Scalar(static_cast<std::int64_t>(payload.size()))},
                  {std::string("size"), MessagePack::Scalar(static_cast<std::int64_t>(extension.size()))}});
             auto children = entries.Children;
@@ -766,6 +783,15 @@ namespace hs2
     void CharacterEditSession::RestoreCategory(std::string_view category)
     {
         EndGesture();
+        if (category == "parameter")
+        {
+            auto next = Document;
+            for (auto root : {"parameter", "parameter2", "gameinfo", "gameinfo2"})
+                if (Baseline.Contains(root))
+                    next = next.WithNode(root, Baseline.Node(root));
+            Apply(next);
+            return;
+        }
         std::string root = category == "makeup" ? "face.makeup" : std::string(category);
         auto next = CharacterAssetReferences::Restore(Document.WithNode(root, Baseline.Node(root)), Baseline, root);
         if (category == "face" && Document.Contains("face.makeup"))

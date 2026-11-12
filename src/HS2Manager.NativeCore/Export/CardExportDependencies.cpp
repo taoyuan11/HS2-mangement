@@ -50,6 +50,7 @@ namespace hs2
                                                       "com.deathweasel.bepinex.materialeditor",
                                                       "KSOX",
                                                       "KCOX",
+                                                      "com.deathweasel.bepinex.uncensorselector",
                                                       "KK_InvisibleBody",
                                                       "TestCharaCustomFunctionController",
                                                       "com.fairbair.hs2_boobsettings",
@@ -70,6 +71,8 @@ namespace hs2
                 return true;
             if (id == "KSOX")
                 return version >= 0 && version <= 2;
+            if (id == "com.deathweasel.bepinex.uncensorselector")
+                return version == 1 || version == 2;
             if (id == "KCOX" || id == "KK_PregnancyPlus" || id == "marco.authordata")
                 return version == 1;
             if (id == "com.deathweasel.bepinex.materialeditor")
@@ -175,7 +178,7 @@ namespace hs2
 
         struct Resources
         {
-            std::set<std::string> Paths, Shaders, InactivePlugins;
+            std::set<std::string> Paths, Shaders, InactivePlugins, BodyGuids;
             std::vector<std::string> Issues;
         };
 
@@ -233,6 +236,13 @@ namespace hs2
                             }
                             else if (auto value = std::get_if<std::string>(&node.ScalarValue))
                             {
+                                if (id == "com.deathweasel.bepinex.uncensorselector" &&
+                                    (key == "BodyGUID" || key == "PenisGUID" || key == "BallsGUID") &&
+                                    !value->empty() && !value->starts_with("Default."))
+                                    result.BodyGuids.insert(*value);
+                                if (id == "com.deathweasel.bepinex.uncensorselector" && key == "UncensorGUID" &&
+                                    !value->empty())
+                                    result.Issues.push_back("旧版身体引用需要先在创作工程中解析：" + *value);
                                 if (shaderProvider && key == "ShaderName" && !value->empty())
                                     result.Shaders.insert(*value);
                                 if (!full)
@@ -845,6 +855,12 @@ namespace hs2
                         issues.insert("依赖库版本不足：" + reference.Name + " " + reference.Version);
                     addAssembly(*candidates.front());
                 }
+                else if (assembly.AssemblyName == "ConfigurationManager" && assembly.Version == "16.4.0.0" &&
+                         reference.Name == "BepInEx.BepIn4Patcher")
+                    // This version retains SavedKeyboardShortcut for BepInEx 4 callers.
+                    // LegacySettingSearcher probes Type.GetType(..., false) before using it;
+                    // BepInEx 5 and the character plugins do not require that compatibility API.
+                    warnings.insert("Configuration Manager 16.4 的可选 BepInEx 4 兼容组件未安装；使用 BepInEx 5 功能");
                 else if (!state.BaseAssembly(reference.Name))
                     issues.insert("缺少依赖库：" + reference.Name + "（" + Utf8(source.filename()) + "）");
             }
@@ -881,6 +897,74 @@ namespace hs2
             }
             if (resourcesIncluded)
                 addCompanions(assembly);
+        };
+        std::set<std::string> checkedScripts;
+        std::unique_ptr<UnityClassDatabase> scriptDatabase;
+        auto checkScripts = [&](const ModFileInfo *owner, const fs::path &physical, const std::string &relative)
+        {
+            if (!pluginsIncluded ||
+                !checkedScripts.insert((owner ? owner->Path : Utf8(physical)) + ":" + relative).second)
+                return;
+            try
+            {
+                if (!scriptDatabase)
+                {
+                    auto database = state.ClassDatabase;
+                    if (!database)
+                    {
+                        std::wstring executable(32768, L'\0');
+                        executable.resize(
+                            GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size())));
+                        database = fs::path(executable).parent_path() / L"Resources/classdata.tpk";
+                    }
+                    scriptDatabase = std::make_unique<UnityClassDatabase>(*database);
+                }
+                Bytes bytes;
+                if (owner)
+                {
+                    ZipArchive archive(Path(owner->Path));
+                    auto entry = archive.Find(relative);
+                    if (!entry)
+                        throw std::runtime_error("资源包条目不存在");
+                    bytes = archive.Read(*entry, 512ull * 1024 * 1024);
+                }
+                else
+                    bytes = ReadFile(physical, 512ull * 1024 * 1024, state.Cancellation);
+                UnityBundle bundle(bytes, {}, state.Cancellation);
+                if (bundle.Entries().empty())
+                    throw std::runtime_error("资源包为空");
+                auto &entry = bundle.Entries().front();
+                UnitySerializedFile file(bundle.ReadEntry(entry.Name, 0, entry.Size), scriptDatabase.get());
+                for (auto &asset : file.Assets())
+                    if (asset.ClassId == 115)
+                    {
+                        CheckCancelled(state.Cancellation);
+                        auto script = file.Read(asset.PathId);
+                        auto name = script.Get("m_AssemblyName").Text;
+                        if (Lower(name).ends_with(".dll"))
+                            name.resize(name.size() - 4);
+                        if (name.empty() || state.BaseAssembly(name))
+                            continue;
+                        const PluginFileInfo *selected = nullptr;
+                        for (auto &candidate : state.Index.PluginFiles)
+                            if (Lower(candidate.AssemblyName) == Lower(name))
+                                if (!selected ||
+                                    PluginFileIndex::CompareVersions(candidate.Version, selected->Version) > 0)
+                                    selected = &candidate;
+                        if (selected)
+                            addAssembly(*selected);
+                        else
+                            issues.insert("资源组件依赖库缺失：" + name + "（" + relative + "）");
+                    }
+            }
+            catch (const Cancelled &)
+            {
+                throw;
+            }
+            catch (const std::exception &error)
+            {
+                issues.insert("无法验证资源组件依赖：" + relative + "：" + error.what());
+            }
         };
         auto addBundle = [&](const ModFileInfo &owner, const std::string &relative,
                              const std::vector<std::string> &assets, bool texture, bool thumbnail)
@@ -926,16 +1010,26 @@ namespace hs2
                         return;
                 }
                 if (inOwner(normalized))
+                {
+                    if (!texture && !thumbnail)
+                        checkScripts(&owner, {}, normalized);
                     return;
+                }
                 if (fs::exists(physical))
                 {
                     if (resourcesIncluded && !state.StockBundles().contains(Lower(normalized)))
                         add(physical, normalized, CardExportFileKind::Resource);
+                    if (!texture && !thumbnail)
+                        checkScripts(nullptr, physical, normalized);
                     return;
                 }
                 auto provider = state.Bundles.find(Lower(normalized));
                 if (provider != state.Bundles.end())
+                {
                     addMod(*provider->second);
+                    if (!texture && !thumbnail)
+                        checkScripts(provider->second, {}, normalized);
+                }
                 else if (resourcesIncluded)
                 {
                     if (thumbnail)
@@ -1028,6 +1122,26 @@ namespace hs2
         }
         if (!card.Dependencies.empty())
             addPlugin("com.bepis.bepinex.sideloader", {}, false);
+        if (resourcesIncluded)
+            for (const auto &guid : resources.BodyGuids)
+            {
+                const ModFileInfo *found = nullptr;
+                for (const auto &mod : state.Mods)
+                    if (mod.ExportMetadata &&
+                        std::find(mod.ExportMetadata->BodyGuids.begin(), mod.ExportMetadata->BodyGuids.end(), guid) !=
+                            mod.ExportMetadata->BodyGuids.end())
+                        found = &mod;
+                if (found)
+                {
+                    addMod(*found);
+                    addPlugin("com.bepis.bepinex.sideloader", {}, false);
+                    if (found->ExportMetadata->BodyBundles.contains(guid))
+                        for (const auto &bundle : found->ExportMetadata->BodyBundles.at(guid))
+                            addBundle(*found, bundle, {}, false, false);
+                }
+                else
+                    issues.insert("身体素材依赖缺失：" + guid);
+            }
         if (!card.PluginDataIds.empty())
             addPlugin("com.bepis.bepinex.extendedsave", {}, false);
         if (pluginsIncluded)

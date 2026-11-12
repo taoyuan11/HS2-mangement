@@ -301,6 +301,32 @@ namespace
                                   return issue.find("MissingIntegrationLibrary") != std::string::npos;
                               }),
               "required plugin dependency still validates its transitive assemblies");
+        auto configuration = makePlugin("ConfigurationManager", "com.bepis.bepinex.configurationmanager");
+        configuration.Version = "16.4.0.0";
+        configuration.References.push_back({"BepInEx.BepIn4Patcher", "1.0.0.0"});
+        pluginIndex.PluginFiles = {configuration, makePlugin("ExtendedSave", "com.bepis.bepinex.extendedsave")};
+        dependencyCard.PluginDataIds = {"com.bepis.bepinex.configurationmanager"};
+        auto legacy = CardExportDependencies(game, pluginIndex).Collect(dependencyCard, CardExportLevel::WithPlugins);
+        Check(std::none_of(legacy.Issues.begin(), legacy.Issues.end(),
+                           [](auto &issue)
+                           {
+                               return issue.find("BepIn4Patcher") != std::string::npos;
+                           }) &&
+                  std::any_of(legacy.Warnings.begin(), legacy.Warnings.end(),
+                              [](auto &warning)
+                              {
+                                  return warning.find("BepInEx 4") != std::string::npos;
+                              }),
+              "verified configuration manager legacy compatibility is optional and reported");
+        pluginIndex.PluginFiles.front().Version = "17.0.0.0";
+        auto unverified =
+            CardExportDependencies(game, pluginIndex).Collect(dependencyCard, CardExportLevel::WithPlugins);
+        Check(std::any_of(unverified.Issues.begin(), unverified.Issues.end(),
+                          [](auto &issue)
+                          {
+                              return issue.find("BepIn4Patcher") != std::string::npos;
+                          }),
+              "unverified plugin versions retain dependency validation");
         std::stop_source stop;
         stop.request_stop();
         auto cancelled = service.Export(plan, {}, stop.get_token());
@@ -452,7 +478,7 @@ namespace
         ZipFile(
             source,
             {{"manifest.xml",
-              R"(<manifest schema-ver="1"><guid>new.mod</guid><name>Fixture &amp; Mod</name><version>2.1</version><game>HS2</game><migrationInfo><info migrationType="Migrate" guidOld="old.mod" guidNew="new.mod" category="so_hair_b" idOld="1" idNew="2"/></migrationInfo><MaterialEditor><Shader Name="Custom/Test" AssetBundle="shader/custom.unity3d"/></MaterialEditor></manifest>)"},
+              R"(<manifest schema-ver="1"><guid>new.mod</guid><name>Fixture &amp; Mod</name><version>2.1</version><game>HS2</game><migrationInfo><info migrationType="Migrate" guidOld="old.mod" guidNew="new.mod" category="so_hair_b" idOld="1" idNew="2"/></migrationInfo><MaterialEditor><Shader Name="Custom/Test" AssetBundle="shader/custom.unity3d"/></MaterialEditor><KK_UncensorSelector><body><guid>body.fixture</guid></body></KK_UncensorSelector></manifest>)"},
              {"abdata/test.bytes", "unchanged"}});
         auto mod = ModDependencyService::ReadManifest(source);
         Check(mod.Guid == "new.mod" && mod.Name == "Fixture & Mod" && mod.Compatible, "native XML manifest parse");
@@ -462,6 +488,9 @@ namespace
         Check(mod.ExportMetadata && mod.ExportMetadata->Shaders.size() == 1 &&
                   mod.ExportMetadata->Shaders[0].Bundles[0] == "shader/custom.unity3d",
               "shader provider metadata");
+        Check(mod.ExportMetadata->BodyGuids == std::vector<std::string>{"body.fixture"} &&
+                  mod.ExportMetadata->Version == 2,
+              "body provider dependency metadata");
         CardRepository repository(root / L"ModData");
         ModDependencyService service(repository);
         auto index = service.Scan(game);

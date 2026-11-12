@@ -1,4 +1,5 @@
 #include "Agent.h"
+#include "SharedAssets.h"
 #include "Pipeline/NativeFramePipeline.h"
 #include "Runtime/CharacterRuntime.h"
 #include "Images/ImageFiles.h"
@@ -10,110 +11,10 @@ namespace hs2::agent
 {
     Json Service::Render(Json &session, const CharacterDocument &document, const Json &args, std::stop_token token)
     {
-        auto card = CardParser().Parse(document.SourcePath(), token);
-        NativeCharacterService service(game_, data_ / "Cache", runtime_ / "classdata.tpk", Resources(session, token));
-        CharacterPreviewVisibility visibility;
-        visibility.Clothing = args.value("clothing_state", 0);
-        auto prepared = service.Prepare(card, &document, visibility, {}, token);
-        GraphicsDevice graphics;
-        NativeCharacterRuntime runtime(prepared.Scene, prepared.Assets, runtime_ / "native/win-x64");
-        runtime.Update(0);
-        float sampleTime = args.value("sample_time", 0.f);
-        if (!std::isfinite(sampleTime) || sampleTime < 0 || sampleTime > 5)
-            throw std::invalid_argument("sample_time 必须介于 0 到 5 秒");
-        for (float time = 1.f / 30; time <= sampleTime; time += 1.f / 30)
-        {
-            CheckCancelled(token);
-            runtime.Update(time);
-        }
-        PoseCharacterFace(*prepared.Scene, 1);
-        NativeFrameOptions options;
-        options.StaticReference = true;
-        NativeFramePipeline pipeline(graphics, *prepared.Scene, *prepared.Assets, options);
-        Vector3 lo{INFINITY, INFINITY, INFINITY}, hi{-INFINITY, -INFINITY, -INFINITY};
-        Vector3 faceLo = lo, faceHi = hi;
-        for (auto &renderer : prepared.Scene->Renderers)
-            if (renderer->Visible() && renderer->HasGeometry())
-            {
-                // Unity 的保守蒙皮包围盒可能远大于可见人物；用实际形变顶点取景。
-                auto deformed = renderer->Deform();
-                auto world = renderer->Node->WorldMatrix();
-                for (auto &vertex : deformed.Positions)
-                {
-                    auto point = TransformPoint(vertex, world);
-                    if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
-                        throw std::runtime_error("形变产生非有限坐标");
-                    lo = {(std::min)(lo.x, point.x), (std::min)(lo.y, point.y), (std::min)(lo.z, point.z)};
-                    hi = {(std::max)(hi.x, point.x), (std::max)(hi.y, point.y), (std::max)(hi.z, point.z)};
-                    if (renderer->Node->Name == "o_head" || renderer->Role == "head")
-                    {
-                        faceLo = {(std::min)(faceLo.x, point.x), (std::min)(faceLo.y, point.y),
-                                  (std::min)(faceLo.z, point.z)};
-                        faceHi = {(std::max)(faceHi.x, point.x), (std::max)(faceHi.y, point.y),
-                                  (std::max)(faceHi.z, point.z)};
-                    }
-                }
-            }
-        if (!std::isfinite(lo.y) || hi.y <= lo.y)
-            throw std::runtime_error("人物没有可渲染几何");
-        int width = (std::clamp)(args.value("width", 512), 128, 2048);
-        int height = (std::clamp)(args.value("height", 640), 128, 2048);
         auto directory = SessionPath(session.at("session_id")) / "Renders" / Path(NewId());
-        fs::create_directories(directory);
-        Json images = Json::array();
-        auto views = args.value("views", Json::array({"front", "side", "back", "face"}));
-        if (views.empty() || views.size() > 5)
-            throw std::invalid_argument("视图数量必须为 1 到 5");
-        for (auto &v : views)
-        {
-            CheckCancelled(token);
-            auto view = v.get<std::string>();
-            float angle = view == "front" || view == "face" ? 0.f
-                          : view == "side"                  ? 1.5707963f
-                          : view == "back"                  ? 3.1415926f
-                          : view == "three_quarter"         ? .7853982f
-                                                            : INFINITY;
-            if (!std::isfinite(angle))
-                throw std::invalid_argument("未知视图");
-            NativeRenderCamera camera;
-            camera.Target = {(lo.x + hi.x) * .5f, (lo.y + hi.y) * .5f, (lo.z + hi.z) * .5f};
-            float size = hi.y - lo.y;
-            float span = (std::max)(hi.x - lo.x, hi.z - lo.z);
-            float depth = hi.z - lo.z;
-            if (view == "face")
-            {
-                if (!std::isfinite(faceLo.y))
-                    throw std::runtime_error("无法定位头部几何");
-                camera.Target = {(faceLo.x + faceHi.x) * .5f, (faceLo.y + faceHi.y) * .5f, (faceLo.z + faceHi.z) * .5f};
-                size = (faceHi.y - faceLo.y) * 1.25f;
-                span = (faceHi.x - faceLo.x) * 1.25f;
-                depth = faceHi.z - faceLo.z;
-            }
-            camera.FieldOfView = args.value("field_of_view", 35.f);
-            if (!std::isfinite(camera.FieldOfView) || camera.FieldOfView < 10 || camera.FieldOfView > 90)
-                throw std::invalid_argument("视角必须介于 10 和 90 度");
-            float distance =
-                (std::max)(size, span * height / width) / (2 * std::tan(camera.FieldOfView * .008726646f)) * 1.12f +
-                depth * .5f;
-            camera.Position = {camera.Target.x + std::sin(angle) * distance, camera.Target.y,
-                               camera.Target.z + std::cos(angle) * distance};
-            pipeline.ResetHistory();
-            auto &frame = pipeline.Draw(camera, width, height, sampleTime);
-            auto pixels = graphics.Readback(frame.Texture.Get());
-            std::set<std::uint32_t> colors;
-            for (size_t p = 0; p < pixels.size(); p += 4)
-            {
-                pixels[p + 3] = 255;
-                colors.insert((pixels[p] << 16) | (pixels[p + 1] << 8) | pixels[p + 2]);
-            }
-            if (colors.size() < 64)
-                throw std::runtime_error("渲染结果为空或缺少有效颜色");
-            auto output = directory / Path(view + ".png");
-            SavePng(output, width, height, pixels);
-            images.push_back({{"path", Utf8(output)}, {"mime_type", "image/png"}, {"view", view}});
-        }
-        Json result{
-            {"images", images}, {"revision", session["revision"]}, {"diagnostics", prepared.Scene->Diagnostics}};
+        auto result = creation::RenderCharacter(game_, data_ / "Cache", runtime_, document, args, directory,
+                                                Resources(session, token), token);
+        result["revision"] = session["revision"];
         if (!args.value("probe", false))
         {
             session["render_revision"] = session["revision"];

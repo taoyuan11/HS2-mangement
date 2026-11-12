@@ -11,7 +11,7 @@ if (!(Test-Path -LiteralPath $root -PathType Container)) {
 }
 $failures = New-Object System.Collections.Generic.List[string]
 $required = @(
-    'HS2Manager.exe', 'HS2Agent.exe', 'resources.pri', 'MainWindow.xaml', 'CharacterEditorView.xaml', 'SettingsView.xaml', 'Styles.xaml',
+    'HS2Manager.exe', 'HS2Agent.exe', 'resources.pri', 'MainWindow.xaml', 'CharacterEditorView.xaml', 'CreationView.xaml', 'SettingsView.xaml', 'Styles.xaml',
     'agent.example.json', 'agent.mcp.example.toml',
     'skills/hs2-card-agent/SKILL.md', 'skills/hs2-card-agent/references/assets.md',
     'Microsoft.UI.Xaml.dll', 'Microsoft.UI.Xaml.Controls.dll', 'Microsoft.UI.Xaml.Controls.pri', 'Microsoft.WindowsAppRuntime.dll',

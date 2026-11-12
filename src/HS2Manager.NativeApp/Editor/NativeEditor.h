@@ -1,6 +1,7 @@
 #pragma once
 #include "Character/CharacterCatalog.h"
 #include "Application/NativeWindow.h"
+#include "CreationProject.h"
 
 namespace hs2::ui
 {
@@ -14,7 +15,7 @@ namespace hs2::ui
 
         bool IsDirty() const
         {
-            return session_.IsDirty();
+            return project_ ? project_->IsDirty() : session_.IsDirty();
         }
 
         bool Saving() const
@@ -23,6 +24,16 @@ namespace hs2::ui
         }
 
         winrt::Windows::Foundation::IAsyncOperation<bool> Save(bool overwrite = false, bool chooseFolder = false);
+        void BindProject(std::shared_ptr<creation::CreationProject> project);
+        void SyncProject();
+        void BeginGesture();
+        void EndGesture();
+
+        xaml::FrameworkElement Root() const
+        {
+            return root_;
+        }
+
         void Undo();
         void Redo();
 
@@ -44,6 +55,7 @@ namespace hs2::ui
         NativeEditor(std::shared_ptr<NativeWindow> const &owner, CardRecord card, CharacterDocument document);
         void Initialize();
         void RefreshFields();
+        winrt::fire_and_forget LoadInformationChoices();
         void RefreshGroups();
         void BuildParameters();
         void UpdateState();
@@ -70,12 +82,14 @@ namespace hs2::ui
         CharacterEditSession session_;
         CharacterSliderLimits limits_;
         std::vector<CharacterField> fields_;
+        std::map<std::string, std::vector<CharacterChoice>> informationChoices_;
         winrt::Microsoft::UI::Xaml::FrameworkElement root_{nullptr};
         bool building_ = false, saving_ = false;
         winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer previewTimer_{nullptr};
         std::shared_ptr<EditorCatalogState> catalog_;
         std::stop_source catalogCancellation_;
         bool stopped_ = false;
+        std::shared_ptr<creation::CreationProject> project_;
         std::shared_ptr<const CharacterDefinition> definition_;
     };
 } // 命名空间 hs2::ui

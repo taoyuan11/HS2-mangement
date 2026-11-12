@@ -10,8 +10,8 @@ namespace hs2
     const std::vector<std::pair<std::string, std::string>> &CharacterEditSchema::Categories()
     {
         static const std::vector<std::pair<std::string, std::string>> values{
-            {"face", "脸部"},   {"body", "身体"},    {"hair", "发型"},
-            {"makeup", "妆容"}, {"clothes", "服装"}, {"accessory", "配饰"}};
+            {"face", "脸部"},    {"body", "身体"},      {"hair", "发型"},         {"makeup", "妆容"},
+            {"clothes", "服装"}, {"accessory", "配饰"}, {"parameter", "角色信息"}};
         return values;
     }
 
@@ -462,6 +462,42 @@ namespace hs2
                 }
             }
         }
+        category = "parameter";
+        group = "基本信息";
+        add("parameter.fullname", "姓名", CharacterFieldKind::Text, 0, 1, 1);
+        add("parameter.birthMonth", "生日月份", CharacterFieldKind::Number, 1, 12, 1);
+        add("parameter.birthDay", "生日日期", CharacterFieldKind::Number, 1, 31, 1);
+        toggle("parameter.futanari", "双性特征");
+        group = "性格与语音";
+        auto identity = doc.Contains("parameter2") ? std::string("parameter2") : std::string("parameter");
+        // 选项由桌面从本机游戏清单补齐，未知原值保留为当前项。
+        add(identity + ".personality", "性格", CharacterFieldKind::Choice, 0, 1, 1);
+        add(identity + ".voiceRate", "音高", CharacterFieldKind::Number);
+        group = "原版属性";
+        for (auto [key, label] : {std::pair{"trait", "特征"}, {"mind", "个性"}, {"hAttribute", "偏好"}})
+            add("parameter2." + std::string(key), label, CharacterFieldKind::Choice, 0, 1, 1);
+        group = "游戏状态";
+        for (auto [key, label] : {std::pair{"Favor", "好感"},
+                                  {"Enjoyment", "愉悦"},
+                                  {"Aversion", "厌恶"},
+                                  {"Slavery", "服从"},
+                                  {"Broken", "崩坏"},
+                                  {"Dependence", "依赖"},
+                                  {"Dirty", "污秽"},
+                                  {"Tiredness", "疲劳"},
+                                  {"Toilet", "尿意"},
+                                  {"Libido", "欲望"},
+                                  {"alertness", "警戒"},
+                                  {"resistH", "亲密耐性"},
+                                  {"resistPain", "疼痛耐性"},
+                                  {"resistAnal", "后庭耐性"}})
+            add("gameinfo2." + std::string(key), label, CharacterFieldKind::Number, 0, 100, 1);
+        for (auto [key, label] : {std::pair{"lockNowState", "锁定当前状态"},
+                                  {"lockBroken", "锁定崩坏"},
+                                  {"lockDependence", "锁定依赖"},
+                                  {"isConcierge", "礼宾角色"}})
+            toggle("gameinfo2." + std::string(key), label);
+        add("gameinfo2.hCount", "亲密次数", CharacterFieldKind::Number, 0, 1000000, 1);
         return fields;
     }
 }

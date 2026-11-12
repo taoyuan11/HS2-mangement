@@ -1,5 +1,6 @@
 #include "Character/CharacterCatalog.h"
 #include "Editor/NativeEditor.h"
+#include "CreationService.h"
 #include "PostProcessing/NativeFullscreenPass.h"
 #include <cstring>
 #include <robuffer.h>
@@ -17,6 +18,36 @@ namespace hs2::ui
         std::unique_ptr<CharacterCatalog> Catalog;
         fs::path Game, Data, Tpk;
     };
+
+    fire_and_forget NativeEditor::LoadInformationChoices()
+    {
+        auto lifetime = shared_from_this();
+        auto owner = owner_.lock();
+        if (!owner)
+            co_return;
+        auto game = Path(owner->settings_.GamePath);
+        auto tpk = ExecutableDirectory() / "classdata.tpk";
+        auto token = catalogCancellation_.get_token();
+        apartment_context ui;
+        std::map<std::string, std::vector<CharacterChoice>> choices;
+        std::string error;
+        co_await resume_background();
+        try
+        {
+            choices = creation::InformationChoices(game, tpk, token);
+        }
+        catch (const std::exception &e)
+        {
+            error = e.what();
+        }
+        co_await ui;
+        if (stopped_ || token.stop_requested())
+            co_return;
+        informationChoices_ = std::move(choices);
+        RefreshFields();
+        if (!error.empty())
+            Get<TextBlock>(L"EditorMessage").Text(to_hstring(error));
+    }
 
     void NativeEditor::Stop()
     {
@@ -45,7 +76,7 @@ namespace hs2::ui
             }
             co_return;
         }
-        session_.BeginGesture();
+        BeginGesture();
         try
         {
             session_.SetValue(field.Path, value);
@@ -105,7 +136,7 @@ namespace hs2::ui
         {
             Get<TextBlock>(L"EditorMessage").Text(e.message());
         }
-        session_.EndGesture();
+        EndGesture();
         saving_ = false;
         owner->SetBusy(false);
         RefreshFields();

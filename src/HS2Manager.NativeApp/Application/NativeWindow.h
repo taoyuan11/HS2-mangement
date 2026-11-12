@@ -28,6 +28,7 @@ namespace hs2::ui
     namespace xaml = winrt::Microsoft::UI::Xaml;
     namespace controls = xaml::Controls;
     class NativeEditor;
+    class NativeCreation;
     class NativePreview;
 
     class NativeWindow : public std::enable_shared_from_this<NativeWindow>
@@ -44,6 +45,7 @@ namespace hs2::ui
 
     private:
         friend class NativeEditor;
+        friend class NativeCreation;
         friend class NativePreview;
         NativeWindow(fs::path dataDirectory, std::unique_ptr<CardRepository> repository);
         void Initialize();
@@ -75,6 +77,7 @@ namespace hs2::ui
                                             bool accessories = true);
         winrt::fire_and_forget ShowReport(winrt::hstring title, winrt::hstring message);
         winrt::fire_and_forget OpenEditor(CardRecord card);
+        winrt::fire_and_forget OpenCreation(std::string mode, fs::path source = {});
         winrt::Windows::Foundation::IAsyncOperation<bool> CloseEditor();
         winrt::fire_and_forget RequestClose();
         winrt::fire_and_forget LoadCover(winrt::com_ptr<Observable> item, CardRecord card,
@@ -103,6 +106,7 @@ namespace hs2::ui
         std::set<std::string> duplicates_;
         std::jthread work_;
         std::shared_ptr<NativeEditor> editor_;
+        std::shared_ptr<NativeCreation> creation_;
         std::shared_ptr<NativePreview> preview_;
         std::shared_ptr<TemporaryPreviewSession> temporaryPreview_;
         std::stop_source temporaryCancellation_;

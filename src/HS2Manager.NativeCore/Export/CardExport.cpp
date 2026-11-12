@@ -228,7 +228,7 @@ namespace hs2
         if (!Issues.empty())
             result += "，" + std::to_string(Issues.size()) + " 项问题（详见导出清单）";
         if (!Warnings.empty())
-            result += "，" + std::to_string(Warnings.size()) + " 项缩略图提示（不影响人物外观）";
+            result += "，" + std::to_string(Warnings.size()) + " 项提示（详见导出清单）";
         return result;
     }
 

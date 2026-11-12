@@ -362,20 +362,25 @@ namespace hs2::asset
         const auto &scene = *character.Scene;
         Geometry result;
         std::map<std::string, NativeSceneNode *> bones;
+        std::set<std::string> sharedBones;
+        for (const auto &part : scene.Parts)
+            if (part->Definition->Role == "rig" || part->Definition->Role == "headRig")
+                for (auto *node : part->Nodes)
+                    sharedBones.insert(node->Name);
         for (const auto &[name, node] : scene.Bones)
             bones.emplace(name, node);
         for (const auto &renderer : scene.Renderers)
             for (auto *node : renderer->Bones)
-                if (node)
+                for (; node && node != scene.Root.get(); node = node->Parent())
                     bones.try_emplace(node->Name, node);
         for (const auto &[name, node] : bones)
         {
             auto *parent = node->Parent();
             while (parent && !bones.contains(parent->Name))
                 parent = parent->Parent();
-            result.Bones.push_back({name, parent ? parent->Name : "",
-                                    scene.Root->InverseTransformPoint(node->Position()),
-                                    Mul(Inverse(scene.Root->Rotation()), node->Rotation()), false});
+            result.Bones.push_back(
+                {name, parent ? parent->Name : "", scene.Root->InverseTransformPoint(node->Position()),
+                 Mul(Inverse(scene.Root->Rotation()), node->Rotation()), !sharedBones.contains(name)});
             result.Bones.back().Matrix = MultiplyMatrix(node->WorldMatrix(), scene.Root->InverseWorldMatrix());
             result.Bones.back().HasMatrix = true;
         }
@@ -387,6 +392,7 @@ namespace hs2::asset
             Mesh mesh;
             mesh.Name = renderer->Node->Name + "_" + std::to_string(result.Meshes.size());
             mesh.Role = renderer->Role;
+            mesh.ReferenceSlot = renderer->Slot;
             auto &source = *renderer->Mesh;
             auto channel = [&](int semantic)
             {
@@ -466,10 +472,11 @@ namespace hs2::asset
         }
         for (const auto &mesh : g.Meshes)
         {
-            Json m = {{"name", mesh.Name},           {"role", mesh.Role},          {"indices", mesh.Indices},
-                      {"materials", mesh.Materials}, {"positions", Json::array()}, {"normals", Json::array()},
-                      {"tangents", Json::array()},   {"uv", Json::array()},        {"uv1", Json::array()},
-                      {"colors", Json::array()},     {"weights", Json::array()},   {"shapes", Json::array()}};
+            Json m = {{"name", mesh.Name},        {"role", mesh.Role},           {"reference_slot", mesh.ReferenceSlot},
+                      {"indices", mesh.Indices},  {"materials", mesh.Materials}, {"positions", Json::array()},
+                      {"normals", Json::array()}, {"tangents", Json::array()},   {"uv", Json::array()},
+                      {"uv1", Json::array()},     {"colors", Json::array()},     {"weights", Json::array()},
+                      {"shapes", Json::array()}};
             for (const auto &v : mesh.Vertices)
             {
                 m["positions"].push_back(VectorJson(v.Position));
@@ -537,6 +544,7 @@ namespace hs2::asset
             Mesh mesh;
             mesh.Name = m.at("name");
             mesh.Role = m.value("role", "");
+            mesh.ReferenceSlot = m.value("reference_slot", -1);
             vertices += m.at("positions").size();
             indices += m.at("indices").size();
             Require(vertices <= 1000000 && indices <= 750000, "网格顶点或索引数量超过限制");
@@ -675,7 +683,9 @@ namespace hs2::asset
         }
         std::function<void(const std::string &)> include = [&](const std::string &name)
         {
-            if (bones.contains(name))
+            // Rebuilding against a preview of the previous package also exposes authored
+            // bones as reference nodes. Keep their authored bind pose and Added marker.
+            if (bones.contains(name) && (!incoming.contains(name) || !incoming.at(name).Added))
                 return;
             Require(incoming.contains(name), "顶点引用不存在的目标骨骼");
             Require(visiting.insert(name).second, "输入骨骼层级存在循环");
@@ -683,7 +693,7 @@ namespace hs2::asset
             bone.Added = true;
             Require(!bone.Parent.empty(), "新增骨骼必须连接到人物参考骨架");
             include(bone.Parent);
-            bones.emplace(name, std::move(bone));
+            bones.insert_or_assign(name, std::move(bone));
             visiting.erase(name);
         };
         if (kind != "accessory")

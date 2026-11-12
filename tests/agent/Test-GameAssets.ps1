@@ -2,6 +2,7 @@
     [Parameter(Mandatory)][string]$Game,
     [Parameter(Mandatory)][string]$Sandbox,
     [string]$CSharpCompiler = '',
+    [string]$CheckSource = '',
     [Parameter(Mandatory)][string]$Runner,
     [ValidateRange(15, 600)][int]$TimeoutSeconds = 120,
     [ValidateRange(1, 3)][int]$StartupAttempts = 2,
@@ -25,7 +26,8 @@ $references = @(@('HoneySelect2_Data/Managed/mscorlib.dll', 'HoneySelect2_Data/M
         ForEach-Object { '-r:' + (Join-Path $sourceRoot $_) }) + @(Get-ChildItem -LiteralPath (Join-Path $sourceRoot 'HoneySelect2_Data/Managed') -Filter 'UnityEngine*.dll' |
         ForEach-Object { '-r:' + $_.FullName })
 $plugin = Join-Path $testRoot 'BepInEx/plugins/GameAssetChecks.dll'
-& $compiler -nologo -noconfig -nostdlib+ -target:library "-out:$plugin" @references (Join-Path $PSScriptRoot 'GameAssetChecks.cs')
+if (!$CheckSource) { $CheckSource = Join-Path $PSScriptRoot 'GameAssetChecks.cs' }
+& $compiler -nologo -noconfig -nostdlib+ -target:library "-out:$plugin" @references $CheckSource
 if ($LASTEXITCODE -ne 0) {
     throw '游戏验收插件编译失败。'
 }

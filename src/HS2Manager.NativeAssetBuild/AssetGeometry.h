@@ -32,6 +32,7 @@ namespace hs2::asset
     struct Mesh
     {
         std::string Name, Role;
+        int ReferenceSlot = -1;
         std::vector<Vertex> Vertices;
         std::vector<std::uint32_t> Indices;
         std::vector<int> Materials;

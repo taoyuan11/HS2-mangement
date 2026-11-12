@@ -25,7 +25,10 @@ namespace hs2
     struct ModExportMetadata
     {
         std::vector<ExportShader> Shaders;
+        std::vector<std::string> BodyGuids;
+        std::map<std::string, std::vector<std::string>> BodyBundles;
         bool BonesFramework = false;
+        int Version = 0;
     };
 
     struct ModFileInfo

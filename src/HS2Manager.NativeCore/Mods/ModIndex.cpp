@@ -177,7 +177,7 @@ namespace hs2
     HS2_DEFINE_JSON(ModMigration, Kind, OldGuid, NewGuid, Category, OldSlot, NewSlot)
     HS2_DEFINE_JSON(ModArchiveEntry, Name, Length)
     HS2_DEFINE_JSON(ExportShader, Name, Bundles)
-    HS2_DEFINE_JSON(ModExportMetadata, Shaders, BonesFramework)
+    HS2_DEFINE_JSON(ModExportMetadata, Shaders, BodyGuids, BodyBundles, BonesFramework, Version)
     HS2_DEFINE_JSON(PluginDependency, Guid, MinimumVersion, Optional)
     HS2_DEFINE_JSON(PluginAssemblyReference, Name, Version)
     HS2_DEFINE_JSON(PluginDefinition, Guid, Name, Version, Dependencies, DataIds)
@@ -369,6 +369,19 @@ namespace hs2
                                                Integer(entry.Attribute("idNew")).value_or(-1)});
                 }
         info.ExportMetadata.emplace();
+        info.ExportMetadata->Version = 2;
+        if (const auto *bodies = root.Child("KK_UncensorSelector"))
+            for (const auto &part : bodies->Children)
+                if (part.Name == "body" || part.Name == "penis" || part.Name == "balls")
+                    if (const auto *guid = part.Child("guid"); guid && !Trim(guid->Text).empty())
+                    {
+                        auto id = Trim(guid->Text);
+                        info.ExportMetadata->BodyGuids.push_back(id);
+                        const auto *source = part.Name == "body" ? part.Child("oo_base") : &part;
+                        if (source)
+                            if (const auto *file = source->Child("file"); file && !Trim(file->Text).empty())
+                                info.ExportMetadata->BodyBundles[id].push_back(Trim(file->Text));
+                    }
         std::function<void(const XmlNode &, bool)> visit = [&](const XmlNode &node, bool materialEditor)
         {
             if (Lower(node.Name) == "bonesframework")
@@ -479,7 +492,8 @@ namespace hs2
                 if (previous != cached.end() &&
                     previous->second->Size == static_cast<std::int64_t>(fs::file_size(path)) &&
                     previous->second->ModifiedUtcTicks == ModifiedTicks(path) && previous->second->Error.empty() &&
-                    previous->second->ArchiveEntries && previous->second->ExportMetadata)
+                    previous->second->ArchiveEntries && previous->second->ExportMetadata &&
+                    previous->second->ExportMetadata->Version >= 2)
                     item = *previous->second;
                 else
                     item = ReadManifest(path);

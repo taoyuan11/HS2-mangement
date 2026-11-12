@@ -2,7 +2,7 @@ add_library(hs2_agent STATIC Agent.cpp Support.cpp Render.cpp Assets.cpp Protoco
 target_compile_features(hs2_agent PUBLIC cxx_std_20)
 target_include_directories(hs2_agent PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_options(hs2_agent PRIVATE /utf-8 /W4 /EHsc)
-target_link_libraries(hs2_agent PUBLIC hs2_asset_build crypt32 windowscodecs)
+target_link_libraries(hs2_agent PUBLIC hs2_creation crypt32 windowscodecs)
 add_executable(HS2Agent Main.cpp)
 target_compile_options(HS2Agent PRIVATE /utf-8 /W4 /EHsc)
 target_link_libraries(HS2Agent PRIVATE hs2_agent)

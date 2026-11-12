@@ -100,6 +100,16 @@ namespace hs2
             throw Cancelled();
     }
 
+    std::wstring NativeFilePath(const fs::path &path)
+    {
+        auto value = fs::absolute(path).lexically_normal().make_preferred().wstring();
+        if (value.starts_with(L"\\\\?\\"))
+            return value;
+        if (value.starts_with(L"\\\\"))
+            return L"\\\\?\\UNC\\" + value.substr(2);
+        return L"\\\\?\\" + value;
+    }
+
     std::string Utf8(const fs::path &path)
     {
         auto bytes = path.u8string();
@@ -138,7 +148,8 @@ namespace hs2
     std::int64_t ModifiedTicks(const fs::path &path)
     {
         WIN32_FILE_ATTRIBUTE_DATA data{};
-        WinCheck(GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data) != 0, "GetFileAttributesExW");
+        WinCheck(GetFileAttributesExW(NativeFilePath(path).c_str(), GetFileExInfoStandard, &data) != 0,
+                 "GetFileAttributesExW");
         ULARGE_INTEGER n{};
         n.LowPart = data.ftLastWriteTime.dwLowDateTime;
         n.HighPart = data.ftLastWriteTime.dwHighDateTime;
@@ -147,8 +158,9 @@ namespace hs2
 
     Bytes ReadFile(const fs::path &path, std::size_t limit, std::stop_token token)
     {
-        Handle handle{CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                  nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr)};
+        Handle handle{CreateFileW(NativeFilePath(path).c_str(), GENERIC_READ,
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                  FILE_FLAG_SEQUENTIAL_SCAN, nullptr)};
         WinCheck(handle.value != INVALID_HANDLE_VALUE, "读取文件");
         LARGE_INTEGER length{};
         WinCheck(GetFileSizeEx(handle.value, &length) != 0, "读取文件长度");
@@ -180,7 +192,7 @@ namespace hs2
 
     std::string HashFile(const fs::path &path, std::stop_token token)
     {
-        Handle handle{CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+        Handle handle{CreateFileW(NativeFilePath(path).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                                   FILE_FLAG_SEQUENTIAL_SCAN, nullptr)};
         WinCheck(handle.value != INVALID_HANDLE_VALUE, "读取校验文件");
         Hasher hash;
@@ -200,25 +212,25 @@ namespace hs2
 
     void WriteAtomic(const fs::path &path, std::span<const std::uint8_t> bytes)
     {
-        fs::create_directories(path.parent_path());
+        fs::create_directories(fs::path(NativeFilePath(path.parent_path())));
         auto temporary = path;
         temporary += Path("." + NewId() + ".tmp");
         try
         {
             {
-                Handle handle{CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                Handle handle{CreateFileW(NativeFilePath(temporary).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                                           FILE_ATTRIBUTE_NORMAL, nullptr)};
                 WinCheck(handle.value != INVALID_HANDLE_VALUE, "创建临时文件");
                 WriteHandle(handle.value, bytes);
             }
-            WinCheck(MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) !=
-                         0,
+            WinCheck(MoveFileExW(NativeFilePath(temporary).c_str(), NativeFilePath(path).c_str(),
+                                 MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0,
                      "提交文件");
         }
         catch (...)
         {
             std::error_code error;
-            fs::remove(temporary, error);
+            fs::remove(fs::path(NativeFilePath(temporary)), error);
             throw;
         }
     }

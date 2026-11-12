@@ -9,6 +9,11 @@ namespace hs2::ui
     };
 
     inline constexpr UiEvent UiEvents[] = {
+        {L"MainWindow", L"CreateCharacter", L"Click", L"CreateCharacter_Click"},
+        {L"MainWindow", L"CreateMod", L"Click", L"CreateMod_Click"},
+        {L"MainWindow", L"CreationProjects", L"Click", L"CreationProjects_Click"},
+        {L"MainWindow", L"CreateFromCard", L"Click", L"CreateFromCard_Click"},
+        {L"MainWindow", L"CreateFromDetails", L"Click", L"CreateFromCard_Click"},
         {L"MainWindow", L"EditorCancelWork", L"Click", L"Cancel_Click"},
         {L"MainWindow", L"Root", L"Drop", L"Window_Drop"},
         {L"MainWindow", L"Root", L"DragOver", L"Window_DragOver"},

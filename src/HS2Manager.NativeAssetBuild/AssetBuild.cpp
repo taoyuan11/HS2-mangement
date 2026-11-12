@@ -59,7 +59,9 @@ namespace hs2::asset
         auto content =
             std::to_string(source.Entry.Category) + "\r\n0\r\nhs2agent_generated\r\n" + header + "\r\n" + row + "\r\n";
         auto path =
-            output / "abdata/list/characustom" / (spec.at("sex").get<int>() == 0 ? "00" : "01") / "hs2agent.csv";
+            output / "abdata/list/characustom" / (spec.at("sex").get<int>() == 0 ? "00" : "01") /
+            (spec.contains("package_guid") ? "hs2manager_" + std::to_string(built.at("slot_id").get<int>()) + ".csv"
+                                           : "hs2agent.csv");
         WriteAtomic(path, Bytes(content.begin(), content.end()));
     }
 }

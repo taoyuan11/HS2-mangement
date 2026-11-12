@@ -20,6 +20,8 @@
 
 Blender and Unreal Engine are optional, separately installed user tools. Their automation templates are shipped as text resources and run only inside the selected editor. Neither editor nor a standalone Python interpreter is bundled.
 
+The manual creation workbench uses the same native dependencies listed above. Its editable topology, UV, sculpting, layered painting, project history and installation journal are implemented in this repository; no additional modeling editor, game presets, game shaders or plugin binaries are bundled for creation.
+
 HS2 Manager is an independent utility. HoneySelect 2, Studio, Unity assets and game assemblies belong to their respective owners. No game DLLs, MOD archives, character cards or reference screenshots are distributed. PE / CLI metadata is read as data with a restricted numeric evaluator; game or plugin code is not loaded or invoked.
 
 Historical C# / Unity dependency notices and their license texts are available in Git history alongside the retired implementations. They are not dependencies of the current C++ application.

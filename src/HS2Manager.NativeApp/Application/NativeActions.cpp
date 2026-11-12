@@ -1,4 +1,5 @@
 #include "Editor/NativeEditor.h"
+#include "Creation/NativeCreation.h"
 #include "Preview/NativePreview.h"
 #include "Application/NativeWindow.h"
 #include "Infrastructure/UiEvents.h"
@@ -78,6 +79,20 @@ namespace hs2::ui
         {
             if (closing_ || closePrompt_)
                 co_return;
+            if (name == L"CreateCharacter_Click" || name == L"CreateMod_Click" || name == L"CreationProjects_Click" ||
+                name == L"CreateFromCard_Click")
+            {
+                auto selected = Selected();
+                if (name == L"CreateFromCard_Click" && selected.empty())
+                    co_return;
+                OpenCreation(name == L"CreateMod_Click"          ? "mod"
+                             : name == L"CreationProjects_Click" ? "projects"
+                                                                 : "character",
+                             name == L"CreateFromCard_Click" ? Path(selected.front().Path) : fs::path{});
+                co_return;
+            }
+            if (name == L"Cancel_Click" && creation_)
+                creation_->Cancel();
             if (preview_ && preview_->Action(name, sender))
                 co_return;
             if (name == L"TemporaryPreview_Click")

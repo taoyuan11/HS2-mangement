@@ -92,6 +92,17 @@ namespace hs2
                         token);
     }
 
+    CardEditSaveResult CardEditService::SaveNew(const CharacterDocument &document, const fs::path &destination,
+                                                std::stop_token token)
+    {
+        CardRecord source;
+        source.Path = Utf8(document.SourcePath());
+        source.Root = Utf8(fs::absolute(destination).parent_path());
+        source.Sex = document.Sex();
+        // 新建卡没有需要覆盖的磁盘源文件，沿用另存的提交和索引恢复事务。
+        return SaveCore(document, source, destination, "EditSaveAs", document.SourceHash(), token);
+    }
+
     CardEditSaveResult CardEditService::SaveCore(const CharacterDocument &document, const CardRecord &source,
                                                  const fs::path &destination, std::string kind,
                                                  const std::string &expectedHash, std::stop_token token)

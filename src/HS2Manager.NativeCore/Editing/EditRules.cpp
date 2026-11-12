@@ -314,6 +314,42 @@ namespace hs2
     CharacterDocument CharacterEditRules::SetValue(const CharacterDocument &document, const std::string &path,
                                                    MessagePack::Value value)
     {
+        if (path == "parameter.fullname")
+        {
+            if (!std::holds_alternative<std::string>(value))
+                throw std::invalid_argument("姓名必须是文字");
+            return document.WithName(std::get<std::string>(value));
+        }
+        if (path.starts_with("parameter.") || path.starts_with("parameter2.") || path.starts_with("gameinfo2."))
+        {
+            auto fields = CharacterEditSchema::Build(document);
+            auto field = std::find_if(fields.begin(), fields.end(),
+                                      [&](const auto &f)
+                                      {
+                                          return f.Path == path;
+                                      });
+            if (field == fields.end())
+                throw std::invalid_argument("此角色信息字段不支持编辑");
+            if (field->Kind == CharacterFieldKind::Number)
+            {
+                auto number = Numeric(value);
+                if (!std::isfinite(number) || number < field->Minimum || number > field->Maximum)
+                    throw std::invalid_argument("角色信息数值超出范围");
+                if (field->DisplayScale == 1 && number != std::floor(number))
+                    throw std::invalid_argument("此角色信息必须为整数");
+            }
+            if (path == "parameter.birthMonth" || path == "parameter.birthDay")
+            {
+                int month = path.ends_with("birthMonth")
+                                ? static_cast<int>(Numeric(value))
+                                : static_cast<int>(document.Node("parameter.birthMonth").Integer());
+                int day = path.ends_with("birthDay") ? static_cast<int>(Numeric(value))
+                                                     : static_cast<int>(document.Node("parameter.birthDay").Integer());
+                constexpr int days[]{31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+                if (month < 1 || month > 12 || day < 1 || day > days[month - 1])
+                    throw std::invalid_argument("生日日期不在所选月份内，请先调整日期");
+            }
+        }
         auto next = document.WithValue(path, value);
         std::smatch match;
         if (std::regex_match(path, match, std::regex(R"(^face\.pupil\[([01])\](.+)$)")) &&
