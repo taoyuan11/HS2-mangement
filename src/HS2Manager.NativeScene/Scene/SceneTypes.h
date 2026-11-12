@@ -52,6 +52,7 @@ namespace hs2
         std::uint64_t Unsigned = 0;
         std::vector<std::uint8_t> Bytes;
         std::vector<Parameter> Children;
+        bool operator==(const Parameter &) const = default;
         const Parameter &Get(std::string_view name) const;
         bool Has(std::string_view name) const;
         float Float(std::string_view name, float fallback = 0) const;

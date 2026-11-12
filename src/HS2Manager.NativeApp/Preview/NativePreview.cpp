@@ -386,10 +386,18 @@ namespace hs2::ui
         visibility_ = visibility;
         if (auto owner = owner_.lock())
         {
-            owner->model_->Put(L"PreviewBusy", true);
             owner->model_->Put(L"HasPreviewError", false);
         }
-        generation_ = worker_->Load(card_, draft_, visibility_, true, resources_);
+        worker_->Update(*draft_, visibility_);
+    }
+
+    void NativePreview::Visibility(CharacterPreviewVisibility visibility)
+    {
+        if (visibility_ == visibility)
+            return;
+        visibility_ = visibility;
+        if (worker_)
+            worker_->Visibility(visibility);
     }
 
     void NativePreview::InvalidateCallbacks()

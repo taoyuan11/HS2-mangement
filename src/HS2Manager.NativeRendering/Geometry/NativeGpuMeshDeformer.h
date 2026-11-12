@@ -10,6 +10,7 @@ namespace hs2
         explicit NativeGpuMeshDeformer(GraphicsDevice &graphics);
         ~NativeGpuMeshDeformer();
         NativeGpuVertexStream Deform(const NativeSceneRenderer &renderer);
+        void Retain(std::span<const std::shared_ptr<NativeSceneRenderer>> renderers);
         NativeDeformedVertices Readback(NativeGpuVertexStream stream);
 
     private:

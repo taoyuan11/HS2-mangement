@@ -113,9 +113,26 @@ namespace hs2
 
     PreparedCharacter NativeCharacterService::Prepare(const CardRecord &card, const CharacterDocument *draft,
                                                       CharacterPreviewVisibility visibility, Progress progress,
-                                                      std::stop_token cancellation)
+                                                      std::stop_token cancellation, bool cacheClothingStates,
+                                                      const PreparedCharacter *reuse)
     {
         CheckCancelled(cancellation);
+        if (!reuse)
+        {
+            partTemplates_.clear();
+            texts_.clear();
+            references_.clear();
+            shapes_.reset();
+            environmentSelections_.clear();
+            extensions_.reset();
+            extensionDefinition_.reset();
+            bodySelectionCached_ = false;
+            overlayLoaded_ = false;
+            overlaySelections_.clear();
+            shoeKey_.clear();
+            heels_ = {};
+            heelDiagnostics_.clear();
+        }
         auto document = draft ? *draft : CharacterDocument::Open(Path(card.Path), cancellation);
         catalog_.Load(progress, cancellation);
         auto definition = std::make_shared<CharacterDefinition>();
@@ -128,12 +145,39 @@ namespace hs2
         definition->Hair = ParameterOf(document.Node("hair"));
         definition->Clothes = ParameterOf(document.Node("clothes"));
         definition->Diagnostics = catalog_.Warnings();
-        auto extensions = ReadCharacterExtensions(document, *definition, data_, game_, cancellation, resources_);
-        bool unlocked = false;
+        auto extensionBytes = document.Extensions() ? document.Extensions()->ToBytes() : Bytes{};
+        if (!extensions_ || extensionBytes != extensionBytes_)
+        {
+            extensions_ = std::make_shared<CharacterExtensionState>(
+                ReadCharacterExtensions(document, *definition, data_, game_, cancellation, resources_));
+            extensionDefinition_ = std::make_shared<CharacterDefinition>(*definition);
+            extensionBytes_ = std::move(extensionBytes);
+        }
+        else
+        {
+            auto const &cached = *extensionDefinition_;
+            definition->BodyVisible = cached.BodyVisible;
+            definition->EyeOpenMax = cached.EyeOpenMax;
+            definition->BoneModifiers = cached.BoneModifiers;
+            definition->MaterialEdits = cached.MaterialEdits;
+            definition->Overlays = cached.Overlays;
+            definition->Diagnostics = cached.Diagnostics;
+            auto flag = std::find_if(definition->Face.Children.begin(), definition->Face.Children.end(),
+                                     [](auto const &field)
+                                     {
+                                         return field.Name == "disableBlinking";
+                                     });
+            if (flag == definition->Face.Children.end())
+                definition->Face.Children.push_back(cached.Face.Get("disableBlinking"));
+            else
+                *flag = cached.Face.Get("disableBlinking");
+        }
+        auto const &extensions = *extensions_;
+        bool unlocked = reuse ? unlocked_ : false;
         auto pluginRoot = game_ / "BepInEx/plugins";
-        if (resources_)
+        if (!reuse && resources_)
             unlocked = resources_->Plugin(L"HS2_SliderUnlocker.dll").has_value();
-        else if (fs::is_directory(pluginRoot))
+        else if (!reuse && fs::is_directory(pluginRoot))
             for (auto &file : fs::recursive_directory_iterator(pluginRoot))
                 if (file.path().filename() == L"HS2_SliderUnlocker.dll")
                 {
@@ -144,24 +188,35 @@ namespace hs2
         unlockedFlag.Name = "unlockedSliders";
         unlockedFlag.Number = unlocked ? 1 : 0;
         definition->Hair.Children.push_back(unlockedFlag);
-        NativeShapeRig shapes(game_, unlocked);
-        auto assets = std::make_shared<NativeGpuAssetStore>(std::vector<fs::path>{}, game_, catalog_.Database(),
-                                                            cancellation, blockCache_);
+        if (!shapes_)
+            shapes_ = std::make_shared<NativeShapeRig>(game_, unlocked);
+        unlocked_ = unlocked;
+        auto &shapes = *shapes_;
+        auto assets = reuse ? reuse->Assets
+                            : std::make_shared<NativeGpuAssetStore>(std::vector<fs::path>{}, game_, catalog_.Database(),
+                                                                    cancellation, blockCache_);
+        assets->Cancellation(cancellation);
         std::set<fs::path> paths;
-        auto schemas = std::make_shared<NativeMonoSchema>(game_ / "HoneySelect2_Data/Managed", catalog_.Database());
-        assets->SetScriptSchema(
-            [weak = std::weak_ptr<NativeGpuAssetStore>(assets), schemas](const GpuAssetPointer &pointer,
-                                                                         std::string_view version)
-            {
-                auto store = weak.lock();
-                Require(bool(store), "Character asset store has expired.");
-                auto script = store->Metadata(pointer);
-                return schemas->Type(script.String("m_AssemblyName"), script.String("m_Namespace"),
-                                     script.String("m_ClassName"), version);
-            });
+        if (!reuse)
+        {
+            auto schemas = std::make_shared<NativeMonoSchema>(game_ / "HoneySelect2_Data/Managed", catalog_.Database());
+            assets->SetScriptSchema(
+                [weak = std::weak_ptr<NativeGpuAssetStore>(assets), schemas](const GpuAssetPointer &pointer,
+                                                                             std::string_view version)
+                {
+                    auto store = weak.lock();
+                    Require(bool(store), "Character asset store has expired.");
+                    auto script = store->Metadata(pointer);
+                    return schemas->Type(script.String("m_AssemblyName"), script.String("m_Namespace"),
+                                         script.String("m_ClassName"), version);
+                });
+        }
         auto reference = [&](const std::string &bundle, const std::string &name, const fs::path &archive = fs::path{})
         {
             CheckCancelled(cancellation);
+            auto referenceKey = Utf8(archive) + "\n" + bundle + "\n" + name;
+            if (auto cached = references_.find(referenceKey); cached != references_.end())
+                return cached->second;
             auto ref = catalog_.Asset(bundle, name, archive);
             if (ref.Bundle.extension() != L".png")
                 for (auto &dependency : catalog_.Dependencies(bundle, archive))
@@ -171,12 +226,17 @@ namespace hs2
                 }
             assets->AddPath(ref.Bundle);
             paths.insert(ref.Bundle);
+            references_.emplace(std::move(referenceKey), ref);
             return ref;
         };
         auto text = [&](const std::string &bundle, const std::string &name, const fs::path &archive = fs::path{})
         {
             auto ref = reference(bundle, name, archive);
-            return assets->Reader(ref.Bundle)->ReadText(name);
+            auto key = Utf8(ref.Bundle) + "\n" + name;
+            auto found = texts_.find(key);
+            if (found == texts_.end())
+                found = texts_.emplace(std::move(key), assets->Reader(ref.Bundle)->ReadText(name)).first;
+            return found->second;
         };
         auto read = [&](const std::string &bundle, const std::string &name, const fs::path &archive,
                         const std::string &role, int slot)
@@ -184,6 +244,18 @@ namespace hs2
             if (progress)
                 progress({0, 0, "读取原始模型结构：" + name});
             auto ref = reference(bundle, name, archive);
+            auto templateKey = Utf8(ref.Bundle) + "\n" + name;
+            if (auto cached = partTemplates_.find(templateKey); cached != partTemplates_.end())
+            {
+                auto part = std::make_shared<CharacterPart>(cached->second.Part);
+                part->Role = role;
+                part->Slot = slot;
+                definition->Diagnostics.insert(definition->Diagnostics.end(), cached->second.Diagnostics.begin(),
+                                               cached->second.Diagnostics.end());
+                definition->Parts.push_back(part);
+                return part;
+            }
+            auto diagnosticStart = definition->Diagnostics.size();
             auto reader = assets->Reader(ref.Bundle);
             auto prefab = assets->Prefab(ref.Bundle, name);
             const auto &raw = *prefab;
@@ -222,6 +294,10 @@ namespace hs2
                     break;
                 }
             }
+            partTemplates_.emplace(
+                std::move(templateKey),
+                PartTemplate{*part,
+                             {definition->Diagnostics.begin() + diagnosticStart, definition->Diagnostics.end()}});
             definition->Parts.push_back(part);
             return part;
         };
@@ -249,8 +325,18 @@ namespace hs2
         applyShape(*rig, "ShapeBodyInfoFemale", bodyAnimation, bodyCategories, definition->Body.Get("shapeValueBody"));
         ApplyBoneModifiers(*rig, definition->BoneModifiers);
         read("chara/oo_base.unity3d", definition->Sex == 0 ? "p_cm_body_00" : "p_cf_body_00", {}, "body", 0);
-        for (auto &supplement : ResolveCharacterBody(game_, data_, document, extensions.Uncensor, cancellation,
-                                                     resources_, catalog_.SelectedMods()))
+        auto parameterBytes = document.BlockBytes("Parameter");
+        if (!bodySelectionCached_ || bodySelection_ != extensions.Uncensor ||
+            !std::equal(parameterBytes.begin(), parameterBytes.end(), bodyParameterBytes_.begin(),
+                        bodyParameterBytes_.end()))
+        {
+            bodyParts_ = ResolveCharacterBody(game_, data_, document, extensions.Uncensor, cancellation, resources_,
+                                              catalog_.SelectedMods());
+            bodySelection_ = extensions.Uncensor;
+            bodyParameterBytes_.assign(parameterBytes.begin(), parameterBytes.end());
+            bodySelectionCached_ = true;
+        }
+        for (auto &supplement : bodyParts_)
         {
             auto part = read(supplement.Bundle, supplement.Asset, supplement.Archive, "supplement",
                              supplement.Kind == "Body"    ? 0
@@ -487,8 +573,10 @@ namespace hs2
         for (auto &extra : extensions.Accessories)
             add("accessory.parts[" + std::to_string(extra.Slot) + "].id", "accessory", extra.Slot, extra.Parameters,
                 &extra);
-        ApplyCharacterPushUp(*definition, extensions, bodyAnimation, worn.contains(2) && visibility.ClothesVisible(2),
-                             worn.contains(0) && visibility.ClothesVisible(0));
+        if (!cacheClothingStates)
+            ApplyCharacterPushUp(*definition, extensions, bodyAnimation,
+                                 worn.contains(2) && visibility.ClothesVisible(2),
+                                 worn.contains(0) && visibility.ClothesVisible(0));
         auto selectCategory = [&](const std::string &key, const std::string &path)
         {
             if (!document.Contains(path))
@@ -556,35 +644,84 @@ namespace hs2
                 definition->MotionState = entry.Get("Clip");
                 break;
             }
-        definition->Heels = visibility.ClothesVisible(7)
-                                ? ReadCharacterHeels(worn.contains(7) ? &worn.at(7) : nullptr, definition->Diagnostics)
-                                : HeelDefinition{};
-        definition->ColliderSupport = ReadCharacterColliders(game_, resources_);
+        std::string shoeKey;
+        if (worn.contains(7))
+        {
+            auto const &shoe = worn.at(7);
+            shoeKey = Utf8(shoe.Archive) + "\n" + shoe.Bundle + "\n" + std::to_string(shoe.Id) + "\n" + shoe.Guid;
+        }
+        if (shoeKey != shoeKey_)
+        {
+            shoeKey_ = std::move(shoeKey);
+            heelDiagnostics_.clear();
+            heels_ = ReadCharacterHeels(worn.contains(7) ? &worn.at(7) : nullptr, heelDiagnostics_);
+        }
+        definition->Diagnostics.insert(definition->Diagnostics.end(), heelDiagnostics_.begin(), heelDiagnostics_.end());
+        if (cacheClothingStates)
+            PrepareCharacterClothingStates(*definition, extensions, bodyAnimation, worn.contains(2), worn.contains(0),
+                                           heels_);
+        else
+            definition->Heels = visibility.ClothesVisible(7) ? heels_ : HeelDefinition{};
+        definition->ColliderSupport =
+            reuse ? reuse->Scene->Definition->ColliderSupport : ReadCharacterColliders(game_, resources_);
         if (!definition->Overlays.empty() ||
             std::any_of(definition->MaterialEdits.begin(), definition->MaterialEdits.end(),
                         [](auto &e)
                         {
                             return e.Kind == "shader";
                         }))
-            for (auto &bundle :
-                 ExtractUnityBundles(PreviewResourceFile(game_, resources_, "BepInEx/plugins/HS2_OverlayMods.dll"),
-                                     data_ / "NativeCpp" / "resources" / "shader-data", cancellation))
+        {
+            if (!overlayLoaded_)
             {
-                assets->AddPath(bundle);
-                auto reader = assets->Reader(bundle);
-                if (reader->TryFind("composite", 48))
-                    definition->Selections.push_back({"overlay.composite", {bundle, "composite"}});
-                if (reader->TryFind("Eye", 48))
-                    definition->Selections.push_back({"overlay.eye", {bundle, "Eye"}});
+                for (auto &bundle :
+                     ExtractUnityBundles(PreviewResourceFile(game_, resources_, "BepInEx/plugins/HS2_OverlayMods.dll"),
+                                         data_ / "NativeCpp" / "resources" / "shader-data", cancellation))
+                {
+                    assets->AddPath(bundle);
+                    auto reader = assets->Reader(bundle);
+                    if (reader->TryFind("composite", 48))
+                        overlaySelections_.push_back({"overlay.composite", {bundle, "composite"}});
+                    if (reader->TryFind("Eye", 48))
+                        overlaySelections_.push_back({"overlay.eye", {bundle, "Eye"}});
+                }
+                overlayLoaded_ = true;
             }
+            definition->Selections.insert(definition->Selections.end(), overlaySelections_.begin(),
+                                          overlaySelections_.end());
+        }
         if (progress)
             progress({0, 0, "读取角色光照与后处理设置"});
-        definition->Environment =
-            ReadCharacterEnvironment(game_, data_ / "NativeCpp" / "resources", *assets, definition->Selections,
-                                     definition->Diagnostics, cancellation, resources_);
+        if (reuse)
+        {
+            definition->Environment = reuse->Scene->Definition->Environment;
+            definition->Selections.insert(definition->Selections.end(), environmentSelections_.begin(),
+                                          environmentSelections_.end());
+        }
+        else
+        {
+            auto start = definition->Selections.size();
+            definition->Environment =
+                ReadCharacterEnvironment(game_, data_ / "NativeCpp" / "resources", *assets, definition->Selections,
+                                         definition->Diagnostics, cancellation, resources_);
+            environmentSelections_.assign(definition->Selections.begin() + start, definition->Selections.end());
+        }
         if (progress)
             progress({0, 0, "读取材质编辑器着色器配置"});
-        ReadCharacterShaders(game_, data_, catalog_, *assets, *definition, cancellation, resources_);
+        bool knownShaders = reuse && std::all_of(definition->MaterialEdits.begin(), definition->MaterialEdits.end(),
+                                                 [&](auto const &edit)
+                                                 {
+                                                     return edit.Kind != "shader" ||
+                                                            std::any_of(reuse->Scene->Definition->Shaders.begin(),
+                                                                        reuse->Scene->Definition->Shaders.end(),
+                                                                        [&](auto const &shader)
+                                                                        {
+                                                                            return shader.Name == edit.Text;
+                                                                        });
+                                                 });
+        if (knownShaders)
+            definition->Shaders = reuse->Scene->Definition->Shaders;
+        else
+            ReadCharacterShaders(game_, data_, catalog_, *assets, *definition, cancellation, resources_);
         for (auto &parameter : definition->Body.Children)
             if (parameter.Name == "paintInfo")
                 for (auto &paint : parameter.Children)
@@ -621,6 +758,6 @@ namespace hs2
         auto scene = AssembleCharacter(definition, *assets, cancellation);
         CheckCancelled(cancellation);
         Require(!scene->Renderers.empty(), "No character renderers were assembled.");
-        return {scene, assets};
+        return {scene, assets, document};
     }
 }

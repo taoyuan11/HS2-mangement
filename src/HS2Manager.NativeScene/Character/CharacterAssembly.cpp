@@ -553,6 +553,136 @@ namespace hs2
                     }
     }
 
+    bool CharacterSceneRequiresRuntimeReset(const NativeCharacterScene &scene, const NativeCharacterScene &next)
+    {
+        auto samePart = [](auto const &a, auto const &b)
+        {
+            return a.Role == b.Role && a.Slot == b.Slot && a.Prefab == b.Prefab;
+        };
+        auto sameBones = [](auto const &a, auto const &b)
+        {
+            return a.size() == b.size() &&
+                   std::equal(a.begin(), a.end(), b.begin(),
+                              [](auto const &a, auto const &b)
+                              {
+                                  return a.Name == b.Name && a.Parent == b.Parent && a.Position.x == b.Position.x &&
+                                         a.Position.y == b.Position.y && a.Position.z == b.Position.z &&
+                                         a.Scale.x == b.Scale.x && a.Scale.y == b.Scale.y && a.Scale.z == b.Scale.z &&
+                                         a.Rotation.x == b.Rotation.x && a.Rotation.y == b.Rotation.y &&
+                                         a.Rotation.z == b.Rotation.z && a.Rotation.w == b.Rotation.w;
+                              });
+        };
+        bool reshape =
+            scene.Parts.size() != next.Parts.size() ||
+            scene.Definition->Heels.Height != next.Definition->Heels.Height ||
+            scene.Definition->EyeOpenMax != next.Definition->EyeOpenMax ||
+            scene.Definition->Face.Get("disableBlinking") != next.Definition->Face.Get("disableBlinking") ||
+            scene.Definition->Body.Get("bustSoftness") != next.Definition->Body.Get("bustSoftness") ||
+            scene.Definition->Body.Get("bustWeight") != next.Definition->Body.Get("bustWeight") ||
+            scene.Definition->Body.Get("effectiveBustSoftness") != next.Definition->Body.Get("effectiveBustSoftness");
+        for (auto const &part : next.Parts)
+        {
+            auto old = std::find_if(scene.Parts.begin(), scene.Parts.end(),
+                                    [&](auto const &old)
+                                    {
+                                        return samePart(*old->Definition, *part->Definition);
+                                    });
+            if (old == scene.Parts.end())
+            {
+                reshape = true;
+                continue;
+            }
+            auto const &a = *(*old)->Definition, &b = *part->Definition;
+            reshape |= a.Parent != b.Parent || !sameBones(a.Bones, b.Bones) ||
+                       !sameBones(a.UnmodifiedBones, b.UnmodifiedBones) || a.Adjustments != b.Adjustments ||
+                       a.HideOptions != b.HideOptions;
+            for (auto key : {"dictBundle", "noShake", "partsOfHead", "parentKey"})
+                reshape |= a.Parameters.Get(key) != b.Parameters.Get(key);
+        }
+        return reshape;
+    }
+
+    bool UpdateCharacterScene(NativeCharacterScene &scene, NativeCharacterScene &next)
+    {
+        auto samePart = [](auto const &a, auto const &b)
+        {
+            return a.Role == b.Role && a.Slot == b.Slot && a.Prefab == b.Prefab;
+        };
+        bool reshape = CharacterSceneRequiresRuntimeReset(scene, next);
+        if (CharacterSceneTopologyMatches(scene, next))
+        {
+            // 颜色、光泽等编辑沿用动画和物理状态，避免每次拖动都重置头发或布料。
+            for (auto const &part : next.Parts)
+            {
+                auto old = std::find_if(scene.Parts.begin(), scene.Parts.end(),
+                                        [&](auto const &old)
+                                        {
+                                            return samePart(*old->Definition, *part->Definition);
+                                        });
+                *(*old)->Definition = *part->Definition;
+                if (reshape)
+                    for (size_t i = 0; i < part->Nodes.size(); ++i)
+                        (*old)->Nodes[i]->Active = part->Nodes[i]->Active;
+            }
+            auto parts = scene.Definition->Parts;
+            for (auto const &renderer : scene.Renderers)
+                if (auto replacement = std::find_if(next.Renderers.begin(), next.Renderers.end(),
+                                                    [&](auto const &item)
+                                                    {
+                                                        return item->Role == renderer->Role &&
+                                                               item->Slot == renderer->Slot &&
+                                                               item->Node->Name == renderer->Node->Name;
+                                                    });
+                    replacement != next.Renderers.end())
+                    renderer->Materials = (*replacement)->Materials;
+            *scene.Definition = std::move(*next.Definition);
+            scene.Definition->Parts = std::move(parts);
+            scene.Diagnostics = std::move(next.Diagnostics);
+            return reshape;
+        }
+        for (auto &renderer : next.Renderers)
+        {
+            auto old = std::find_if(scene.Renderers.begin(), scene.Renderers.end(),
+                                    [&](auto const &old)
+                                    {
+                                        return old->Role == renderer->Role && old->Slot == renderer->Slot &&
+                                               old->Mesh == renderer->Mesh && old->Node->Name == renderer->Node->Name;
+                                    });
+            if (old != scene.Renderers.end())
+            {
+                **old = *renderer;
+                renderer = *old;
+            }
+        }
+        *scene.Definition = std::move(*next.Definition);
+        scene.Root = std::move(next.Root);
+        scene.Nodes = std::move(next.Nodes);
+        scene.Bones = std::move(next.Bones);
+        scene.Parts = std::move(next.Parts);
+        scene.Renderers = std::move(next.Renderers);
+        scene.ScopedBaselines = std::move(next.ScopedBaselines);
+        scene.ScopedAdjustments = std::move(next.ScopedAdjustments);
+        scene.Diagnostics = std::move(next.Diagnostics);
+        return true;
+    }
+
+    bool CharacterSceneTopologyMatches(const NativeCharacterScene &scene, const NativeCharacterScene &next)
+    {
+        return scene.Parts.size() == next.Parts.size() &&
+               std::all_of(next.Parts.begin(), next.Parts.end(),
+                           [&](auto const &part)
+                           {
+                               return std::any_of(scene.Parts.begin(), scene.Parts.end(),
+                                                  [&](auto const &old)
+                                                  {
+                                                      auto const &a = *old->Definition, &b = *part->Definition;
+                                                      return a.Role == b.Role && a.Slot == b.Slot &&
+                                                             a.Prefab == b.Prefab && a.Parent == b.Parent &&
+                                                             old->Nodes.size() == part->Nodes.size();
+                                                  });
+                           });
+    }
+
     void ApplyCharacterVisibility(NativeCharacterScene &scene)
     {
         Require(scene.Definition != nullptr, "Character definition is missing.");
@@ -569,6 +699,12 @@ namespace hs2
                                              : scene.Definition->Visibility.Accessories &&
                                                    (!p->Definition->Parameters.Has("show") ||
                                                     p->Definition->Parameters.Float("show") != 0);
+            if (role == "accessory" && !scene.Definition->ClothingStates.empty())
+            {
+                auto const &hidden =
+                    scene.Definition->ClothingStates.at(scene.Definition->Visibility.Clothing).HiddenAccessories;
+                visible &= std::find(hidden.begin(), hidden.end(), p->Definition->Slot) == hidden.end();
+            }
             p->Root->Active = visible;
             for (auto &r : scene.Renderers)
                 if (r->Part == p->Definition)

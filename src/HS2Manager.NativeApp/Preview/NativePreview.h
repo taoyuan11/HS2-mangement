@@ -13,6 +13,7 @@ namespace hs2::ui
                   std::optional<CharacterDocument> draft = {}, CharacterPreviewVisibility visibility = {},
                   bool preserveView = false, PreviewResources resources = {});
         void Update(CharacterDocument draft, CharacterPreviewVisibility visibility);
+        void Visibility(CharacterPreviewVisibility visibility);
         void SyncRail(bool reveal = false);
         void Stop();
         winrt::Windows::Foundation::IAsyncAction StopAsync();

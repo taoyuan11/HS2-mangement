@@ -143,6 +143,8 @@ namespace hs2::ui
     {
         std::lock_guard lock(mutex_);
         loading_.request_stop();
+        visibility_ = visibility;
+        pendingDraft_.reset();
         pending_ = Request{++generation_, std::move(card), std::move(draft),    visibility, {},
                            preserveTime,  false,           std::move(resources)};
         unload_ = false;
@@ -159,6 +161,7 @@ namespace hs2::ui
         ++generation_;
         loading_.request_stop();
         pending_.reset();
+        pendingDraft_.reset();
         unload_ = true;
         wake_.notify_all();
     }
@@ -171,6 +174,7 @@ namespace hs2::ui
         if (pending_)
             pending_->Cancellation.request_stop();
         pending_.reset();
+        pendingDraft_.reset();
         wake_.notify_all();
         wake_.wait(lock,
                    [&]
@@ -230,6 +234,25 @@ namespace hs2::ui
         wake_.notify_all();
     }
 
+    void NativePreviewWorker::Visibility(CharacterPreviewVisibility value)
+    {
+        std::lock_guard lock(mutex_);
+        if (visibility_ == value)
+            return;
+        visibility_ = value;
+        dirty_ = true;
+        wake_.notify_all();
+    }
+
+    void NativePreviewWorker::Update(CharacterDocument draft, CharacterPreviewVisibility visibility)
+    {
+        std::lock_guard lock(mutex_);
+        pendingDraft_ = std::move(draft);
+        visibility_ = visibility;
+        dirty_ = true;
+        wake_.notify_all();
+    }
+
     void NativePreviewWorker::Run(std::stop_token stop)
     {
         auto com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -249,20 +272,33 @@ namespace hs2::ui
             bool needsDraw = true, interactiveApplied = false;
             auto last = std::chrono::steady_clock::now();
             auto nextFrame = last;
+            auto applyVisibility = [&](CharacterPreviewVisibility visibility)
+            {
+                if (prepared.Scene->Definition->Visibility == visibility)
+                    return;
+                runtime->Visibility(visibility);
+                pipeline->Appearance().UpdateVisibility();
+                pipeline->ResetHistory();
+                if (active)
+                    active->Visibility = visibility;
+                needsDraw = true;
+            };
             while (!stop.stop_requested())
             {
                 std::optional<Request> request;
+                std::optional<CharacterDocument> draft;
                 std::optional<ScreenshotTarget> screenshot;
                 PreviewViewportSize size;
                 NativeRenderCamera camera;
                 NativeFrameOptions environment;
+                CharacterPreviewVisibility visibility;
                 bool paused, visible, interactive, unload, environmentDirty, resetClock;
                 {
                     std::unique_lock lock(mutex_);
                     auto command = [&]
                     {
-                        return quiesce_ || pending_.has_value() || unload_ || screenshot_.has_value() || dirty_ ||
-                               environmentDirty_;
+                        return quiesce_ || pending_.has_value() || pendingDraft_.has_value() || unload_ ||
+                               screenshot_.has_value() || dirty_ || environmentDirty_;
                     };
                     if (visible_ && loaded && (!paused_ || needsDraw))
                         wake_.wait_until(lock, stop, nextFrame, command);
@@ -289,6 +325,8 @@ namespace hs2::ui
                     }
                     request = std::move(pending_);
                     pending_.reset();
+                    draft = std::move(pendingDraft_);
+                    pendingDraft_.reset();
                     screenshot = std::move(screenshot_);
                     screenshot_.reset();
                     size = size_;
@@ -307,6 +345,19 @@ namespace hs2::ui
                     environmentDirty_ = false;
                     if (request)
                         loading_ = request->Cancellation;
+                }
+                if (draft && !loaded && active && !request && !unload)
+                {
+                    request = active;
+                    request->Cancellation = std::stop_source{};
+                    request->PreserveTime = true;
+                    std::lock_guard lock(mutex_);
+                    loading_ = request->Cancellation;
+                }
+                if (request && draft)
+                {
+                    request->Draft = std::move(draft);
+                    draft.reset();
                 }
                 if (unload)
                 {
@@ -345,7 +396,7 @@ namespace hs2::ui
                             service = std::make_unique<NativeCharacterService>(game_, data_, tpk_, serviceResources);
                         }
                         prepared = service->Prepare(request->Card, request->Draft ? &*request->Draft : nullptr,
-                                                    request->Visibility, progress, token);
+                                                    request->Visibility, progress, token, true);
                         CheckCancelled(token);
                         if (!graphics)
                             graphics = std::make_unique<GraphicsDevice>();
@@ -364,6 +415,12 @@ namespace hs2::ui
                         nextFrame = last;
                         needsDraw = true;
                         interactiveApplied = false;
+                        {
+                            std::lock_guard lock(mutex_);
+                            visibility = visibility_;
+                        }
+                        // 加载期间的导航也必须生效，不能被旧请求的显示状态覆盖。
+                        applyVisibility(visibility);
                         if (callbacks_.Ready)
                         {
                             auto diagnostics = prepared.Scene->Diagnostics;
@@ -375,7 +432,8 @@ namespace hs2::ui
                                     diagnostics.push_back(message);
                             callbacks_.Ready({loaded, surface->Acquire(), Bounds(*prepared.Scene, false),
                                               Bounds(*prepared.Scene, true), std::move(diagnostics),
-                                              std::make_shared<CharacterDefinition>(*prepared.Scene->Definition)});
+                                              std::make_shared<CharacterDefinition>(*prepared.Scene->Definition),
+                                              prepared.Assets->ReaderStats().Loads});
                         }
                     }
                     catch (Cancelled const &)
@@ -391,6 +449,78 @@ namespace hs2::ui
                             callbacks_.Failure(request->Generation, error.what());
                     }
                 }
+                if (draft && pipeline && surface && loaded && active &&
+                    (!prepared.Document || !prepared.Document->ContentEquals(*draft)))
+                {
+                    try
+                    {
+                        auto token = active->Cancellation.get_token();
+                        {
+                            std::lock_guard lock(mutex_);
+                            visibility = visibility_;
+                        }
+                        auto next = service->Prepare(active->Card, &*draft, visibility, {}, token, true, &prepared);
+                        CheckCancelled(token);
+                        auto previous = *prepared.Scene->Definition;
+                        // 材质比较只需参数快照，不能让共享的部件定义被原地更新覆盖。
+                        previous.Parts.clear();
+                        for (auto const &part : prepared.Scene->Definition->Parts)
+                        {
+                            auto snapshot = std::make_shared<CharacterPart>();
+                            snapshot->Role = part->Role;
+                            snapshot->Slot = part->Slot;
+                            snapshot->Prefab = part->Prefab;
+                            snapshot->Parameters = part->Parameters;
+                            previous.Parts.push_back(std::move(snapshot));
+                        }
+                        bool reshape = CharacterSceneRequiresRuntimeReset(*prepared.Scene, *next.Scene);
+                        if (reshape)
+                        {
+                            if (CharacterSceneTopologyMatches(*prepared.Scene, *next.Scene))
+                                runtime->RefreshRestPose(*next.Scene);
+                            else
+                                runtime.reset();
+                        }
+                        UpdateCharacterScene(*prepared.Scene, *next.Scene);
+                        bool created = !runtime;
+                        if (created)
+                            runtime = std::make_unique<NativeCharacterRuntime>(
+                                prepared.Scene, prepared.Assets, tpk_.parent_path() / L"native" / L"win-x64");
+                        else if (reshape)
+                            runtime->Reset();
+                        if (created || reshape)
+                            runtime->AdvanceFrame(0, time);
+                        prepared.Document = std::move(next.Document);
+                        active->Draft = prepared.Document;
+                        ApplyCharacterVisibility(*prepared.Scene);
+                        pipeline->UpdateCharacter(previous);
+                        {
+                            std::lock_guard lock(mutex_);
+                            visibility = visibility_;
+                        }
+                        applyVisibility(visibility);
+                        needsDraw = true;
+                        resetClock = true;
+                        if (callbacks_.Ready)
+                            callbacks_.Ready({loaded, surface->Acquire(), Bounds(*prepared.Scene, false),
+                                              Bounds(*prepared.Scene, true), prepared.Scene->Diagnostics,
+                                              std::make_shared<CharacterDefinition>(*prepared.Scene->Definition),
+                                              prepared.Assets->ReaderStats().Loads});
+                    }
+                    catch (Cancelled const &)
+                    {
+                    }
+                    catch (std::exception const &error)
+                    {
+                        if (callbacks_.Failure)
+                            callbacks_.Failure(loaded, error.what());
+                        // 更新提交过程中失败时不再使用可能已失效的骨骼或材质引用。
+                        loaded = 0;
+                        runtime.reset();
+                        pipeline.reset();
+                        prepared = {};
+                    }
+                }
                 if (!pipeline || !surface || !loaded)
                 {
                     if (screenshot && callbacks_.Screenshot)
@@ -401,9 +531,11 @@ namespace hs2::ui
                     std::lock_guard lock(mutex_);
                     if (loaded != generation_)
                         continue;
+                    visibility = visibility_;
                 }
                 try
                 {
+                    applyVisibility(visibility);
                     auto now = std::chrono::steady_clock::now();
                     auto delta =
                         resetClock ? 0.f : std::clamp(std::chrono::duration<float>(now - last).count(), 0.f, .1f);

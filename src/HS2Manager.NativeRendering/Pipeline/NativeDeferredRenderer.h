@@ -11,6 +11,12 @@ namespace hs2
                                GpuCharacterAppearance &appearance, std::shared_ptr<GpuTexture> reflection,
                                ShaderResource probe);
         static bool Supports(const GpuMaterialInstance &material);
+
+        void ResetMaterials()
+        {
+            materials_.clear();
+        }
+
         std::array<std::unique_ptr<GpuTexture>, 3> Buffers;
         std::unique_ptr<GpuTexture> ReflectionBuffer;
         void Draw(GpuTexture &target, const NativeRenderCamera &camera, const GpuDepthSurface &depth,

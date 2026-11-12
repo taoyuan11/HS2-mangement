@@ -54,6 +54,11 @@ int main()
         {
             NativePreviewWorker worker(root / "NoGame", root, root / "missing.tpk", events);
             for (int index = 0; index < 2000; ++index)
+                worker.Visibility({index % 3, index % 2 == 0});
+            worker.Quiesce();
+            if (callbacks.load() != 0)
+                throw std::runtime_error("Visibility-only commands attempted to load character resources.");
+            for (int index = 0; index < 2000; ++index)
             {
                 // 模拟面板绑定后的加载紧接着关闭；工作线程未必已经处理恢复通知。
                 worker.Quiesce();

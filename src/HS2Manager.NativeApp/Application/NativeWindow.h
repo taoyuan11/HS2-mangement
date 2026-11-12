@@ -35,6 +35,7 @@ namespace hs2::ui
     public:
         static std::shared_ptr<NativeWindow> Create(fs::path dataDirectory, std::unique_ptr<CardRepository> repository);
         ~NativeWindow();
+        void Shutdown();
 
         xaml::Window Window() const
         {
@@ -110,6 +111,7 @@ namespace hs2::ui
         controls::ContentDialog temporaryPasswordDialog_{nullptr};
         bool closePrompt_ = false;
         bool closeReady_ = false;
+        bool resourcesReleased_ = false;
         bool busy_ = false, closing_ = false, dialogOpen_ = false, updating_ = false;
         winrt::Windows::UI::ViewManagement::UISettings preferences_;
         winrt::event_token preferenceToken_{};

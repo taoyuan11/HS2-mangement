@@ -18,6 +18,8 @@ namespace hs2
         // 显式步进支持固定动画姿态下的物理收敛；
         // 即使动画时间重复，物理仍按 deltaSeconds 推进。
         void AdvanceFrame(float deltaSeconds, float animationTime);
+        void Visibility(CharacterPreviewVisibility value);
+        void RefreshRestPose(const NativeCharacterScene &next);
         void ResetFixturePhysics();
         void Reset();
         const std::vector<std::string> &Diagnostics() const;

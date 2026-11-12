@@ -20,6 +20,12 @@ namespace hs2
         void SetScriptSchema(
             std::function<std::vector<UnityTypeNode>(const GpuAssetPointer &, std::string_view)> resolver);
         void AddPath(const std::filesystem::path &path);
+
+        void Cancellation(std::stop_token value)
+        {
+            cancellation_ = value;
+        }
+
         GpuAssetPointer Resolve(const GpuAssetPointer &pointer);
         std::shared_ptr<GpuMeshData> Mesh(const GpuAssetPointer &pointer);
         GpuTextureData Texture(const GpuAssetPointer &pointer);

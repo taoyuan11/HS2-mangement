@@ -1,0 +1,211 @@
+#include "Preview/NativePreviewWorker.h"
+#include <cmath>
+#include <iostream>
+
+using namespace hs2;
+using namespace hs2::ui;
+
+int wmain(int argc, wchar_t **argv)
+{
+    if (argc != 5)
+    {
+        std::cerr << "Usage: hs2_preview_visibility_checks game data classdata.tpk card.png\n";
+        return 2;
+    }
+    try
+    {
+        fs::path output = fs::path(argv[2]) / ("visibility-" + NewId());
+        std::mutex mutex;
+        std::condition_variable changed;
+        int ready = 0, progress = 0, screenshots = 0;
+        std::string error;
+        std::optional<PreviewReady> result;
+        PreviewCallbacks events;
+        events.Ready = [&](PreviewReady value)
+        {
+            std::lock_guard lock(mutex);
+            result = std::move(value);
+            ++ready;
+            changed.notify_all();
+        };
+        events.Progress = [&](auto, auto)
+        {
+            std::lock_guard lock(mutex);
+            ++progress;
+        };
+        events.Failure = [&](auto, std::string message)
+        {
+            std::lock_guard lock(mutex);
+            error = std::move(message);
+            changed.notify_all();
+        };
+        events.Screenshot = [&](auto, std::string message)
+        {
+            std::lock_guard lock(mutex);
+            error = std::move(message);
+            ++screenshots;
+            changed.notify_all();
+        };
+        auto wait = [&](auto complete)
+        {
+            std::unique_lock lock(mutex);
+            if (!changed.wait_for(lock, std::chrono::seconds(60),
+                                  [&]
+                                  {
+                                      return !error.empty() || complete();
+                                  }))
+                throw std::runtime_error("Preview command timed out.");
+            if (!error.empty())
+                throw std::runtime_error(error);
+        };
+        auto card = CardParser().Parse(argv[4]);
+        if (card.Status != CardStatus::Valid)
+            throw std::runtime_error(card.Error);
+        NativePreviewWorker worker(argv[1], argv[2], argv[3], std::move(events));
+        worker.Paused(true);
+        NativeFrameOptions options;
+        options.StaticReference = true;
+        worker.Environment(options);
+        worker.Resize({480, 640, 1});
+        auto generation = worker.Load(card);
+        worker.Visibility({2, false});
+        wait(
+            [&]
+            {
+                return ready == 1;
+            });
+        if (result->Generation != generation || result->Definition->Visibility != CharacterPreviewVisibility{2, false})
+            throw std::runtime_error("Navigation during loading lost the latest visibility state.");
+        auto bounds = result->Body;
+        NativeRenderCamera camera;
+        camera.Target = bounds.Center;
+        float distance = std::max(bounds.Extents.x * 2 / .75f, bounds.Extents.y * 2) /
+                             (2 * std::tan(35.f * 3.14159265f / 360)) * 1.12f +
+                         bounds.Extents.z * 2;
+        camera.Position = {bounds.Center.x, bounds.Center.y, bounds.Center.z + distance};
+        camera.FieldOfView = 35;
+        worker.View(camera, false);
+        int frame = 0;
+        auto screenshot = [&]
+        {
+            auto path = output / (std::to_string(++frame) + ".png");
+            worker.Screenshot({path, {}});
+            wait(
+                [&]
+                {
+                    return screenshots == frame;
+                });
+            return HashFile(path);
+        };
+        auto bare = screenshot();
+        int initialProgress;
+        {
+            std::lock_guard lock(mutex);
+            initialProgress = progress;
+        }
+        for (auto visibility : {CharacterPreviewVisibility{0, true}, {1, false}, {2, false}})
+        {
+            auto start = std::chrono::steady_clock::now();
+            worker.Visibility(visibility);
+            auto hash = screenshot();
+            if (visibility.Clothing != 2 && hash == bare)
+                throw std::runtime_error("Paused visibility switch did not redraw the clothes.");
+            auto milliseconds =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+            std::cout << "Visibility " << visibility.Clothing << " screenshot completed in " << milliseconds << " ms\n";
+        }
+        for (int index = 0; index < 60; ++index)
+            worker.Visibility({index % 3, index % 2 == 0});
+        worker.Visibility({2, false});
+        // 后处理与物理重置不保证 PNG 字节相同；重绘完成后检查没有发起新的资源加载。
+        screenshot();
+        {
+            std::lock_guard lock(mutex);
+            if (ready != 1 || progress != initialProgress)
+                throw std::runtime_error("Visibility-only navigation reloaded character resources.");
+        }
+        auto original = CharacterDocument::Open(argv[4]);
+        auto draft = original;
+        auto path = "body.shapeValueBody[0]";
+        draft = draft.WithValue(path, .7f);
+        auto chain = result->Chain.Get();
+        auto update = [&](CharacterDocument next, const char *label)
+        {
+            int completed;
+            {
+                std::lock_guard lock(mutex);
+                completed = ready;
+            }
+            auto start = std::chrono::steady_clock::now();
+            worker.Update(std::move(next), {});
+            worker.Visibility({2, false});
+            wait(
+                [&]
+                {
+                    return ready > completed;
+                });
+            if (result->Generation != generation || result->Chain.Get() != chain || progress != initialProgress ||
+                result->Definition->Visibility != CharacterPreviewVisibility{2, false})
+                throw std::runtime_error("A parameter edit reloaded the preview or lost the current visibility.");
+            auto milliseconds =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+            std::cout << "Draft " << label << " applied in " << milliseconds
+                      << " ms; resource loads=" << result->ResourceLoads << '\n';
+        };
+        update(draft, "body shape");
+        if (screenshot() == bare)
+            throw std::runtime_error("A pending draft update was lost during navigation.");
+        auto resources = result->ResourceLoads;
+        draft = draft.WithValue(path, .3f);
+        update(draft, "body shape again");
+        if (result->ResourceLoads != resources)
+            throw std::runtime_error("A shape edit reread character resources.");
+        draft = draft.WithValue("face.shapeValueFace[0]", .8f);
+        update(draft, "face shape");
+        if (result->ResourceLoads != resources)
+            throw std::runtime_error("A face edit reread character resources.");
+        for (auto color : {"body.skinColor", "hair.parts[0].baseColor"})
+            if (draft.Contains(color))
+            {
+                auto before = screenshot();
+                draft = CharacterEditRules::Color(draft, color, {.1f, .8f, .2f, 1});
+                update(draft, color);
+                if (screenshot() == before)
+                    throw std::runtime_error("A color edit did not redraw the material.");
+            }
+        auto edited = draft;
+        update(original, "undo all");
+        update(edited, "redo all");
+        if (draft.Contains("accessory.parts[0].type") && draft.Node("accessory.parts[0].type").Integer() > 350)
+        {
+            auto parts = result->Definition->Parts.size();
+            update(draft.WithValue("accessory.parts[0].type", int64_t(350)), "remove accessory");
+            if (result->Definition->Parts.size() >= parts)
+                throw std::runtime_error("Removing an accessory did not update the scene.");
+            update(draft, "restore accessory");
+            if (result->Definition->Parts.size() != parts)
+                throw std::runtime_error("Restoring an accessory lost a scene part.");
+        }
+        for (int index = 0; index < 60; ++index)
+            worker.Update(draft.WithValue(path, .1f + index * .01f), {2, false});
+        wait(
+            [&]
+            {
+                return std::abs(result->Definition->Body.Get("shapeValueBody").Children[0].Number - .69f) < 1e-6;
+            });
+        screenshot();
+        if (result->Chain.Get() != chain || result->Generation != generation || progress != initialProgress)
+            throw std::runtime_error("Rapid parameter edits rebuilt the preview surface.");
+        worker.Quiesce();
+        worker.Unload();
+        std::cout << "PASS: paused redraw, reversible clothing, live shape/color/part edits, undo/redo and rapid "
+                     "edits; frames="
+                  << Utf8(output) << '\n';
+        return 0;
+    }
+    catch (std::exception const &error)
+    {
+        std::cerr << error.what() << '\n';
+        return 1;
+    }
+}

@@ -39,4 +39,7 @@ namespace hs2
                                                     std::stop_token cancellation = {}, PreviewResources resources = {});
     void ApplyCharacterPushUp(CharacterDefinition &definition, const CharacterExtensionState &state,
                               std::span<const std::uint8_t> bodyAnimation, bool braWorn, bool topWorn);
+    void PrepareCharacterClothingStates(CharacterDefinition &definition, const CharacterExtensionState &state,
+                                        std::span<const std::uint8_t> bodyAnimation, bool braWorn, bool topWorn,
+                                        HeelDefinition heels);
 }

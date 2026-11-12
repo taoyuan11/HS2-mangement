@@ -1,6 +1,7 @@
 #include <windows.h>
 #undef GetCurrentTime
 #include "Infrastructure/DataLocation.h"
+#include "Infrastructure/ProcessLifetime.h"
 #include "Application/NativeWindow.h"
 #include <fstream>
 #include <shellapi.h>
@@ -35,6 +36,8 @@ namespace hs2::ui
                     std::ofstream(dataDirectory / L"native-error.log", std::ios::app)
                         << UtcNow() << " XAML " << std::hex << static_cast<uint32_t>(e.Exception()) << " "
                         << to_string(e.Message()) << '\n';
+                    // XAML 的致命异常不能继续使用窗口或进入 COM/驱动的卸载回调。
+                    FinishProcess(static_cast<DWORD>(e.Exception()));
                 });
         }
 
@@ -81,7 +84,7 @@ namespace hs2::ui
     };
 } // 命名空间 hs2::ui
 
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
+int RunApplication()
 {
     winrt::handle instance;
     try
@@ -106,13 +109,24 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         hs2::ui::PrepareLibrary(location);
         std::filesystem::create_directories(location.Directory);
         hs2::ui::Application::dataDirectory = location.Directory;
+        hs2::ui::SetProcessErrorDirectory(location.Directory);
         // 数据库打开与恢复在启动 XAML 之前完成，错误能由原生对话框明确报告。
         auto repository = hs2::ui::OpenLibrary(location.Directory);
+        winrt::com_ptr<hs2::ui::Application> application;
         Microsoft::UI::Xaml::Application::Start(
-            [&repository](auto &&)
+            [&repository, &application](auto &&)
             {
-                make<hs2::ui::Application>(std::move(repository));
+                application = make_self<hs2::ui::Application>(std::move(repository));
             });
+        hs2::ui::BeginProcessShutdown();
+        // 在 STA 仍有效时主动释放业务对象，不把数据库和 WinRT 对象留给进程全局析构。
+        if (application && application->window)
+        {
+            application->window->Shutdown();
+            application->window.reset();
+        }
+        application = nullptr;
+        winrt::uninit_apartment();
         return hs2::ui::Application::exitCode;
     }
     catch (hresult_error const &error)
@@ -130,4 +144,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         MessageBoxW(nullptr, to_hstring(error.what()).c_str(), L"HS2 Manager", MB_OK | MB_ICONERROR);
         return 1;
     }
+}
+
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
+{
+    DWORD code = 1;
+    try
+    {
+        hs2::ui::InitializeProcessLifetime();
+        code = static_cast<DWORD>(RunApplication());
+    }
+    catch (std::exception const &error)
+    {
+        MessageBoxW(nullptr, to_hstring(error.what()).c_str(), L"HS2 Manager", MB_OK | MB_ICONERROR);
+    }
+    // RunApplication 的局部变量已析构、SQLite 和单实例锁已关闭。
+    hs2::ui::FinishProcess(code);
 }

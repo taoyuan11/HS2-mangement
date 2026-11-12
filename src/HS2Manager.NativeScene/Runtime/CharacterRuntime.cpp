@@ -643,6 +643,72 @@ namespace hs2
             Time = time;
         }
 
+        void RefreshRestPose(const NativeCharacterScene &next)
+        {
+            std::unordered_map<NativeSceneNode *, NativeSceneNode *> nodes;
+            nodes[next.Root.get()] = Scene->Root.get();
+            Initial.at(Scene->Root.get()) = GetPose(*next.Root);
+            for (auto const &part : next.Parts)
+            {
+                auto old = std::find_if(Scene->Parts.begin(), Scene->Parts.end(),
+                                        [&](auto const &old)
+                                        {
+                                            return old->Definition->Role == part->Definition->Role &&
+                                                   old->Definition->Slot == part->Definition->Slot;
+                                        });
+                Require(old != Scene->Parts.end() && (*old)->Nodes.size() == part->Nodes.size(),
+                        "Character topology changed during a pose update.");
+                for (size_t i = 0; i < part->Nodes.size(); ++i)
+                {
+                    auto node = (*old)->Nodes[i];
+                    nodes[part->Nodes[i]] = node;
+                    Initial.at(node) = GetPose(*part->Nodes[i]);
+                }
+            }
+            Scene->ScopedBaselines.clear();
+            Scene->ScopedAdjustments.clear();
+            for (auto const &[node, baseline] : next.ScopedBaselines)
+                Scene->ScopedBaselines.emplace(nodes.at(node), baseline);
+            for (auto const &[node, adjustment] : next.ScopedAdjustments)
+                Scene->ScopedAdjustments.emplace(nodes.at(node), adjustment);
+        }
+
+        void Visibility(CharacterPreviewVisibility value)
+        {
+            auto &definition = *Scene->Definition;
+            if (definition.Visibility == value)
+                return;
+            bool reshape = definition.Visibility.Clothing != value.Clothing && !definition.ClothingStates.empty();
+            if (reshape)
+            {
+                auto const &state = definition.ClothingStates.at(value.Clothing);
+                definition.Body = state.Body;
+                definition.Heels = state.Heels;
+                for (auto &part : Scene->Parts)
+                    if (part->Definition->Role == "rig")
+                    {
+                        part->Definition->Bones = state.Bones;
+                        part->Definition->UnmodifiedBones = state.UnmodifiedBones;
+                        for (auto const &bone : state.Bones)
+                            if (auto found = part->ByName.find(bone.Name); found != part->ByName.end())
+                                Initial.at(found->second) = {bone.Position, bone.Scale, bone.Rotation};
+                        for (auto const &bone : state.UnmodifiedBones)
+                            if (auto found = part->ByName.find(bone.Name);
+                                found != part->ByName.end() && Scene->ScopedBaselines.contains(found->second))
+                                Scene->ScopedBaselines.at(found->second) = bone;
+                    }
+            }
+            definition.Visibility = value;
+            ApplyCharacterVisibility(*Scene);
+            if (reshape)
+            {
+                // 沿用已有资源与播放时间，只重置受塑形和鞋跟影响的运行姿态。
+                float time = std::max(0.f, Time);
+                Reset();
+                AdvanceFrame(0, time);
+            }
+        }
+
         void ResetFixturePhysics()
         {
             for (auto &chain : Chains)
@@ -682,6 +748,16 @@ namespace hs2
     }
 
     NativeCharacterRuntime::~NativeCharacterRuntime() = default;
+
+    void NativeCharacterRuntime::Visibility(CharacterPreviewVisibility value)
+    {
+        impl_->Visibility(value);
+    }
+
+    void NativeCharacterRuntime::RefreshRestPose(const NativeCharacterScene &next)
+    {
+        impl_->RefreshRestPose(next);
+    }
 
     void NativeCharacterRuntime::Update(float time)
     {

@@ -3,6 +3,7 @@
 #include "Editor/NativeEditor.h"
 #include "Preview/NativePreview.h"
 #include "Infrastructure/UiEvents.h"
+#include "Infrastructure/ProcessLifetime.h"
 #include <Shobjidl.h>
 #include <dwmapi.h>
 #include <fstream>
@@ -178,14 +179,44 @@ namespace hs2::ui
 
     NativeWindow::~NativeWindow()
     {
+        Shutdown();
+    }
+
+    void NativeWindow::Shutdown()
+    {
+        if (resourcesReleased_)
+            return;
+        resourcesReleased_ = true;
+        closing_ = true;
         temporaryCancellation_.request_stop();
+        work_.request_stop();
+        if (editor_)
+            editor_->Stop();
         preview_.reset();
         temporaryPreview_.reset();
         if (preferenceToken_.value)
-            preferences_.ColorValuesChanged(preferenceToken_);
-        work_.request_stop();
+        {
+            try
+            {
+                preferences_.ColorValuesChanged(preferenceToken_);
+            }
+            catch (hresult_error const &)
+            {
+                // 直接销毁窗口时，系统通知源可能已停止；析构不能再次触发致命异常。
+            }
+            preferenceToken_ = {};
+        }
         if (work_.joinable())
             work_.join();
+        if (!busy_)
+        {
+            // 正常关闭已等待编辑、导出和临时预览结束，此时显式关闭 SQLite，而非依赖 Application 析构。
+            mods_.reset();
+            files_.reset();
+            library_.reset();
+            repository_.reset();
+        }
+        model_->Changed = nullptr;
     }
 
     HWND NativeWindow::Handle() const
@@ -304,6 +335,7 @@ namespace hs2::ui
                     if (self->busy_)
                     {
                         args.Cancel(true);
+                        BeginProcessShutdown();
                         self->closing_ = true;
                         self->work_.request_stop();
                         self->CancelTemporaryPreview();
@@ -319,6 +351,14 @@ namespace hs2::ui
                         return;
                     }
                 }
+            });
+        window_.Closed(
+            [weak](auto &&, auto &&)
+            {
+                // Window.Close 和系统销毁不保证触发 AppWindow.Closing，也必须回收工作线程。
+                BeginProcessShutdown();
+                if (auto self = weak.lock())
+                    self->Shutdown();
             });
         window_.VisibilityChanged(
             [weak](auto &&, WindowVisibilityChangedEventArgs const &args)
@@ -441,7 +481,7 @@ namespace hs2::ui
                     queue.TryEnqueue(
                         [weak, p]
                         {
-                            if (auto self = weak.lock())
+                            if (auto self = weak.lock(); self && !self->resourcesReleased_)
                             {
                                 self->model_->Text(L"WorkLabel", p.Message);
                                 self->model_->Put(L"ProgressIndeterminate", p.Total <= 0);
@@ -468,9 +508,14 @@ namespace hs2::ui
                 queue.TryEnqueue(
                     [weak, result]
                     {
-                        if (auto self = weak.lock())
+                        if (auto self = weak.lock(); self && !self->resourcesReleased_)
                         {
                             self->SetBusy(false);
+                            if (self->closing_)
+                            {
+                                self->RequestClose();
+                                return;
+                            }
                             try
                             {
                                 self->Reload();
@@ -481,10 +526,6 @@ namespace hs2::ui
                                 return;
                             }
                             self->Report(result);
-                            if (self->closing_)
-                            {
-                                self->RequestClose();
-                            }
                         }
                     });
             });

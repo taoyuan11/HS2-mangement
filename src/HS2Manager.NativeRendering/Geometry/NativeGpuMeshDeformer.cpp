@@ -310,6 +310,19 @@ cbuffer Settings : register(b0)
 
     NativeGpuMeshDeformer::~NativeGpuMeshDeformer() = default;
 
+    void NativeGpuMeshDeformer::Retain(std::span<const std::shared_ptr<NativeSceneRenderer>> renderers)
+    {
+        std::erase_if(states_,
+                      [&](auto const &entry)
+                      {
+                          return std::none_of(renderers.begin(), renderers.end(),
+                                              [&](auto const &renderer)
+                                              {
+                                                  return renderer.get() == entry.first;
+                                              });
+                      });
+    }
+
     NativeGpuVertexStream NativeGpuMeshDeformer::Deform(const NativeSceneRenderer &renderer)
     {
         graphics_.VerifyThread();

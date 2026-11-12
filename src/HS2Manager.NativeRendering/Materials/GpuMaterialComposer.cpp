@@ -242,7 +242,13 @@ namespace hs2
                                     ? 2
                                     : static_cast<int>(definition.Environment.Quality.Float("anisotropicTextures", 2)))
     {
-        for (const auto &selection : definition.Selections)
+        UpdateSelections();
+    }
+
+    void GpuMaterialComposer::UpdateSelections()
+    {
+        selections_.clear();
+        for (const auto &selection : definition_.Selections)
             if (!selections_.emplace(selection.Key, selection.Reference).second)
                 throw std::runtime_error("Duplicate appearance selection: " + selection.Key);
     }

@@ -77,6 +77,17 @@ namespace hs2
 
     NativeFramePipeline::~NativeFramePipeline() = default;
 
+    void NativeFramePipeline::UpdateCharacter(const CharacterDefinition &previous)
+    {
+        auto &s = *state_;
+        s.Graphics.VerifyThread();
+        s.Composer.UpdateSelections();
+        s.Renderer.UpdateCharacter(s.Appearance.Update(previous));
+        if (s.Vectors)
+            s.Vectors->ResetHistory();
+        ResetHistory();
+    }
+
     void NativeFramePipeline::ResetHistory()
     {
         auto &s = *state_;

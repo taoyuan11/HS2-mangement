@@ -38,6 +38,53 @@ namespace hs2
         }
 
         constexpr Vector4 White{1, 1, 1, 1}, Black{0, 0, 0, 1}, Zero{0, 0, 0, 0};
+
+        bool SameExcept(const Parameter &a, const Parameter &b, std::initializer_list<std::string_view> ignored)
+        {
+            auto included = [&](auto const &field)
+            {
+                return std::find(ignored.begin(), ignored.end(), field.Name) == ignored.end();
+            };
+            return std::count_if(a.Children.begin(), a.Children.end(), included) ==
+                       std::count_if(b.Children.begin(), b.Children.end(), included) &&
+                   std::all_of(a.Children.begin(), a.Children.end(),
+                               [&](auto const &field)
+                               {
+                                   return !included(field) || field == b.Get(field.Name);
+                               });
+        }
+
+        bool SameSelections(const CharacterDefinition &a, const CharacterDefinition &b, std::string_view prefix)
+        {
+            auto included = [&](auto const &selection)
+            {
+                return selection.Key.starts_with(prefix);
+            };
+            return std::count_if(a.Selections.begin(), a.Selections.end(), included) ==
+                       std::count_if(b.Selections.begin(), b.Selections.end(), included) &&
+                   std::all_of(a.Selections.begin(), a.Selections.end(),
+                               [&](auto const &selection)
+                               {
+                                   return !included(selection) || std::find(b.Selections.begin(), b.Selections.end(),
+                                                                            selection) != b.Selections.end();
+                               });
+        }
+
+        bool SamePassState(const GpuMaterialInstance &a, const GpuMaterialInstance &b)
+        {
+            if (a.Shader != b.Shader || a.Keywords != b.Keywords)
+                return false;
+            for (auto key :
+                 {"_Cull", "_CullMode", "_ZWrite", "_ZTest", "_SrcBlend", "_DstBlend", "_BlendOp", "_ColorMask",
+                  "_Stencil", "_StencilComp", "_StencilOp", "_StencilReadMask", "_StencilWriteMask"})
+            {
+                auto first = a.Values.find(key), second = b.Values.find(key);
+                if ((first == a.Values.end()) != (second == b.Values.end()) ||
+                    (first != a.Values.end() && first->second != second->second))
+                    return false;
+            }
+            return true;
+        }
     }
 
     std::pair<std::shared_ptr<GpuTexture>, std::shared_ptr<GpuTexture>> GpuSkinComposer::Compose(
@@ -124,16 +171,106 @@ namespace hs2
     GpuCharacterAppearance::GpuCharacterAppearance(NativeCharacterScene &scene, GpuMaterialComposer &composer)
         : scene_(scene), definition_(*scene.Definition), composer_(composer)
     {
-        for (const auto &renderer : scene.Renderers)
+        Build();
+    }
+
+    bool GpuCharacterAppearance::Update(const CharacterDefinition &previous)
+    {
+        return Build(&previous);
+    }
+
+    bool GpuCharacterAppearance::Build(const CharacterDefinition *previous)
+    {
+        bool extensions = !previous || previous->MaterialEdits != definition_.MaterialEdits ||
+                          previous->Overlays != definition_.Overlays;
+        bool masks = extensions || !SameSelections(*previous, definition_, "clothes.");
+        bool body = masks ||
+                    !SameExcept(previous->Body, definition_.Body,
+                                {"shapeValueBody", "bustSoftness", "bustWeight", "effectiveBustSoftness"}) ||
+                    !SameSelections(*previous, definition_, "body.");
+        bool face =
+            extensions || body ||
+            !SameExcept(previous->Face, definition_.Face, {"shapeValueFace", "disableBlinking"}) ||
+            !SameSelections(*previous, definition_, "face.") || !SameSelections(*previous, definition_, "eye.") ||
+            !SameSelections(*previous, definition_, "pupil.") || !SameSelections(*previous, definition_, "highlight.");
+        bool hair = extensions || previous->Hair.Get("shaderType") != definition_.Hair.Get("shaderType");
+        if (extensions || previous->Body.Get("skinColor") != definition_.Body.Get("skinColor") ||
+            previous->Face.Get("makeup") != definition_.Face.Get("makeup") ||
+            previous->Face.Get("moleColor") != definition_.Face.Get("moleColor") ||
+            previous->Face.Get("moleLayout") != definition_.Face.Get("moleLayout") ||
+            !SameSelections(*previous, definition_, "face.skin.") ||
+            !SameSelections(*previous, definition_, "face.mole."))
+            skin_.erase(true);
+        if (extensions || previous->Body.Get("skinColor") != definition_.Body.Get("skinColor") ||
+            previous->Body.Get("sunburnColor") != definition_.Body.Get("sunburnColor") ||
+            previous->Body.Get("paintInfo") != definition_.Body.Get("paintInfo") ||
+            !SameSelections(*previous, definition_, "body.skin.") ||
+            !SameSelections(*previous, definition_, "body.paint.") ||
+            !SameSelections(*previous, definition_, "body.sunburn."))
+            skin_.erase(false);
+        auto old = std::move(Materials);
+        Materials.clear();
+        Order.clear();
+        std::unordered_set<const CharacterPart *> changed;
+        for (auto const &part : scene_.Parts)
+        {
+            bool refresh = extensions;
+            if (part->Definition->Role == "body")
+                refresh |= body;
+            else if (part->Definition->Role == "head")
+                refresh |= face;
+            else if (part->Definition->Role == "hair" || part->Definition->Role == "accessory")
+                refresh |= hair;
+            else if (part->Definition->Role == "clothes")
+                refresh |= masks;
+            if (previous)
+            {
+                auto found = std::find_if(previous->Parts.begin(), previous->Parts.end(),
+                                          [&](auto const &candidate)
+                                          {
+                                              return candidate->Role == part->Definition->Role &&
+                                                     candidate->Slot == part->Definition->Slot;
+                                          });
+                refresh |= found == previous->Parts.end() || (*found)->Prefab != part->Definition->Prefab ||
+                           !SameExcept((*found)->Parameters, part->Definition->Parameters,
+                                       {"dictBundle", "addMove", "noShake", "partsOfHead", "parentKey", "hideOpt"}) ||
+                           !SameSelections(*previous, definition_,
+                                           part->Definition->Role + "." + std::to_string(part->Definition->Slot) + ".");
+            }
+            if (refresh)
+                changed.insert(part->Definition.get());
+        }
+        for (const auto &renderer : scene_.Renderers)
         {
             Order.push_back(renderer.get());
+            auto found = old.find(renderer.get());
+            if (found != old.end() && !changed.contains(renderer->Part.get()))
+            {
+                Materials.emplace(renderer.get(), found->second);
+                continue;
+            }
+            changed.insert(renderer->Part.get());
             auto &materials = Materials[renderer.get()];
             for (const auto &m : renderer->Materials)
                 materials.push_back(m ? composer_.CreateMaterial(*m) : nullptr);
         }
-        for (const auto &p : scene.Parts)
+        for (const auto &p : scene_.Parts)
         {
             const auto &part = *p->Definition;
+            if (!changed.contains(&part))
+            {
+                if (part.Role == "accessory")
+                    if (auto component = Component(part, "CmpAccessory"))
+                        for (auto renderer : PartRenderers(part))
+                            if (Named(component->Data.Get("rendAlpha"), renderer->Node->Name))
+                            {
+                                auto const &value = At(part.Parameters.Get("colorInfo"), 3);
+                                renderer->Node->Active = value.Has("color")
+                                                             ? ParameterColor(value.Get("color"), White).w != 0
+                                                             : part.Colors.size() < 16 || part.Colors[15] != 0;
+                            }
+                continue;
+            }
             if (part.Role == "clothes")
                 Clothes(part);
             for (auto *renderer : PartRenderers(part))
@@ -165,10 +302,35 @@ namespace hs2
                                 material.Set(property, 1.f);
                 }
         }
-        ClothingMasks();
-        for (const auto &part : scene.Parts)
-            Extensions(*part->Definition);
+        ClothingMasks(!changed.empty());
+        for (const auto &part : scene_.Parts)
+            // 遮罩绑定可能覆盖材质编辑器的贴图；按原顺序重新应用覆盖值。
+            Extensions(*part->Definition, changed.empty());
         DryMaker();
+        bool reset = old.size() != Materials.size();
+        for (auto &[renderer, materials] : Materials)
+        {
+            auto found = old.find(renderer);
+            if (found == old.end())
+            {
+                reset = true;
+                continue;
+            }
+            reset |= materials.size() != found->second.size();
+            for (size_t i = 0; i < std::min(materials.size(), found->second.size()); ++i)
+                if (materials[i] != found->second[i])
+                {
+                    if (!materials[i] || !found->second[i])
+                        reset = true;
+                    else
+                    {
+                        reset |= !SamePassState(*found->second[i], *materials[i]);
+                        *found->second[i] = std::move(*materials[i]);
+                        materials[i] = found->second[i];
+                    }
+                }
+        }
+        return reset;
     }
 
     std::vector<NativeSceneRenderer *> GpuCharacterAppearance::PartRenderers(const CharacterPart &part) const
@@ -483,7 +645,17 @@ namespace hs2
         }
     }
 
-    void GpuCharacterAppearance::ClothingMasks()
+    void GpuCharacterAppearance::UpdateVisibility()
+    {
+        // 贴图已在初始化时绑定；切换时只修改遮罩开关，保留材质编辑器的覆盖值。
+        ClothingMasks(false);
+        for (auto const &part : scene_.Parts)
+            if (part->Definition->Role == "body" || part->Definition->Role == "clothes" ||
+                part->Definition->Role == "accessory")
+                Extensions(*part->Definition, true);
+    }
+
+    void GpuCharacterAppearance::ClothingMasks(bool selectTextures)
     {
         const auto &visibility = definition_.Visibility;
         const CharacterPart *lower = nullptr;
@@ -517,7 +689,8 @@ namespace hs2
                     for (const auto *property : {"_alpha_a", "_alpha_b"})
                         if (material->HasProperty(property))
                             material->Set(property, visibility.ClothesVisible(0) ? 1.f : 0.f);
-                    if (material->HasProperty("_AlphaMask") && composer_.HasSelection("clothes.0." + mask))
+                    if (selectTextures && material->HasProperty("_AlphaMask") &&
+                        composer_.HasSelection("clothes.0." + mask))
                         composer_.SelectTexture(*material, "_AlphaMask", "clothes.0." + mask);
                     if (material->HasProperty("_alpha_c"))
                         material->Set("_alpha_c",
@@ -528,7 +701,7 @@ namespace hs2
                                                               : "o_shorts_a";
                 if (!bottom.empty() && renderer->Node->Name == maskRenderer)
                 {
-                    if (lower && material->HasProperty("_AlphaMask2"))
+                    if (selectTextures && lower && material->HasProperty("_AlphaMask2"))
                         composer_.SelectTexture(*material, "_AlphaMask2",
                                                 "clothes." + std::to_string(lower->Slot) + "." + bottom);
                     if (material->HasProperty("_alpha_d"))
@@ -538,7 +711,7 @@ namespace hs2
         }
     }
 
-    void GpuCharacterAppearance::Extensions(const CharacterPart &part)
+    void GpuCharacterAppearance::Extensions(const CharacterPart &part, bool visibilityOnly)
     {
         if (part.Role == "rig" || part.Role == "headRig")
             return;
@@ -576,6 +749,10 @@ namespace hs2
                 for (const auto *edit : edits)
                 {
                     if (edit->Kind == "renderer" || edit->Name != name)
+                        continue;
+                    if (visibilityOnly &&
+                        (edit->Kind != "float" || (edit->Property != "_alpha_a" && edit->Property != "_alpha_b" &&
+                                                   edit->Property != "_alpha_c" && edit->Property != "_alpha_d")))
                         continue;
                     if (edit->Kind == "shader")
                     {

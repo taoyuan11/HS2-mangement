@@ -52,6 +52,46 @@ namespace hs2
         }
     }
 
+    void PrepareCharacterClothingStates(CharacterDefinition &definition, const CharacterExtensionState &state,
+                                        std::span<const std::uint8_t> animation, bool braWorn, bool topWorn,
+                                        HeelDefinition heels)
+    {
+        auto rig = std::find_if(definition.Parts.begin(), definition.Parts.end(),
+                                [](auto const &part)
+                                {
+                                    return part->Role == "rig";
+                                });
+        if (rig == definition.Parts.end())
+            throw std::runtime_error("Character rig is missing.");
+        definition.ClothingStates.clear();
+        for (int clothing = 0; clothing < 3; ++clothing)
+        {
+            auto variant = definition;
+            variant.ClothingStates.clear();
+            auto shaped = std::make_shared<CharacterPart>(**rig);
+            variant.Parts[rig - definition.Parts.begin()] = shaped;
+            CharacterPreviewVisibility visibility{clothing};
+            ApplyCharacterPushUp(variant, state, animation, braWorn && visibility.ClothesVisible(2),
+                                 topWorn && visibility.ClothesVisible(0));
+            CharacterClothingState cached;
+            cached.Body = std::move(variant.Body);
+            cached.Bones = std::move(shaped->Bones);
+            cached.UnmodifiedBones = std::move(shaped->UnmodifiedBones);
+            if (visibility.ClothesVisible(7))
+                cached.Heels = heels;
+            for (auto const &part : definition.Parts)
+                if (part->Role == "accessory" &&
+                    std::find(variant.Parts.begin(), variant.Parts.end(), part) == variant.Parts.end())
+                    cached.HiddenAccessories.push_back(part->Slot);
+            definition.ClothingStates.push_back(std::move(cached));
+        }
+        auto const &current = definition.ClothingStates.at(definition.Visibility.Clothing);
+        definition.Body = current.Body;
+        definition.Heels = current.Heels;
+        (*rig)->Bones = current.Bones;
+        (*rig)->UnmodifiedBones = current.UnmodifiedBones;
+    }
+
     void ApplyCharacterPushUp(CharacterDefinition &definition, const CharacterExtensionState &state,
                               std::span<const std::uint8_t> animation, bool braWorn, bool topWorn)
     {

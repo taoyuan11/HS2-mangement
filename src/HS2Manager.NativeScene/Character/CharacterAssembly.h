@@ -12,6 +12,10 @@ namespace hs2
     void PoseCharacterFace(NativeCharacterScene &scene, float eyeOpen, bool dynamic = false, float horizontal = 0,
                            float vertical = 0, bool gaze = false);
     void ApplyCharacterVisibility(NativeCharacterScene &scene);
+    // 保留相同网格的渲染器；返回值表示骨架或部件结构是否需要刷新运行姿态。
+    bool CharacterSceneRequiresRuntimeReset(const NativeCharacterScene &scene, const NativeCharacterScene &next);
+    bool CharacterSceneTopologyMatches(const NativeCharacterScene &scene, const NativeCharacterScene &next);
+    bool UpdateCharacterScene(NativeCharacterScene &scene, NativeCharacterScene &next);
     // 仅应用一次 Heelz 预设参考姿态，不推进动画或物理模拟。
     void ApplyCharacterReferenceHeels(NativeCharacterScene &scene);
 }

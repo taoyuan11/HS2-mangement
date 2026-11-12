@@ -15,6 +15,7 @@ namespace hs2::ui
         NativeRendererBounds Body, Face;
         std::vector<std::string> Diagnostics;
         std::shared_ptr<const CharacterDefinition> Definition;
+        std::size_t ResourceLoads = 0;
     };
 
     struct PreviewCallbacks
@@ -72,6 +73,7 @@ namespace hs2::ui
         uint64_t Load(CardRecord card, std::optional<CharacterDocument> draft = {},
                       CharacterPreviewVisibility visibility = {}, bool preserveTime = false,
                       PreviewResources resources = {});
+        void Update(CharacterDocument draft, CharacterPreviewVisibility visibility);
         void Unload();
         // 等待渲染器退出 Present 后，界面再解除面板绑定。
         void Quiesce();
@@ -80,6 +82,7 @@ namespace hs2::ui
         void Environment(NativeFrameOptions options);
         void Paused(bool value);
         void Visible(bool value);
+        void Visibility(CharacterPreviewVisibility value);
         void Screenshot(ScreenshotTarget target);
 
     private:
@@ -101,11 +104,13 @@ namespace hs2::ui
         std::mutex mutex_;
         std::condition_variable_any wake_;
         std::optional<Request> pending_;
+        std::optional<CharacterDocument> pendingDraft_;
         std::stop_source loading_;
         uint64_t generation_ = 0;
         PreviewViewportSize size_{640, 640, 1};
         NativeRenderCamera camera_;
         NativeFrameOptions environment_;
+        CharacterPreviewVisibility visibility_;
         std::optional<ScreenshotTarget> screenshot_;
         std::chrono::steady_clock::time_point interactionUntil_{};
         bool paused_ = false, visible_ = true, unload_ = false, environmentDirty_ = true;

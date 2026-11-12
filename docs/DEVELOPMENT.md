@@ -129,6 +129,10 @@ Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser
 
 GUI 启动和退出检查通过 `tests/ui/Invoke-CppWinUiSmoke.ps1 -Executable <程序路径> -FixtureTool <hs2_ui_fixtures.exe 路径>` 单独执行，不在构建或打包中运行。
 
+进程退出策略位于 `Infrastructure/ProcessLifetime`，必须先于 COM／XAML 初始化。正常退出先停止自有线程、关闭 SQLite 并释放 UI 对象，最后结束本进程，避免第三方 `DLL_PROCESS_DETACH` 在 Windows 已停止其线程后再次等待。不得直接在业务操作中调用 `FinishProcess`；只有清理完成或致命异常／退出超时时才能使用。30 秒期限不覆盖用户选择保存／放弃／取消的等待，关闭被否决时必须撤销。该策略只修改本进程的 WER 标志，不修改系统注册表或结束其他进程。
+
+`process_exit_lifetime` 使用独立进程检查正常结束、卸载会阻塞的 DLL、重复关闭期限、取消期限、原生异常、绕过异常过滤器的快速失败，以及主进程被强制结束后的模型转换子进程回收。检查同时验证进程及 WER 克隆不再存在、程序和 DLL 目录能完整删除。GUI 冒烟检查另覆盖强制结束／重启、首次扫描中关闭、80 张人物卡资料库重启，并完整删除独立的运行库副本。
+
 便携目录和 ZIP 只携带 Windows App SDK 的 `zh-CN` 简体中文 MUI 资源及 `en-US` 英文回退资源，其他语言的独立 MUI 文件在发布复制时排除；开发构建目录仍可包含 SDK 的完整语言资源。`Test-CppPackage.ps1` 会检查必需的中英文资源，并拒绝发布包中多余的语言文件。公共 PRI、XAML 和运行库保留完整。
 
 真实游戏资源、GPU、FBX 或 PhysX 相关检查需要相应的本机依赖。历史画面对照和外部软件验证脚本已按职责放入 `tests` 的子目录，具体参数和样本范围见各验证文档。测试和工具必须等待其启动的子进程退出，并在失败或取消时完成清理。

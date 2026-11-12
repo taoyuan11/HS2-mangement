@@ -81,6 +81,19 @@ namespace hs2
 
     NativeForwardRenderer::~NativeForwardRenderer() = default;
 
+    void NativeForwardRenderer::UpdateCharacter(bool resetMaterials)
+    {
+        auto &s = *state_;
+        s.Graphics.VerifyThread();
+        s.Deformer.Retain(s.Scene.Renderers);
+        if (resetMaterials)
+        {
+            s.Passes.clear();
+            s.DepthPasses.clear();
+            s.Deferred.ResetMaterials();
+        }
+    }
+
     const GpuDepthSurface &NativeForwardRenderer::CameraDepth() const
     {
         if (!state_->CameraDepth)

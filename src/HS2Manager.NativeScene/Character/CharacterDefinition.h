@@ -9,6 +9,8 @@ namespace hs2
         int Clothing = 0;
         bool Accessories = true;
 
+        bool operator==(CharacterPreviewVisibility const &) const = default;
+
         bool ClothesVisible(int slot) const
         {
             return Clothing == 0 || (Clothing == 1 && slot >= 2 && slot <= 6);
@@ -19,12 +21,14 @@ namespace hs2
     {
         std::filesystem::path Bundle;
         std::string Asset;
+        bool operator==(const AssetReference &) const = default;
     };
 
     struct AssetSelection
     {
         std::string Key;
         AssetReference Reference;
+        bool operator==(const AssetSelection &) const = default;
     };
 
     struct ComponentDefinition
@@ -51,6 +55,7 @@ namespace hs2
         std::filesystem::path Path;
         std::uint64_t Offset = 0;
         int Length = 0;
+        bool operator==(const EmbeddedTextureReference &) const = default;
     };
 
     struct MaterialEdit
@@ -60,6 +65,7 @@ namespace hs2
         float Number = 0;
         std::vector<float> Values, Offset, Scale;
         std::optional<EmbeddedTextureReference> Texture;
+        bool operator==(const MaterialEdit &) const = default;
     };
 
     struct OverlayDefinition
@@ -68,6 +74,7 @@ namespace hs2
         std::string Name;
         bool Replace = false;
         std::optional<EmbeddedTextureReference> Texture;
+        bool operator==(const OverlayDefinition &) const = default;
     };
 
     struct HeelBone
@@ -81,6 +88,15 @@ namespace hs2
     {
         float Height = 0;
         std::vector<HeelBone> Bones;
+    };
+
+    // 首次准备时缓存三种着装状态的塑形数据，预览切换不再读取资源或重建网格。
+    struct CharacterClothingState
+    {
+        Parameter Body;
+        std::vector<BoneDefinition> Bones, UnmodifiedBones;
+        HeelDefinition Heels;
+        std::vector<int> HiddenAccessories;
     };
 
     struct ColliderSupportDefinition
@@ -109,6 +125,7 @@ namespace hs2
         int SchemaVersion = 1;
         std::int64_t EditRevision = 0;
         CharacterPreviewVisibility Visibility;
+        std::vector<CharacterClothingState> ClothingStates;
         std::string Name, CardHash, MotionState;
         int Sex = 0;
         std::vector<std::filesystem::path> BundlePaths;

@@ -115,7 +115,7 @@ namespace hs2::ui
             }
             if (name == L"PreviewRail_Selected")
             {
-                if (updating_ || editor_ || !preview_ || !model_->Bool(L"IsPreview"))
+                if (updating_ || busy_ || editor_ || !preview_ || !model_->Bool(L"IsPreview"))
                     co_return;
                 auto item = Control<ListView>(L"PreviewRail").SelectedItem();
                 if (item)

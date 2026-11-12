@@ -1,8 +1,10 @@
 #include "Editor/NativeEditor.h"
+#include "Infrastructure/ProcessLifetime.h"
 #include "Editing/CharacterEditComponents.h"
 #include "Preview/NativePreview.h"
 #include "Infrastructure/UiEvents.h"
 #include <cmath>
+#include <utility>
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Windows.Globalization.NumberFormatting.h>
 using namespace winrt;
@@ -130,14 +132,16 @@ namespace hs2::ui
                                         self->BuildParameters();
                             });
             }
+        building_ = true;
         Get<ListView>(L"Categories").SelectedIndex(0);
+        building_ = false;
         RefreshFields();
         UpdateState();
         owner->Control<ContentControl>(L"EditorHost").Content(root_);
         owner->model_->Put(L"IsEditing", true);
         Get<TextBlock>(L"EditorMessage").Text(L"封面保持原始字节 · 原生编辑草稿");
         previewTimer_ = owner->dispatcher_.CreateTimer();
-        previewTimer_.Interval(std::chrono::milliseconds(180));
+        previewTimer_.Interval(std::chrono::milliseconds(33));
         previewTimer_.IsRepeating(false);
         previewTimer_.Tick(
             [weak](auto &&, auto &&)
@@ -145,18 +149,14 @@ namespace hs2::ui
                 if (auto self = weak.lock())
                     self->UpdatePreview();
             });
-        owner->preview_.reset();
         owner->preview_ = NativePreview::Create(owner);
         owner->preview_->Load(session_.Card, root_, true, session_.Document);
     }
 
     void NativeEditor::QueuePreview()
     {
-        if (!stopped_ && previewTimer_)
-        {
-            previewTimer_.Stop();
+        if (!stopped_ && previewTimer_ && !previewTimer_.IsRunning())
             previewTimer_.Start();
-        }
     }
 
     void NativeEditor::Definition(std::shared_ptr<const CharacterDefinition> definition)
@@ -184,22 +184,30 @@ namespace hs2::ui
         if (auto owner = owner_.lock())
             if (owner->preview_)
             {
-                auto choice = Get<ComboBox>(L"ClothingVisibility").SelectedIndex();
-                CharacterPreviewVisibility visibility;
-                visibility.Clothing =
-                    choice == 0 ? CharacterEditSchema::AutoClothingState(
-                                      Category(),
-                                      to_string(unbox_value_or<hstring>(Get<ListView>(L"Groups").SelectedItem(), L"")))
-                                : choice - 1;
-                visibility.Accessories = Get<ToggleSwitch>(L"AccessoryVisibility").IsOn();
-                Get<TextBlock>(L"VisibilityStatus")
-                    .Text(to_hstring(std::string(choice == 0 ? "自动 · " : "") +
-                                     (visibility.Clothing == 0   ? "完整着装"
-                                      : visibility.Clothing == 1 ? "内着"
-                                                                 : "不穿衣物") +
-                                     (visibility.Accessories ? "" : " · 隐藏配饰")));
-                owner->preview_->Update(session_.Document, visibility);
+                owner->preview_->Update(session_.Document, UpdateVisibility());
             }
+    }
+
+    CharacterPreviewVisibility NativeEditor::UpdateVisibility()
+    {
+        auto choice = Get<ComboBox>(L"ClothingVisibility").SelectedIndex();
+        CharacterPreviewVisibility visibility;
+        visibility.Clothing =
+            choice == 0
+                ? CharacterEditSchema::AutoClothingState(
+                      Category(), to_string(unbox_value_or<hstring>(Get<ListView>(L"Groups").SelectedItem(), L"")))
+                : choice - 1;
+        visibility.Accessories = Get<ToggleSwitch>(L"AccessoryVisibility").IsOn();
+        Get<TextBlock>(L"VisibilityStatus")
+            .Text(to_hstring(std::string(choice == 0 ? "自动 · " : "") +
+                             (visibility.Clothing == 0   ? "完整着装"
+                              : visibility.Clothing == 1 ? "内着"
+                                                         : "不穿衣物") +
+                             (visibility.Accessories ? "" : " · 隐藏配饰")));
+        if (auto owner = owner_.lock())
+            if (owner->preview_)
+                owner->preview_->Visibility(visibility);
+        return visibility;
     }
 
     std::string NativeEditor::Category() const
@@ -226,16 +234,26 @@ namespace hs2::ui
         if (building_)
             return;
         building_ = true;
-        auto group = unbox_value_or<hstring>(Get<ListView>(L"Groups").SelectedItem(), L"");
         fields_ = CharacterEditSchema::Build(session_.Document, limits_);
         std::erase_if(fields_,
                       [&](auto const &field)
                       {
                           return !CharacterFieldCapabilities::Visible(field, definition_.get());
                       });
+        building_ = false;
+        RefreshGroups();
+    }
+
+    void NativeEditor::RefreshGroups()
+    {
+        if (building_)
+            return;
+        building_ = true;
+        auto group = unbox_value_or<hstring>(Get<ListView>(L"Groups").SelectedItem(), L"");
+        auto category = Category();
         std::vector<std::string> groups;
         for (auto const &field : fields_)
-            if (field.Category == Category() && std::find(groups.begin(), groups.end(), field.Group) == groups.end())
+            if (field.Category == category && std::find(groups.begin(), groups.end(), field.Group) == groups.end())
                 groups.push_back(field.Group);
         auto items = single_threaded_observable_vector<Object>();
         int index = 0;
@@ -263,9 +281,10 @@ namespace hs2::ui
             panel.Children().Clear();
             auto group = to_string(unbox_value_or<hstring>(Get<ListView>(L"Groups").SelectedItem(), L"")),
                  search = to_string(Get<TextBox>(L"FieldSearch").Text());
+            auto category = Category();
             Get<TextBlock>(L"GroupTitle").Text(to_hstring(search.empty() ? group : "搜索结果"));
             for (auto const &field : fields_)
-                if (field.Category == Category() &&
+                if (field.Category == category &&
                     (search.empty() ? field.Group == group
                                     : (field.Label + field.Group).find(search) != std::string::npos))
                     panel.Children().Append(FieldControl(field));
@@ -613,19 +632,21 @@ namespace hs2::ui
             {
                 if (!building_)
                 {
+                    building_ = true;
                     Get<TextBox>(L"FieldSearch").Text(L"");
-                    RefreshFields();
-                    QueuePreview();
+                    building_ = false;
+                    RefreshGroups();
+                    UpdateVisibility();
                 }
             }
             else if (action == L"ClothingVisibility_Changed" || action == L"AccessoryVisibility_Toggled")
-                QueuePreview();
+                UpdateVisibility();
             else if (action == L"Group_Changed")
             {
                 if (!building_)
                 {
                     BuildParameters();
-                    QueuePreview();
+                    UpdateVisibility();
                 }
             }
             else if (action == L"Save_Click")
@@ -732,7 +753,10 @@ namespace hs2::ui
                     });
             }
             else
+            {
+                CancelProcessShutdown();
                 owner->closing_ = false;
+            }
         }
         co_return result.has_value();
     }
@@ -756,29 +780,51 @@ namespace hs2::ui
             error = e.what();
         }
         co_await ui;
-        SetBusy(false);
         if (closing_)
         {
+            SetBusy(false);
             RequestClose();
             co_return;
         }
         if (!document)
         {
+            SetBusy(false);
             Report(error);
             co_return;
         }
         try
         {
-            editor_ = NativeEditor::Open(lifetime, card, *document);
+            // 先停止渲染并解除旧面板的交换链，再创建和显示编辑器。
+            // 驱动清理可能需要 UI 消息循环，不能在 Initialize 中同步析构旧预览。
+            auto previous = std::exchange(preview_, nullptr);
+            if (previous)
+                co_await previous->StopAsync();
+            if (!closing_)
+                editor_ = NativeEditor::Open(lifetime, card, std::move(*document));
         }
         catch (std::exception const &e)
         {
-            Report(e.what());
+            error = e.what();
         }
         catch (hresult_error const &e)
         {
-            Report(to_string(e.message()));
+            error = to_string(e.message());
         }
+        if (!editor_)
+        {
+            // 初始化失败或等待期间关闭窗口时，回收部分创建的预览及编辑器视图。
+            auto incomplete = std::exchange(preview_, nullptr);
+            if (incomplete)
+                co_await incomplete->StopAsync();
+            Control<ContentControl>(L"EditorHost").Content(nullptr);
+            model_->Put(L"IsEditing", false);
+            model_->Put(L"IsPreview", false);
+        }
+        SetBusy(false);
+        if (closing_)
+            RequestClose();
+        else if (!error.empty())
+            Report(error);
     }
 
     IAsyncOperation<bool> NativeWindow::CloseEditor()
@@ -804,9 +850,13 @@ namespace hs2::ui
             dialogOpen_ = false;
             if (result == ContentDialogResult::None)
                 co_return false;
+            if (closePrompt_)
+                BeginProcessShutdown();
             if (result == ContentDialogResult::Primary && !(co_await editor->Save()))
                 co_return false;
         }
+        if (closePrompt_)
+            BeginProcessShutdown();
         editor_->Stop();
         if (preview_)
         {
@@ -827,11 +877,14 @@ namespace hs2::ui
         auto lifetime = shared_from_this();
         if (closePrompt_ || busy_)
             co_return;
+        // 不给保存/放弃/取消对话框计时；用户决定离开后再启动清理期限。
+        CancelProcessShutdown();
         closePrompt_ = true;
         try
         {
             if (co_await CloseEditor())
             {
+                BeginProcessShutdown();
                 closing_ = true;
                 CancelTemporaryPreview();
                 if (preview_)
@@ -850,15 +903,31 @@ namespace hs2::ui
                     Report(e.what());
                 }
                 closeReady_ = true;
+                Shutdown();
                 window_.Close();
             }
             else
+            {
+                CancelProcessShutdown();
                 closing_ = false;
+            }
         }
         catch (hresult_error const &e)
         {
+            // 已决定退出后，清理失败也必须结束；不能撤销兜底并留下失去业务资源的窗口。
+            if (closing_ || closeReady_)
+                FinishProcess(static_cast<DWORD>(e.code()));
+            CancelProcessShutdown();
             closing_ = false;
             Report(to_string(e.message()));
+        }
+        catch (std::exception const &e)
+        {
+            if (closing_ || closeReady_)
+                FinishProcess(ERROR_PROCESS_ABORTED);
+            CancelProcessShutdown();
+            closing_ = false;
+            Report(e.what());
         }
         closePrompt_ = false;
     }

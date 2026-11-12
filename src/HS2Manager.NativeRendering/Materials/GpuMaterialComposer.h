@@ -55,6 +55,7 @@ namespace hs2
         GpuMaterialComposer(GraphicsDevice &graphics, NativeGpuAssetStore &store,
                             const CharacterDefinition &definition);
         bool HasSelection(const std::string &key) const;
+        void UpdateSelections();
         std::shared_ptr<GpuMaterialInstance> CreateMaterial(const GpuMaterialData &source);
         void OptimizeShader(GpuMaterialInstance &material);
         std::shared_ptr<NativeShaderAsset> Shader(const std::string &name);

@@ -44,10 +44,12 @@ namespace hs2::ui
         NativeEditor(std::shared_ptr<NativeWindow> const &owner, CardRecord card, CharacterDocument document);
         void Initialize();
         void RefreshFields();
+        void RefreshGroups();
         void BuildParameters();
         void UpdateState();
         void QueuePreview();
         void UpdatePreview();
+        CharacterPreviewVisibility UpdateVisibility();
         winrt::Microsoft::UI::Xaml::FrameworkElement FieldControl(CharacterField field);
         winrt::fire_and_forget Action(std::wstring action, hs2::ui::Object sender);
         winrt::fire_and_forget ChooseColor(CharacterField field);

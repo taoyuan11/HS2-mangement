@@ -13,6 +13,7 @@ namespace hs2
         NativeForwardRenderer(GraphicsDevice &graphics, NativeCharacterScene &scene, GpuCharacterAppearance &appearance,
                               GpuMaterialComposer &composer, NativeGpuAssetStore &assets);
         ~NativeForwardRenderer();
+        void UpdateCharacter(bool resetMaterials);
         void Draw(GpuTexture &target, const NativeRenderCamera &camera, std::span<const float> ambientProbe,
                   float time = 0);
         bool UseGameBackground = true;

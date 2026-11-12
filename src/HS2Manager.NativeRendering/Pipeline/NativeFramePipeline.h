@@ -22,6 +22,7 @@ namespace hs2
         NativeFramePipeline(const NativeFramePipeline &) = delete;
         NativeFramePipeline &operator=(const NativeFramePipeline &) = delete;
         void ResetHistory();
+        void UpdateCharacter(const CharacterDefinition &previous);
         void SetInteractive(bool value);
         void SetEnvironment(const NativeFrameOptions &options);
         const GpuTexture &Draw(NativeRenderCamera camera, int width, int height, float time);

@@ -448,6 +448,29 @@ namespace
         Set(bra, "HIDE_ACCESSORIES", 1);
         Set(bra, "SQUEEZE", .8f);
         state.PushUp.Children.push_back(bra);
+        auto cached = definition;
+        cached.Parts[0] = std::make_shared<CharacterPart>(*rig);
+        cached.Visibility.Clothing = 2;
+        HeelDefinition heels;
+        heels.Height = .25f;
+        PrepareCharacterClothingStates(cached, state, {}, true, false, heels);
+        Check(cached.Parts.size() == 2 && cached.ClothingStates.size() == 3,
+              "cached clothing states retain hidden accessories for later switches");
+        Check(cached.ClothingStates[0].HiddenAccessories == std::vector<int>{0} &&
+                  cached.ClothingStates[1].HiddenAccessories == std::vector<int>{0} &&
+                  cached.ClothingStates[2].HiddenAccessories.empty(),
+              "pushup accessory visibility follows cached clothing state");
+        Check(cached.ClothingStates[0].Heels.Height == .25f && cached.ClothingStates[1].Heels.Height == 0 &&
+                  cached.ClothingStates[2].Heels.Height == 0,
+              "cached heels follow shoe visibility");
+        Check(std::abs(cached.ClothingStates[0].Bones[0].Position.y - .09f) < 1e-7f &&
+                  std::abs(cached.ClothingStates[1].Bones[0].Position.y - .09f) < 1e-7f &&
+                  cached.ClothingStates[2].Bones[0].Position.y == 0 && cached.Parts[0]->Bones[0].Position.y == 0 &&
+                  rig->Bones[0].Position.y == 0,
+              "cached shaping is independent and selects the initial clothing state");
+        Check(std::abs(cached.ClothingStates[1].Body.Float("effectiveBustSoftness") - .1f) < 1e-7f &&
+                  std::abs(cached.Body.Float("effectiveBustSoftness") - .8f) < 1e-7f,
+              "cached pushup firmness restores bare body values");
         ApplyCharacterPushUp(definition, state, {}, true, false);
         Check(std::abs(rig->Bones[0].Position.y - .09f) < 1e-7f &&
                   rig->UnmodifiedBones[0].Position.y == rig->Bones[0].Position.y,
