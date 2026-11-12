@@ -330,6 +330,8 @@ namespace hs2
         std::vector<Block> Blocks;
         std::map<std::string, Section> Sections, SourceSections;
         std::optional<MessagePack> Extensions, SourceExtensions;
+        std::optional<MessagePack> Parameter;
+        std::optional<Bytes> Cover;
     };
 
     CharacterDocument CharacterDocument::Open(const fs::path &path, std::stop_token token)
@@ -451,12 +453,13 @@ namespace hs2
 
     std::size_t CharacterDocument::PngLength() const
     {
-        return data_->PngLength;
+        return data_->Cover ? data_->Cover->size() : data_->PngLength;
     }
 
     std::span<const std::uint8_t> CharacterDocument::Cover() const
     {
-        return std::span(*data_->Original).first(data_->PngLength);
+        return data_->Cover ? std::span<const std::uint8_t>(*data_->Cover)
+                            : std::span(*data_->Original).first(data_->PngLength);
     }
 
     std::vector<std::string> CharacterDocument::SectionNames() const
@@ -511,6 +514,8 @@ namespace hs2
 
     bool CharacterDocument::IsOriginal() const
     {
+        if (data_->Parameter || data_->Cover)
+            return false;
         for (auto &[name, section] : data_->Sections)
             if (!section.Node.ContentEquals(data_->SourceSections.at(name).Node))
                 return false;
@@ -523,6 +528,9 @@ namespace hs2
         if (data_ == other.data_)
             return true;
         if (SourceHash() != other.SourceHash())
+            return false;
+        if (data_->Parameter.has_value() != other.data_->Parameter.has_value() || data_->Cover != other.data_->Cover ||
+            (data_->Parameter && !data_->Parameter->ContentEquals(*other.data_->Parameter)))
             return false;
         for (auto &[name, section] : data_->Sections)
             if (!section.Node.ContentEquals(other.data_->Sections.at(name).Node))
@@ -562,6 +570,25 @@ namespace hs2
             throw std::invalid_argument("扩展数据必须是字典");
         auto next = std::make_shared<Data>(*data_);
         next->Extensions = std::move(value);
+        return CharacterDocument(next);
+    }
+
+    CharacterDocument CharacterDocument::WithName(std::string name) const
+    {
+        if (name.empty() || name.size() > 1024 || name.find('\0') != std::string::npos)
+            throw std::invalid_argument("人物姓名为空或过长");
+        auto next = std::make_shared<Data>(*data_);
+        auto parameter = next->Parameter.value_or(MessagePack::Parse(BlockBytes("Parameter")));
+        next->Parameter = parameter.Set(std::string("fullname"), MessagePack::Scalar(std::move(name)), true);
+        return CharacterDocument(next);
+    }
+
+    CharacterDocument CharacterDocument::WithCover(Bytes png) const
+    {
+        if (png.size() > 32ull * 1024 * 1024 || CardParser::FindPngEnd(png) != png.size())
+            throw std::invalid_argument("新封面必须是完整且不含尾部数据的 PNG");
+        auto next = std::make_shared<Data>(*data_);
+        next->Cover = std::move(png);
         return CharacterDocument(next);
     }
 
@@ -612,6 +639,8 @@ namespace hs2
                     Append(replacement, raw.subspan(old.Position));
                 }
             }
+            else if (block.Name == "Parameter" && data_->Parameter)
+                replacement = data_->Parameter->ToBytes();
             else if (block.Name == "KKEx" && (!data_->Extensions || !data_->SourceExtensions ||
                                               !data_->Extensions->ContentEquals(*data_->SourceExtensions)))
                 replacement = data_->Extensions ? data_->Extensions->ToBytes() : MessagePack::Map().ToBytes();
@@ -640,7 +669,8 @@ namespace hs2
         }
         auto table = data_->Table.Set(std::string("lstInfo"), entries).ToBytes();
         Bytes output;
-        Append(output, original.first(data_->PrefixLength));
+        Append(output, Cover());
+        Append(output, original.subspan(data_->PngLength, data_->PrefixLength - data_->PngLength));
         WriteNumber(output, table.size(), 4);
         Append(output, table);
         WriteNumber(output, payload.size(), 8);

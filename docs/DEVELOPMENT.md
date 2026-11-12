@@ -15,6 +15,8 @@ HS2-mangement/
             Preview/                   预览界面与渲染工作线程
             Views/                     XAML 视图和共享样式
             Assets/                    图标等界面资源
+        HS2Manager.NativeAgent/        独立 C++ MCP 服务、生成会话、渲染与素材构建
+            Resources/                 受管 Blender／Unity 构建脚本
         HS2Manager.NativeCore/         人物卡管理与数据服务
             Common/                    公共类型和基础工具
             Editing/                   编辑规则、字段与组件

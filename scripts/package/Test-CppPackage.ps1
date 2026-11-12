@@ -11,7 +11,9 @@ if (!(Test-Path -LiteralPath $root -PathType Container)) {
 }
 $failures = New-Object System.Collections.Generic.List[string]
 $required = @(
-    'HS2Manager.exe', 'resources.pri', 'MainWindow.xaml', 'CharacterEditorView.xaml', 'SettingsView.xaml', 'Styles.xaml',
+    'HS2Manager.exe', 'HS2Agent.exe', 'resources.pri', 'MainWindow.xaml', 'CharacterEditorView.xaml', 'SettingsView.xaml', 'Styles.xaml',
+    'Resources/Agent/BlenderAsset.py', 'Resources/Agent/HS2AgentBuilder.cs', 'agent.example.json', 'agent.mcp.example.toml',
+    'skills/hs2-card-agent/SKILL.md', 'skills/hs2-card-agent/references/assets.md',
     'Microsoft.UI.Xaml.dll', 'Microsoft.UI.Xaml.Controls.dll', 'Microsoft.UI.Xaml.Controls.pri', 'Microsoft.WindowsAppRuntime.dll',
     'zh-CN/Microsoft.ui.xaml.dll.mui', 'zh-CN/Microsoft.UI.Xaml.Phone.dll.mui',
     'en-US/Microsoft.ui.xaml.dll.mui', 'en-US/Microsoft.UI.Xaml.Phone.dll.mui',
@@ -200,7 +202,7 @@ foreach ($file in Get-PackageFiles $root) {
     }
     if ($file.Name -match '^(coreclr|clr|hostfxr|hostpolicy|mscoree|UnityPlayer|GameAssembly|Assembly-CSharp|mono.*|HS2Manager\.(App|Core|Rendering|Export|Bridge|Preview\.Contracts))\.dll$' -or
         $file.Name -like '*.runtimeconfig.json' -or $file.Name -match '^python([\d.]*\.dll|\.exe)$' -or
-        $file.Extension -in '.cs', '.csproj', '.zipmod', '.unity3d', '.bundle' -or $relative -match '^(UserData|abdata|mods|BepInEx|tests|reference)[\\/]') {
+        ($file.Extension -in '.cs', '.csproj', '.zipmod', '.unity3d', '.bundle' -and $relative -notmatch '^Resources[\\/]Agent[\\/]HS2AgentBuilder\.cs$') -or $relative -match '^(UserData|abdata|mods|BepInEx|tests|reference)[\\/]') {
         $failures.Add("Managed/engine/game payload: $relative")
     }
     if ($file.Extension -notin '.exe', '.dll') {

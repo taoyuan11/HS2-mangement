@@ -329,6 +329,13 @@ namespace hs2
                                                 const fs::path &outputPath, CardExportOptions options,
                                                 Progress progress, std::stop_token token)
     {
+        return BuildPlan(cards, gamePath, outputPath, options, progress, token, nullptr);
+    }
+
+    CardExportPlan CardExportService::BuildPlan(const std::vector<CardRecord> &cards, const fs::path &gamePath,
+                                                const fs::path &outputPath, CardExportOptions options,
+                                                Progress progress, std::stop_token token, const ModIndex *resourceIndex)
+    {
         if (!ValidLevel(options.Level) ||
             (options.Mode != CardExportMode::Merged && options.Mode != CardExportMode::PerCard))
             throw std::invalid_argument("导出选项无效");
@@ -356,7 +363,7 @@ namespace hs2
         {
             if (progress)
                 progress({0, 0, "检查导出依赖…"});
-            auto index = ModDependencyService(repository_).Scan(game, progress, token);
+            auto index = resourceIndex ? *resourceIndex : ModDependencyService(repository_).Scan(game, progress, token);
             dependencies = std::make_unique<CardExportDependencies>(game, std::move(index), token, classDatabase_);
         }
         std::set<std::string> names;

@@ -141,6 +141,9 @@ namespace hs2
         CardExportPlan BuildPlan(const std::vector<CardRecord> &cards, const fs::path &game, const fs::path &output,
                                  CardExportOptions options = {}, Progress progress = {},
                                  std::stop_token cancellation = {});
+        CardExportPlan BuildPlan(const std::vector<CardRecord> &cards, const fs::path &game, const fs::path &output,
+                                 CardExportOptions options, Progress progress, std::stop_token cancellation,
+                                 const ModIndex *resourceIndex);
         CardExportReport Export(const CardExportPlan &plan, Progress progress = {}, std::stop_token cancellation = {});
         static void ValidateOutput(const fs::path &game, const fs::path &output);
 

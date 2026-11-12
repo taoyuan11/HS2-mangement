@@ -1,6 +1,7 @@
 #pragma once
 #include "Common/Core.h"
 #include "Scene/SceneTypes.h"
+#include "Preview/PreviewResourceContext.h"
 
 namespace hs2
 {
@@ -80,6 +81,9 @@ namespace hs2
         ModelExportReport Export(const std::vector<ModelExportSource> &sources, const fs::path &game,
                                  const fs::path &data, const fs::path &output, ModelExportOptions options = {},
                                  Progress progress = {}, std::stop_token cancellation = {});
+        ModelExportReport Export(const std::vector<ModelExportSource> &sources, const fs::path &game,
+                                 const fs::path &data, const fs::path &output, ModelExportOptions options,
+                                 Progress progress, std::stop_token cancellation, PreviewResources resources);
         static void ValidateView(const ModelExportView &view);
 
     private:

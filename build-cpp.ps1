@@ -202,6 +202,7 @@ if (!$SkipUi) {
         $runtime.FbxDirectory = $FbxDirectory
     }
     & (Join-Path $source 'scripts/package/Copy-CppRuntime.ps1') @runtime
+    Copy-Item -LiteralPath (Join-Path $native "src/HS2Manager.NativeAgent/$Configuration/HS2Agent.exe") -Destination (Join-Path (Split-Path -Parent $executable) 'HS2Agent.exe')
     & (Join-Path $source 'scripts/package/Test-CppPackage.ps1') -Package (Split-Path -Parent $executable) -DevelopmentOutput
     # GUI 冒烟测试仅由 tests/ui/Invoke-CppWinUiSmoke.ps1 显式运行，构建不打开应用窗口。
     if ($ResultFile) {

@@ -168,6 +168,15 @@ namespace hs2
                                                  const fs::path &outputPath, ModelExportOptions options,
                                                  Progress progress, std::stop_token cancellation)
     {
+        return Export(sources, gamePath, dataPath, outputPath, options, progress, cancellation, {});
+    }
+
+    ModelExportReport ModelExportService::Export(const std::vector<ModelExportSource> &sources,
+                                                 const fs::path &gamePath, const fs::path &dataPath,
+                                                 const fs::path &outputPath, ModelExportOptions options,
+                                                 Progress progress, std::stop_token cancellation,
+                                                 PreviewResources resources)
+    {
         ComApartment apartment;
         if (options.Clothing < 0 || options.Clothing > 2 ||
             (options.Target != ModelExportTarget::GenericFbx && options.Target != ModelExportTarget::Blender &&
@@ -204,7 +213,7 @@ namespace hs2
         auto workspace = sessions / Path(NewId());
         fs::create_directories(workspace);
         OwnedDirectory session{sessions, workspace};
-        NativeCharacterService characters(game, data, classDatabase);
+        NativeCharacterService characters(game, data, classDatabase, resources);
         try
         {
             if (options.Target != ModelExportTarget::GenericFbx)

@@ -1,0 +1,14 @@
+{
+    "game_path": "D:/Games/HS2",
+    "data_directory": "C:/Users/YOUR_NAME/AppData/Local/HS2Manager/Agent",
+    "output_directory": "D:/HS2Characters",
+    "base_cards": {
+        "male": "D:/Games/HS2/UserData/chara/male/base.png",
+        "female": "D:/Games/HS2/UserData/chara/female/base.png"
+    },
+    "blender_path": "C:/Program Files/Blender Foundation/Blender 4.5/blender.exe",
+    "unity_path": "C:/Program Files/Unity/Hub/Editor/2018.4.11f1/Editor/Unity.exe",
+    "modding_project": "D:/Tools/HS2ModdingTool",
+    "max_iterations": 12,
+    "tool_timeout_seconds": 900
+}

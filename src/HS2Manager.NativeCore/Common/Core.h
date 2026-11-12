@@ -329,6 +329,8 @@ namespace hs2
         CharacterDocument WithValue(std::string_view path, MessagePack::Value value) const;
         CharacterDocument WithNode(std::string_view path, const MessagePack &replacement) const;
         CharacterDocument WithExtensions(std::optional<MessagePack> value) const;
+        CharacterDocument WithName(std::string name) const;
+        CharacterDocument WithCover(Bytes png) const;
         Bytes ToBytes() const;
 
     private:
