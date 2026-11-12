@@ -814,7 +814,10 @@ namespace hs2
                 issues.insert(assembly.Path + "：" + assembly.Error);
             for (auto &definition : assembly.Plugins)
                 for (auto &dependency : definition.Dependencies)
-                    addPlugin(dependency.Guid, dependency.MinimumVersion, dependency.Optional);
+                    // Soft dependencies are load-order hints for optional integrations. A card that
+                    // needs that plugin adds it through its own extension/assembly dependencies.
+                    if (!dependency.Optional)
+                        addPlugin(dependency.Guid, dependency.MinimumVersion, false);
             for (auto &reference : assembly.References)
             {
                 std::vector<const PluginFileInfo *> candidates;

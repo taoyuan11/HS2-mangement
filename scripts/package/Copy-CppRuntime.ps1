@@ -69,15 +69,17 @@ foreach ($name in @('BlenderImport.py', 'BlenderNative.py', 'UnrealImport.py', '
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../../src/HS2Manager.NativeExport/Resources/ModelExport/' + $name)) -Destination (Join-Path $converter $name)
 }
 $licenses = Join-Path $packagePath 'licenses'
-$agentResources = Join-Path $packagePath 'Resources/Agent'
-New-Item -ItemType Directory -Path $agentResources -Force | Out-Null
-foreach ($name in @('BlenderAsset.py', 'HS2AgentBuilder.cs')) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../../src/HS2Manager.NativeAgent/Resources/' + $name)) -Destination (Join-Path $agentResources $name)
+# Remove retired Agent build resources from an existing development output.
+foreach ($relative in @('Resources/Agent/BlenderAsset.py', 'Resources/Agent/HS2AgentBuilder.cs')) {
+    $retired = Join-Path $packagePath $relative
+    if (Test-Path -LiteralPath $retired -PathType Leaf) {
+        Remove-Item -LiteralPath $retired
+    }
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../skills') -Destination $packagePath -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../agent.example.json') -Destination $packagePath
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../agent.mcp.example.toml') -Destination $packagePath
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
-foreach ($name in @('7zip-LICENSE.txt', '7zip-LGPL.txt', '7zip-unRAR.txt', 'AssetRipper-Tpk.txt', 'Autodesk-FBX-SDK-2020.3.7.rtf', 'CppWinRT-LICENSE.txt', 'LZMA-PUBLIC-DOMAIN.txt', 'miniz-LICENSE.txt', 'nlohmann-json-LICENSE.txt', 'NVIDIA-PhysX-3.4.txt', 'sqlite-LICENSE.txt', 'Unity-PostProcessing.md', 'WindowsAppSDK-LICENSE.txt', 'WindowsAppSDK-NOTICE.txt')) {
+foreach ($name in @('7zip-LICENSE.txt', '7zip-LGPL.txt', '7zip-unRAR.txt', 'AssetRipper-Tpk.txt', 'Autodesk-FBX-SDK-2020.3.7.rtf', 'CppWinRT-LICENSE.txt', 'LZMA-PUBLIC-DOMAIN.txt', 'LZ4-LICENSE.txt', 'cgltf-LICENSE.txt', 'miniz-LICENSE.txt', 'nlohmann-json-LICENSE.txt', 'NVIDIA-PhysX-3.4.txt', 'sqlite-LICENSE.txt', 'Unity-PostProcessing.md', 'WindowsAppSDK-LICENSE.txt', 'WindowsAppSDK-NOTICE.txt')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../../licenses/' + $name)) -Destination (Join-Path $licenses $name)
 }

@@ -16,7 +16,7 @@ public class GameAssetChecks : BaseUnityPlugin
     static extern bool TerminateProcess(IntPtr process, uint exitCode);
     [Serializable] public class Item { public string path, kind, target; public int slot; }
     [Serializable] public class Input { public Item[] items; }
-    [Serializable] public class Result { public string path, kind, target, error, preview; public bool card_loaded, character_loaded, generated_part_loaded, deformation_checked, geometry_checked; public int renderers, vertices, clothing_states, overlay_width, overlay_height; }
+    [Serializable] public class Result { public string path, kind, target, sex, error, preview; public bool card_loaded, character_loaded, generated_part_loaded, deformation_checked, geometry_checked, dynamic_checked, body_variation_checked, masks_checked; public int renderers, vertices, clothing_states, overlay_width, overlay_height; }
     [Serializable] public class Report { public bool passed; public Result[] items; }
 
     static string Quote(string value)
@@ -90,6 +90,42 @@ public class GameAssetChecks : BaseUnityPlugin
         finally { joint.localRotation = original; }
     }
 
+    static void CheckBodyVariation(ChaControl character, GameObject part)
+    {
+        var method = typeof(ChaControl).GetMethod("SetShapeBodyValue", new[] { typeof(int), typeof(float) });
+        if (method == null) throw new Exception("Game body shape API is missing");
+        var skins = part.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        // HS2 fixes male height (index 0), so perturb a supported shape for each fixture.
+        var index = part.GetComponent<CmpHair>() != null ? 9 : 12;
+        var original = character.chaFile.custom.body.shapeValueBody[index];
+        var before = skins.Select(Sample).ToArray();
+        var changed = false;
+        try
+        {
+            foreach (var offset in new[] { -0.1f, 0.1f })
+            {
+                method.Invoke(character, new object[] { index, Mathf.Clamp01(original + offset) });
+                character.UpdateShapeBodyCalcForce();
+                var after = skins.Select(Sample).ToArray();
+                changed |= before.SelectMany((points, skin) => points.Select((point, vertex) => (point - after[skin][vertex]).sqrMagnitude)).Any(distance => distance > 0.00000001f);
+            }
+            if (!changed) throw new Exception("Generated skin did not follow game body shape changes: " + index);
+        }
+        finally { method.Invoke(character, new object[] { index, original }); character.UpdateShapeBodyCalcForce(); }
+    }
+
+    static void CheckDynamic(GameObject part)
+    {
+        var dynamics = part.GetComponentsInChildren<Component>(true).Where(value => value != null && value.GetType().Name == "DynamicBone").ToArray();
+        if (dynamics.Length == 0) throw new Exception("Fixture dynamic bone component is missing");
+        foreach (var dynamic in dynamics)
+        {
+            var root = dynamic.GetType().GetField("m_Root").GetValue(dynamic) as Transform;
+            if (root == null || !root.name.StartsWith("native_strand_") || root.childCount == 0)
+                throw new Exception("Fixture dynamic root was not preserved");
+        }
+    }
+
     static Texture2D ReadOverlay(ChaControl character, string target)
     {
         var typeName = target == "clothes" ? "KoiClothesOverlayX.KoiClothesOverlayController" : "KoiSkinOverlayX.KoiSkinOverlayController";
@@ -114,6 +150,10 @@ public class GameAssetChecks : BaseUnityPlugin
         var bounds = character.objBody.GetComponentsInChildren<Renderer>(true).First().bounds;
         foreach (var renderer in character.GetComponentsInChildren<Renderer>())
             if (renderer.enabled && renderer.gameObject.activeInHierarchy) bounds.Encapsulate(renderer.bounds);
+        if (onlyPart != null)
+            bounds = BoundsOf(onlyPart.GetComponentsInChildren<Renderer>(true).Where(renderer => renderer.gameObject.activeInHierarchy)
+                .SelectMany(renderer => renderer is SkinnedMeshRenderer ? Sample((SkinnedMeshRenderer)renderer) :
+                    renderer.GetComponent<MeshFilter>().sharedMesh.vertices.Select(renderer.transform.TransformPoint).ToArray()));
         var cameraObject = new GameObject("AgentAcceptanceCamera");
         var lightObject = new GameObject("AgentAcceptanceLight");
         var camera = cameraObject.AddComponent<Camera>();
@@ -145,6 +185,13 @@ public class GameAssetChecks : BaseUnityPlugin
             texture.ReadPixels(new Rect(0, 0, 512, 768), 0, 0);
             texture.Apply();
             File.WriteAllBytes(path, texture.EncodeToPNG());
+            if (onlyPart != null)
+            {
+                var pixels = texture.GetPixels32();
+                var background = pixels[0];
+                if (pixels.Count(pixel => Math.Abs(pixel.r - background.r) + Math.Abs(pixel.g - background.g) + Math.Abs(pixel.b - background.b) > 20) < 40)
+                    throw new Exception("Generated part produced no visible game pixels: " + path);
+            }
             return path;
         }
         finally
@@ -169,6 +216,20 @@ public class GameAssetChecks : BaseUnityPlugin
             .Select(columns => new Item { path = columns[0], kind = columns[1], slot = Int32.Parse(columns[2]), target = columns.Length > 3 ? columns[3] : "face" }).ToArray() };
         var results = new System.Collections.Generic.List<Result>();
         yield return new WaitForSecondsRealtime(5);
+        // Optional fixture creation uses the game's default data, never a user's card.
+        var bootstrapImage = Path.Combine(root, "bootstrap-thumbnail.png");
+        if (File.Exists(bootstrapImage))
+        {
+            var baseline = new ChaFileControl();
+            baseline.parameter.sex = 1;
+            baseline.parameter.fullname = "Native asset female baseline";
+            baseline.custom.hair.parts[0].id = 1;
+            baseline.coordinate.clothes.parts[0].id = 1;
+            baseline.coordinate.clothes.parts[1].id = 1;
+            baseline.pngData = File.ReadAllBytes(bootstrapImage);
+            if (!baseline.SaveCharaFile(Path.Combine(root, "stock-female.png"), 1, true))
+                throw new Exception("Could not save the default female fixture");
+        }
         // 在标题场景初始化插件后重新载入清单，避免旧版 BepInEx 在首个场景加载中竞争初始化。
         var listType = AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.GetType("Sideloader.ListLoader.Lists")).First(type => type != null);
         listType.GetMethod("LoadAllLists", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
@@ -182,6 +243,7 @@ public class GameAssetChecks : BaseUnityPlugin
                 var card = new ChaFileControl();
                 result.card_loaded = card.LoadCharaFile(item.path, 255, false, true);
                 if (!result.card_loaded) throw new Exception("HS2 LoadCharaFile returned false");
+                result.sex = card.parameter.sex == 0 ? "male" : "female";
                 character = Manager.Character.Instance.CreateChara(card.parameter.sex, null, -1, card);
                 if (character == null) throw new Exception("HS2 CreateChara returned null");
             }
@@ -223,7 +285,7 @@ public class GameAssetChecks : BaseUnityPlugin
                     result.geometry_checked = true;
                 }
                 // 游戏会将 Prefab 根重命名为 ct_hairB、ct_clothesTop 等，按已解析清单确认来源。
-                var category = item.kind == "hair" ? 300 + item.slot : item.kind == "clothes" ? 140 + item.slot : character.nowCoordinate.accessory.parts[item.slot].type;
+                var category = item.kind == "hair" ? 300 + item.slot : item.kind == "clothes" ? (character.chaFile.parameter.sex == 0 ? 140 : 240) + item.slot : character.nowCoordinate.accessory.parts[item.slot].type;
                 var id = item.kind == "hair" ? character.fileHair.parts[item.slot].id : item.kind == "clothes" ? character.nowCoordinate.clothes.parts[item.slot].id : character.nowCoordinate.accessory.parts[item.slot].id;
                 var info = character.lstCtrl.GetListInfo((ChaListDefine.CategoryNo)category, id);
                 result.generated_part_loaded = item.kind == "texture" || (info != null && info.GetInfo(ChaListDefine.KeyType.MainAB).StartsWith("hs2agent/"));
@@ -242,6 +304,17 @@ public class GameAssetChecks : BaseUnityPlugin
                 }
                 if (!result.generated_part_loaded || result.renderers == 0 || result.vertices == 0)
                     throw new Exception("Generated part geometry was not loaded");
+                if (item.kind == "clothes")
+                {
+                    var maskName = info.GetInfo((ChaListDefine.KeyType)Enum.Parse(typeof(ChaListDefine.KeyType), "OverBodyMask"));
+                    var maskBundle = info.GetInfo((ChaListDefine.KeyType)Enum.Parse(typeof(ChaListDefine.KeyType), "OverBodyMaskAB"));
+                    if (String.IsNullOrEmpty(maskName) || !maskBundle.StartsWith("hs2agent/"))
+                        throw new Exception("Generated clothing mask reference is missing");
+                    var mask = CommonLib.LoadAsset<Texture2D>(maskBundle, maskName, false, "abdata");
+                    if (mask == null || mask.width == 0 || mask.height == 0)
+                        throw new Exception("Game did not decode the generated clothing mask");
+                    result.masks_checked = true;
+                }
                 if (item.kind == "texture")
                 {
                     var texture = ReadOverlay(character, item.target);
@@ -253,6 +326,9 @@ public class GameAssetChecks : BaseUnityPlugin
                 {
                     CheckDeformation(character, part);
                     result.deformation_checked = true;
+                    CheckBodyVariation(character, part);
+                    result.body_variation_checked = true;
+                    if (item.kind == "hair") { CheckDynamic(part); result.dynamic_checked = true; }
                 }
             }
             catch (Exception error) { result.error = error.ToString(); }
@@ -267,7 +343,8 @@ public class GameAssetChecks : BaseUnityPlugin
                         var full = component.objTopDef != null ? component.objTopDef : component.objBotDef;
                         var half = component.objTopHalf != null ? component.objTopHalf : component.objBotHalf;
                         if (full == null || half == null || full.activeSelf != (state == 0) || half.activeSelf != (state == 1))
-                            throw new Exception("Generated clothing did not switch full/half/off visibility");
+                            throw new Exception("Generated clothing did not switch full/half/off visibility: state=" + state +
+                                " full=" + (full == null ? "null" : full.activeSelf.ToString()) + " half=" + (half == null ? "null" : half.activeSelf.ToString()));
                         ++result.clothing_states;
                     }
                     catch (Exception error) { result.error = error.ToString(); break; }
@@ -278,8 +355,12 @@ public class GameAssetChecks : BaseUnityPlugin
                 yield return null;
                 try
                 {
-                    result.preview = Capture(character, Path.Combine(root, "agent-" + item.kind + "-" + item.target + ".png"));
-                    if (item.kind == "clothes") Capture(character, Path.Combine(root, "agent-clothes-only.png"), character.objClothes[item.slot]);
+                    result.preview = Capture(character, Path.Combine(root, "agent-" + item.kind + "-" + item.target + "-" + result.sex + ".png"));
+                    if (item.kind != "texture")
+                    {
+                        var isolated = item.kind == "hair" ? character.objHair[item.slot] : item.kind == "clothes" ? character.objClothes[item.slot] : character.objAccessory[item.slot];
+                        Capture(character, Path.Combine(root, "agent-" + item.kind + "-only-" + result.sex + ".png"), isolated);
+                    }
                 }
                 catch (Exception error) { result.error = error.ToString(); }
             }
@@ -287,12 +368,12 @@ public class GameAssetChecks : BaseUnityPlugin
             results.Add(result);
             // 游戏的已构建类型树不包含测试 DLL 中的嵌套类型，不能用 JsonUtility 省略数组后冒充完整报告。
             var passed = results.Count == input.items.Length && results.All(row => String.IsNullOrEmpty(row.error));
-            var rows = results.Select(row => "{\"path\":" + Quote(row.path) + ",\"kind\":" + Quote(row.kind) + ",\"target\":" + Quote(row.target) + ",\"preview\":" + Quote(row.preview) +
+            var rows = results.Select(row => "{\"path\":" + Quote(row.path) + ",\"kind\":" + Quote(row.kind) + ",\"target\":" + Quote(row.target) + ",\"sex\":" + Quote(row.sex) + ",\"preview\":" + Quote(row.preview) +
                 ",\"error\":" + Quote(row.error) + ",\"card_loaded\":" + row.card_loaded.ToString().ToLowerInvariant() +
                 ",\"character_loaded\":" + row.character_loaded.ToString().ToLowerInvariant() +
                 ",\"generated_part_loaded\":" + row.generated_part_loaded.ToString().ToLowerInvariant() +
                 ",\"renderers\":" + row.renderers + ",\"vertices\":" + row.vertices +
-                ",\"deformation_checked\":" + row.deformation_checked.ToString().ToLowerInvariant() + ",\"geometry_checked\":" + row.geometry_checked.ToString().ToLowerInvariant() + ",\"clothing_states\":" + row.clothing_states + ",\"overlay_width\":" + row.overlay_width + ",\"overlay_height\":" + row.overlay_height + "}");
+                ",\"deformation_checked\":" + row.deformation_checked.ToString().ToLowerInvariant() + ",\"geometry_checked\":" + row.geometry_checked.ToString().ToLowerInvariant() + ",\"dynamic_checked\":" + row.dynamic_checked.ToString().ToLowerInvariant() + ",\"body_variation_checked\":" + row.body_variation_checked.ToString().ToLowerInvariant() + ",\"masks_checked\":" + row.masks_checked.ToString().ToLowerInvariant() + ",\"clothing_states\":" + row.clothing_states + ",\"overlay_width\":" + row.overlay_width + ",\"overlay_height\":" + row.overlay_height + "}");
             File.WriteAllText(Path.Combine(root, "agent-test-result.json"), "{\"passed\":" + passed.ToString().ToLowerInvariant() + ",\"items\":[" + String.Join(",", rows.ToArray()) + "]}");
             yield return null;
         }

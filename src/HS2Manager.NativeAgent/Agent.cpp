@@ -1,4 +1,5 @@
 #include "Agent.h"
+#include "AssetGeometry.h"
 #include "Export/CardExport.h"
 #include <windows.h>
 #include <objbase.h>
@@ -261,9 +262,14 @@ namespace hs2::agent
                                              {"valid", !base.empty() && parsed.Status == CardStatus::Valid &&
                                                            parsed.Sex == (std::string(sex) == "male" ? 0 : 1)}};
             }
-            for (auto key : {"blender_path", "unity_path", "modding_project"})
-                result[key] = {{"path", config_.value(key, "")},
-                               {"available", fs::exists(Path(config_.value(key, "")))}};
+            result["native_asset_build"] = {
+                {"available", true},
+                {"builder_version", asset::BuilderVersion},
+                {"schema_version", asset::SchemaVersion},
+                {"input_formats", {"fbx", "obj", "glb", "gltf"}},
+                {"recipe", true},
+                {"requires_external_editors", false},
+                {"fbx_import_available", fs::is_regular_file(runtime_ / "native/win-x64/HS2Manager.FbxBridge.dll")}};
             result["resource_database_available"] = fs::is_regular_file(runtime_ / "classdata.tpk");
             result["content_generation"] = "caller_ai";
             return result;

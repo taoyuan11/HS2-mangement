@@ -14,7 +14,7 @@ description: 根据参考图片创建可在 HS2 中编辑和使用的人物卡�
 3. 用 `hs2_search_assets` 检索发型、皮肤、妆容、服装与配饰。查看缩略图后选择，传入返回的 `asset_id`，不要猜测游戏素材编号。
 4. 使用 `hs2_apply_changes` 按脸型、五官、颜色、身体、发型和服装分组调整。每次修改传入最新 `expected_revision`；发生冲突时重新读取会话。合理合并修改以控制默认十二轮预算。满意的中间结果传 `mark_best: true`。
 5. 用 `hs2_render` 获取正面、侧面、背面、面部或三分之四视图。先对齐参考角度与取景，再比较特征。需要了解滑条方向时用 `hs2_probe_fields`，它不修改草稿。
-6. 缺少素材时阅读 [素材制作接口](references/assets.md)。贴图、配饰、发型和服装均可创建；内容由调用方的绘图工具或 Blender Python 脚本制作，HS2 工具执行适配和验证。
+6. 缺少素材时阅读 [素材制作接口](references/assets.md)。贴图、配饰、发型和服装均可创建；贴图由调用方绘图工具生成；网格使用版本化结构化配方或 FBX／OBJ／GLB／GLTF 输入，HS2 原生模块执行建模、适配、打包和验证，无需 Unity／Blender。
 
 耗时工具返回 `job_id`。调用 `hs2_get_job` 直到 `completed`、`failed`、`cancelled` 或 `interrupted`。查看 `result` 中的图像和诊断；任务失败不表示已有草稿丢失。停止工作前取消仍运行的本任务作业。每项素材的 `asset_key` 应在修正尝试中保持不变，默认最多三次，不通过换标识绕过上限。
 

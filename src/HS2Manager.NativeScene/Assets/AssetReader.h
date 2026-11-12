@@ -2,6 +2,7 @@
 #include "Scene/SceneTypes.h"
 #include "Assets/UnityBlockCache.h"
 #include <functional>
+#include <array>
 
 namespace hs2
 {
@@ -62,6 +63,10 @@ namespace hs2
         int Size = -1;
         std::uint32_t Flags = 0;
         std::uint8_t Level = 0;
+        std::uint16_t Version = 1;
+        std::uint8_t TypeFlags = 0;
+        std::int32_t Index = 0;
+        std::uint64_t ReferenceTypeHash = 0;
     };
 
     class UnityClassDatabase
@@ -104,6 +109,42 @@ namespace hs2
         std::size_t End = 0, Children = 0;
     };
 
+    struct UnitySerializedType
+    {
+        int ClassId = 0;
+        bool Stripped = false;
+        std::int16_t ScriptTypeIndex = -1;
+        std::array<std::uint8_t, 16> ScriptId{}, TypeHash{};
+        std::vector<UnityTypeNode> Nodes;
+        std::vector<UnityTypeLayout> Layout;
+    };
+
+    struct UnityExternalReference
+    {
+        std::string Name, Path;
+        std::array<std::uint8_t, 16> Guid{};
+        std::int32_t Type = 0;
+    };
+
+    struct UnitySerializedObject
+    {
+        std::int64_t PathId = 0;
+        std::int32_t TypeIndex = 0;
+        std::vector<std::uint8_t> Data;
+    };
+
+    struct UnitySerializedDocument
+    {
+        std::uint32_t FormatVersion = 17;
+        std::int32_t Platform = 19;
+        bool BigEndian = false, HasTypeTree = true;
+        std::string UnityVersion, UserInformation;
+        std::vector<UnitySerializedType> Types;
+        std::vector<UnitySerializedObject> Objects;
+        std::vector<std::pair<std::int32_t, std::int64_t>> ScriptReferences;
+        std::vector<UnityExternalReference> Externals;
+    };
+
     class UnitySerializedFile
     {
     public:
@@ -122,21 +163,17 @@ namespace hs2
         std::optional<std::string> NamedPrefix(std::int64_t id) const;
         std::span<const std::uint8_t> Bytes(std::int64_t id) const;
         std::size_t ResidentBytes() const;
+        UnitySerializedDocument Document() const;
+        const UnitySerializedType &TypeOf(std::int64_t id) const;
         std::string UnityVersion;
         std::vector<std::string> ExternalNames;
 
     private:
-        struct Type
-        {
-            int ClassId = 0;
-            std::vector<UnityTypeNode> Nodes;
-            std::vector<UnityTypeLayout> Layout;
-        };
-
         std::vector<std::uint8_t> bytes_;
         std::vector<UnityAssetInfo> assets_;
         std::unordered_map<std::int64_t, std::size_t> index_;
-        std::vector<Type> types_;
+        std::vector<UnitySerializedType> types_;
+        UnitySerializedDocument metadata_;
         bool bigEndian_ = false;
     };
 
@@ -169,6 +206,8 @@ namespace hs2
         GpuPrefabData Prefab(std::string_view name);
         std::vector<std::uint8_t> ResourceStream(std::string_view name, std::uint64_t offset, std::uint64_t size) const;
         std::size_t ResidentBytes() const;
+        const UnitySerializedType &TypeOf(std::int64_t id) const;
+        std::vector<std::uint8_t> RawObject(std::int64_t id) const;
 
     private:
         std::unique_ptr<UnityBundle> bundle_;

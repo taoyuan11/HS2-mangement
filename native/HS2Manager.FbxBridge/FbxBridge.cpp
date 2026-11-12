@@ -8,6 +8,10 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <map>
+#include <set>
+#include <functional>
+#include "../../src/HS2Manager.NativeCore/third_party/json.hpp"
 
 #define API extern "C" __declspec(dllexport)
 
@@ -105,6 +109,227 @@ namespace
 API const char *hs2_fbx_error()
 {
     return error.c_str();
+}
+
+// The caller copies this thread-local UTF-8 result before the next import. All geometry is in HS2 units.
+API const char *hs2_fbx_import_json(const char *path)
+{
+    thread_local std::string output;
+    int status = call(
+        [&]()
+        {
+            if (!path)
+                throw std::invalid_argument("Missing model path");
+            Scene context;
+            auto *importer = FbxImporter::Create(context.manager, "NativeAssetImport");
+            bool ok =
+                importer->Initialize(path, -1, context.manager->GetIOSettings()) && importer->Import(context.scene);
+            std::string message = importer->GetStatus().GetErrorString();
+            importer->Destroy();
+            if (!ok)
+                throw std::runtime_error(message);
+            std::string extension = path;
+            std::transform(extension.begin(), extension.end(), extension.begin(),
+                           [](unsigned char c)
+                           {
+                               return static_cast<char>(std::tolower(c));
+                           });
+            if (extension.size() >= 4 && extension.substr(extension.size() - 4) == ".obj")
+            {
+                context.scene->GetGlobalSettings().SetAxisSystem(FbxAxisSystem::MayaYUp);
+                context.scene->GetGlobalSettings().SetSystemUnit(FbxSystemUnit::m);
+            }
+            FbxAxisSystem::MayaYUp.ConvertScene(context.scene);
+            FbxSystemUnit::cm.ConvertScene(context.scene);
+            FbxGeometryConverter converter(context.manager);
+            if (!converter.Triangulate(context.scene, true))
+                throw std::runtime_error("Model triangulation failed");
+            using Json = nlohmann::json;
+            Json result = {{"meshes", Json::array()}, {"bones", Json::array()}};
+            auto point = [](FbxVector4 p)
+            {
+                return Json::array({-p[0] / 10., p[1] / 10., p[2] / 10.});
+            };
+            auto vector = [](FbxVector4 p)
+            {
+                return Json::array({-p[0], p[1], p[2]});
+            };
+            std::map<FbxNode *, std::string> boneNames;
+            std::set<std::string> uniqueBones;
+            std::function<void(FbxNode *)> bone = [&](FbxNode *node)
+            {
+                if (!node || node == context.scene->GetRootNode() || boneNames.count(node))
+                    return;
+                bone(node->GetParent());
+                std::string name = node->GetName();
+                if (name.empty() || !uniqueBones.insert(name).second)
+                    throw std::runtime_error("Imported skeleton has duplicate bone names");
+                boneNames[node] = name;
+                auto matrix = node->EvaluateGlobalTransform();
+                auto q = matrix.GetQ();
+                auto origin = matrix.MultT(FbxVector4(0, 0, 0));
+                Json bindWorld = Json::array();
+                for (int axis = 0; axis < 3; ++axis)
+                {
+                    FbxVector4 basis(0, 0, 0);
+                    basis[axis] = axis == 0 ? -10. : 10.;
+                    auto delta = matrix.MultT(basis) - origin;
+                    bindWorld.push_back(-delta[0] / 10.);
+                    bindWorld.push_back(delta[1] / 10.);
+                    bindWorld.push_back(delta[2] / 10.);
+                    bindWorld.push_back(0.);
+                }
+                for (auto value : point(origin))
+                    bindWorld.push_back(value);
+                bindWorld.push_back(1.);
+                result["bones"].push_back(
+                    {{"name", name},
+                     {"parent", boneNames.count(node->GetParent()) ? boneNames.at(node->GetParent()) : ""},
+                     {"position", point(matrix.GetT())},
+                     {"rotation", Json::array({q[0], -q[1], -q[2], q[3]})},
+                     {"matrix", bindWorld},
+                     {"added", true}});
+            };
+            std::size_t totalVertices = 0, totalTriangles = 0;
+            std::function<void(FbxNode *)> visit = [&](FbxNode *node)
+            {
+                if (auto *mesh = node->GetMesh())
+                {
+                    auto count = mesh->GetControlPointsCount();
+                    if (count < 0 || count > 1000000)
+                        throw std::runtime_error("Imported vertex limit exceeded");
+                    totalTriangles += mesh->GetPolygonCount();
+                    if (totalTriangles > 250000)
+                        throw std::runtime_error("Imported triangle limit exceeded");
+                    std::vector<std::vector<std::pair<std::string, double>>> weights(count);
+                    for (int skinIndex = 0; skinIndex < mesh->GetDeformerCount(FbxDeformer::eSkin); ++skinIndex)
+                    {
+                        auto *skin = static_cast<FbxSkin *>(mesh->GetDeformer(skinIndex, FbxDeformer::eSkin));
+                        for (int clusterIndex = 0; clusterIndex < skin->GetClusterCount(); ++clusterIndex)
+                        {
+                            auto *cluster = skin->GetCluster(clusterIndex);
+                            auto *link = cluster->GetLink();
+                            if (!link)
+                                throw std::runtime_error("Imported skin has no bone");
+                            bone(link);
+                            for (int i = 0; i < cluster->GetControlPointIndicesCount(); ++i)
+                            {
+                                int cp = cluster->GetControlPointIndices()[i];
+                                double w = cluster->GetControlPointWeights()[i];
+                                if (cp < 0 || cp >= count || !std::isfinite(w) || w < 0)
+                                    throw std::runtime_error("Invalid imported skin weight");
+                                weights[cp].emplace_back(boneNames.at(link), w);
+                            }
+                        }
+                    }
+                    FbxAMatrix geometry;
+                    geometry.SetTRS(node->GetGeometricTranslation(FbxNode::eSourcePivot),
+                                    node->GetGeometricRotation(FbxNode::eSourcePivot),
+                                    node->GetGeometricScaling(FbxNode::eSourcePivot));
+                    auto world = node->EvaluateGlobalTransform() * geometry, normal = world.Inverse().Transpose();
+                    FbxStringList uvNames;
+                    mesh->GetUVSetNames(uvNames);
+                    if (!uvNames.GetCount())
+                        throw std::runtime_error("Imported mesh has no UVs");
+                    Json m = {{"name", std::string(node->GetName()) + "_" + std::to_string(result["meshes"].size())},
+                              {"positions", Json::array()},
+                              {"normals", Json::array()},
+                              {"uv", Json::array()},
+                              {"uv1", Json::array()},
+                              {"indices", Json::array()},
+                              {"weights", Json::array()},
+                              {"materials", Json::array()},
+                              {"shapes", Json::array()}};
+                    std::vector<int> controlPoints;
+                    bool normals = true;
+                    auto *materials = mesh->GetElementMaterial();
+                    for (int polygon = 0; polygon < mesh->GetPolygonCount(); ++polygon)
+                    {
+                        if (mesh->GetPolygonSize(polygon) != 3)
+                            throw std::runtime_error("Non-triangle after model triangulation");
+                        int first = static_cast<int>(m["positions"].size());
+                        for (int corner = 0; corner < 3; ++corner)
+                        {
+                            int cp = mesh->GetPolygonVertex(polygon, corner);
+                            controlPoints.push_back(cp);
+                            if (cp < 0 || cp >= count)
+                                throw std::runtime_error("Invalid imported mesh index");
+                            auto p = world.MultT(mesh->GetControlPointAt(cp));
+                            m["positions"].push_back(point(p));
+                            FbxVector4 n;
+                            if (!mesh->GetPolygonVertexNormal(polygon, corner, n))
+                                normals = false;
+                            n[3] = 0;
+                            n = normal.MultT(n);
+                            n.Normalize();
+                            m["normals"].push_back(vector(n));
+                            for (int channel = 0; channel < std::min(2, uvNames.GetCount()); ++channel)
+                            {
+                                FbxVector2 uv;
+                                bool unmapped = false;
+                                if (!mesh->GetPolygonVertexUV(polygon, corner, uvNames.GetStringAt(channel), uv,
+                                                              unmapped) ||
+                                    unmapped)
+                                    throw std::runtime_error("Imported UV is unmapped");
+                                m[channel ? "uv1" : "uv"].push_back(Json::array({uv[0], uv[1]}));
+                            }
+                            Json vw = Json::array();
+                            for (auto &w : weights[cp])
+                                vw.push_back({{"bone", w.first}, {"weight", w.second}});
+                            m["weights"].push_back(std::move(vw));
+                        }
+                        // The X reflection changes handedness; account for mirrored object transforms as well.
+                        m["indices"].push_back(first);
+                        m["indices"].push_back(first + (world.Determinant() < 0 ? 1 : 2));
+                        m["indices"].push_back(first + (world.Determinant() < 0 ? 2 : 1));
+                        int material = 0;
+                        if (materials && materials->GetIndexArray().GetCount())
+                            material = materials->GetIndexArray().GetAt(
+                                materials->GetMappingMode() == FbxLayerElement::eByPolygon ? polygon : 0);
+                        m["materials"].push_back(std::max(0, material));
+                    }
+                    if (!normals)
+                        m["normals"] = Json::array();
+                    for (int deformer = 0; deformer < mesh->GetDeformerCount(FbxDeformer::eBlendShape); ++deformer)
+                    {
+                        auto *blend =
+                            static_cast<FbxBlendShape *>(mesh->GetDeformer(deformer, FbxDeformer::eBlendShape));
+                        for (int channel = 0; channel < blend->GetBlendShapeChannelCount(); ++channel)
+                        {
+                            auto *shapes = blend->GetBlendShapeChannel(channel);
+                            for (int frame = 0; frame < shapes->GetTargetShapeCount(); ++frame)
+                            {
+                                auto *shape = shapes->GetTargetShape(frame);
+                                if (shape->GetControlPointsCount() != count)
+                                    throw std::runtime_error("Imported morph topology differs from mesh");
+                                Json s = {{"name", shapes->GetName()},
+                                          {"weight", shapes->GetTargetShapeFullWeights()[frame]},
+                                          {"positions", Json::array()}};
+                                for (int cp : controlPoints)
+                                {
+                                    auto delta = world.MultT(shape->GetControlPointAt(cp)) -
+                                                 world.MultT(mesh->GetControlPointAt(cp));
+                                    s["positions"].push_back(point(delta));
+                                }
+                                m["shapes"].push_back(std::move(s));
+                            }
+                        }
+                    }
+                    totalVertices += m["positions"].size();
+                    if (totalVertices > 1000000)
+                        throw std::runtime_error("Imported split vertex limit exceeded");
+                    result["meshes"].push_back(std::move(m));
+                }
+                for (int child = 0; child < node->GetChildCount(); ++child)
+                    visit(node->GetChild(child));
+            };
+            visit(context.scene->GetRootNode());
+            if (result["meshes"].empty())
+                throw std::runtime_error("Imported model has no meshes");
+            output = result.dump();
+            return 0;
+        });
+    return status < 0 ? nullptr : output.c_str();
 }
 
 API void *hs2_fbx_create()

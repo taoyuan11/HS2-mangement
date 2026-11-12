@@ -1,0 +1,74 @@
+{
+  "schema_version": 2,
+  "kind": "hair",
+  "asset_key": "native-hair-fixture",
+  "name": "原生发型验收",
+  "template_asset_id": "300::1",
+  "target_path": "hair.parts[0].id",
+  "clothing_name": "ct_clothesTop",
+  "recipe": {
+    "operations": [
+      {
+        "op": "curve",
+        "name": "native_hair",
+        "mode": "ribbon",
+        "points": [
+          [
+            -0.6,
+            2,
+            0.7
+          ],
+          [
+            -1.05,
+            1,
+            0.9
+          ],
+          [
+            -1.15,
+            -0.2,
+            0.8
+          ]
+        ],
+        "width": 0.6,
+        "anchor": "cf_J_Head",
+        "bones": [
+          "native_strand_root",
+          "native_strand_mid",
+          "native_strand_tip"
+        ]
+      }
+    ],
+    "bones": [
+      {
+        "name": "native_strand_root",
+        "parent": "cf_J_Head",
+        "position": [
+          -0.6,
+          2,
+          0.7
+        ]
+      },
+      {
+        "name": "native_strand_mid",
+        "parent": "native_strand_root",
+        "position": [
+          -0.45,
+          -1,
+          0.2
+        ]
+      },
+      {
+        "name": "native_strand_tip",
+        "parent": "native_strand_mid",
+        "position": [
+          -0.1,
+          -1.2,
+          -0.1
+        ]
+      }
+    ]
+  },
+  "dynamic_roots": [
+    "native_strand_root"
+  ]
+}

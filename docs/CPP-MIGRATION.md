@@ -8,7 +8,8 @@
 | --- | --- |
 | `src/HS2Manager.NativeApp` | WinUI 窗口、人物库、编辑器、资源选择、预览交互、导出界面、数据位置迁移 |
 | `src/HS2Manager.NativeCore` | SQLite、人物卡与 MessagePack、无损编辑、文件事务、MOD / 插件索引、四级人物包导出 |
-| `src/HS2Manager.NativeScene` | UnityFS / SerializedFile 只读解析、ZIPMOD、原始资源目录、人物组装、形变、动画、IK、注视、动态骨骼与布料 |
+| `src/HS2Manager.NativeAssetBuild` | 原生模型导入、结构化建模、身体权重转移、组件／材质模板克隆和资源包构建 |
+| `src/HS2Manager.NativeScene` | UnityFS / SerializedFile 读写、ZIPMOD、原始资源目录、人物组装、形变、动画、IK、注视、动态骨骼与布料 |
 | `src/HS2Manager.NativeRendering` | D3D11 资源、原始着色器、材质合成、GPU 蒙皮、阴影、延迟 / 前向渲染、环境及后处理 |
 | `src/HS2Manager.NativeExport` | PBR 烘焙、FBX 骨架与形态、场景 / 灯光 / 环境导出、Blender / Unreal 转换与验证 |
 | `native/HS2Manager.Physics`、`native/HS2Manager.FbxBridge` | 独立 PhysX 与 Autodesk FBX SDK 适配层 |

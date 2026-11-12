@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--overlay-target", choices=("face", "body", "clothes"), default="face")
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--build-fixture", choices=("accessory", "hair", "clothes"))
+    parser.add_argument("--sex", choices=("male", "female"), default="male")
     args = parser.parse_args()
     process = subprocess.Popen(
         [args.executable, "--config", args.config],
@@ -135,10 +136,11 @@ def main():
             report["checks"].append(
                 {"sex": sex, "session_id": session["session_id"], "fields": len(schema["fields"]), "revision": 2}
             )
-            if (args.prepare or args.build_fixture) and sex == "male":
+            if (args.prepare or args.build_fixture) and sex == args.sex:
                 prepared = job("hs2_prepare_asset", {"session_id": session["session_id"], "expected_revision": 2})
                 assert pathlib.Path(prepared["reference_model"]).is_file()
-                assert pathlib.Path(prepared["blend"]).is_file()
+                assert pathlib.Path(prepared["reference_scene"]).is_file()
+                assert prepared["schema_version"] == 2 and "blend" not in prepared
                 assert prepared["images"] and prepared["bones"]
                 if args.build_fixture:
                     kind = args.build_fixture
@@ -158,27 +160,22 @@ def main():
                         "hair": "hair.parts[0].id",
                         "clothes": "clothes.parts[0].id",
                     }[kind]
+                    spec = json.loads(
+                        pathlib.Path(__file__)
+                        .parents[1]
+                        .joinpath("fixtures/native-assets", kind + ".json")
+                        .read_text(encoding="utf-8")
+                    )
+                    spec["target_path"] = target
+                    if kind == "clothes":
+                        spec["template_asset_id"] = "140::1" if sex == "male" else "240::1"
+                        spec["masks"] = [{"field": "OverBodyMask", "path": str(pathlib.Path(args.image).resolve())}]
                     built = job(
                         "hs2_build_asset",
                         {
                             "session_id": session["session_id"],
                             "expected_revision": revision,
-                            "spec": {
-                                "kind": kind,
-                                "asset_key": "protocol-mesh-" + kind,
-                                "name": "Agent构建测试",
-                                "target_path": target,
-                                "parent": "N_Head",
-                                "clothing_name": "ct_clothesTop",
-                                "source_script": str(
-                                    pathlib.Path(__file__).with_name("BlenderAssetFixture.py").resolve()
-                                ),
-                                "template_material": "Assets/Modding Tool Runtime/Base Files/default.mat",
-                                "shader": "hooh/ClotheReplicaOpaque",
-                                "position": [0.25, 0, 0] if kind == "accessory" else [0, 0, 0],
-                                "rotation": [0, 0, 15] if kind == "accessory" else [0, 0, 0],
-                                "scale": [1.1, 1.1, 1.1] if kind == "accessory" else [1, 1, 1],
-                            },
+                            "spec": spec,
                         },
                     )
                     assert built["status"] == "applied", built
@@ -191,10 +188,14 @@ def main():
                             assert len(csv_lines) >= 5 and csv_lines[0].isdigit() and csv_lines[1].isdigit(), csv_lines
                             header, row = csv_lines[3].split(","), csv_lines[4].split(",")
                             assert len(header) == len(row) and '"' not in row[header.index("MainAB")], row
+                            assert row[header.index("Weights")] == ("0" if kind == "accessory" else "1"), row
+                            if kind == "clothes":
+                                assert row[header.index("StateType")] == "0", row
+                                assert row[header.index("MainTex")] == "0", row
                             bundle = row[header.index("MainAB")]
                             assert "abdata/" + bundle in names, (bundle, names)
                     current_revision = built["session"]["revision"]
-            if args.render and sex == "male":
+            if args.render and sex == args.sex:
                 values = {"session_id": session["session_id"], "expected_revision": current_revision}
                 job("hs2_search_assets", {"session_id": session["session_id"], "category": 300, "limit": 2})
                 result = job("hs2_render", dict(values, views=["front", "side", "back", "face"]))
@@ -229,10 +230,10 @@ def main():
                             },
                         ),
                     )
-                    assert final["status"] == "complete", final
+                    assert final["status"] == "complete", final.get("validation", final.get("status"))
                     for folder in final["folders"]:
                         assert (pathlib.Path(folder) / "agent-report.json").is_file()
-                        assert list((pathlib.Path(folder) / "UserData/chara/male").glob("*.png"))
+                        assert list((pathlib.Path(folder) / ("UserData/chara/" + sex)).glob("*.png"))
         report["passed"] = True
         if args.render:
             pending = call("hs2_render", dict(values, sample_time=5))

@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "kind": "clothes",
+  "asset_key": "native-clothes-fixture",
+  "name": "原生服装验收",
+  "template_asset_id": "140::1",
+  "target_path": "clothes.parts[0].id",
+  "clothing_name": "ct_clothesTop",
+  "recipe": {
+    "operations": [
+      {
+        "op": "body_surface",
+        "name": "native_clothes",
+        "offset": 0.035,
+        "minimum": [
+          -20,
+          0,
+          -20
+        ],
+        "maximum": [
+          20,
+          14.8,
+          20
+        ]
+      }
+    ]
+  }
+}

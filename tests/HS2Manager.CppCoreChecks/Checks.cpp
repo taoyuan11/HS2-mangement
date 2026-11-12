@@ -251,6 +251,56 @@ namespace
             Check(incomplete.Status == CardExportStatus::Incomplete && incomplete.ExportedCards() == 1,
                   "incomplete package preserves valid card");
         }
+        // Optional integrations must not pull unrelated installed plugins (and their missing
+        // dependencies) into an otherwise self-contained character package.
+        ModIndex pluginIndex;
+        pluginIndex.Complete = true;
+        auto makePlugin = [&](const std::string &name, const std::string &guid)
+        {
+            auto path = game / L"BepInEx/plugins" / Path(name + ".dll");
+            WriteAtomic(path, Bytes{1, 2, 3});
+            PluginFileInfo info;
+            info.Path = Utf8(path);
+            info.Size = 3;
+            info.ModifiedUtcTicks = ModifiedTicks(path);
+            info.AssemblyName = name;
+            info.Version = "1.0";
+            info.Plugins.push_back({guid, name, "1.0", {}, {}});
+            return info;
+        };
+        auto primary = makePlugin("Primary", "unknown.plugin");
+        primary.Plugins.front().Dependencies.push_back({"optional.integration", "", true});
+        auto optional = makePlugin("Optional", "optional.integration");
+        optional.References.push_back({"MissingIntegrationLibrary", "1.0"});
+        pluginIndex.PluginFiles = {primary, optional, makePlugin("ExtendedSave", "com.bepis.bepinex.extendedsave")};
+        auto dependencyCard = card;
+        dependencyCard.Dependencies.clear();
+        dependencyCard.PluginDataIds = {"unknown.plugin"};
+        auto soft = CardExportDependencies(game, pluginIndex).Collect(dependencyCard, CardExportLevel::WithPlugins);
+        Check(std::none_of(soft.Files.begin(), soft.Files.end(),
+                           [&](const auto &file)
+                           {
+                               return file.Source == optional.Path;
+                           }) &&
+                  std::none_of(soft.Issues.begin(), soft.Issues.end(),
+                               [](const auto &issue)
+                               {
+                                   return issue.find("MissingIntegrationLibrary") != std::string::npos;
+                               }),
+              "soft plugin dependency does not drag an unrelated integration into export");
+        pluginIndex.PluginFiles.front().Plugins.front().Dependencies.front().Optional = false;
+        auto hard = CardExportDependencies(game, pluginIndex).Collect(dependencyCard, CardExportLevel::WithPlugins);
+        Check(std::any_of(hard.Files.begin(), hard.Files.end(),
+                          [&](const auto &file)
+                          {
+                              return file.Source == optional.Path;
+                          }) &&
+                  std::any_of(hard.Issues.begin(), hard.Issues.end(),
+                              [](const auto &issue)
+                              {
+                                  return issue.find("MissingIntegrationLibrary") != std::string::npos;
+                              }),
+              "required plugin dependency still validates its transitive assemblies");
         std::stop_source stop;
         stop.request_stop();
         auto cancelled = service.Export(plan, {}, stop.get_token());

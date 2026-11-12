@@ -72,10 +72,10 @@ namespace hs2::agent
         add("hs2_probe_fields", "异步绘制最多六个数值字段的负向、基准、正向扰动，草稿不变。",
             fields({{"paths", {{"type", "array"}, {"items", string}, {"maxItems", 6}}}}),
             {"session_id", "expected_revision", "paths"}, true);
-        add("hs2_prepare_asset", "导出当前人物的网格、骨架和建模参考；用 Blender 生成 UV 模板。",
+        add("hs2_prepare_asset", "原生导出当前人物的参考 FBX、结构化网格、骨架、UV PNG 和兼容素材模板。",
             fields({{"kind", string}}), {"session_id", "expected_revision"}, false);
         add("hs2_build_asset",
-            "异步制作 texture/accessory/hair/clothes。spec 格式见随包 "
+            "原生异步制作 texture/accessory/hair/clothes；建模 spec 使用 schema_version:2。格式见随包 "
             "skills/hs2-card-agent/references/assets.md。三次尝试后保留草稿。",
             fields({{"spec", object}}), {"session_id", "expected_revision", "spec"}, false);
         add("hs2_validate", "检查结构、依赖与当前版本渲染状态；真实游戏验证独立标记。", revision,

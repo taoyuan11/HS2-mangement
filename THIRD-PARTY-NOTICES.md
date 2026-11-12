@@ -10,6 +10,8 @@
 - miniz inflate implementation: Rich Geldreich, RAD Game Tools and contributors, MIT. See `licenses/miniz-LICENSE.txt`. Source: https://github.com/richgel999/miniz. Used for reading ZIP / ZIPMOD archives.
 - LZMA SDK decoder: Igor Pavlov, public domain. See `licenses/LZMA-PUBLIC-DOMAIN.txt`. Source: https://www.7-zip.org/sdk.html.
 - SQLite: public domain. The C++ application uses the Windows `winsqlite3.dll` system API. See `licenses/sqlite-LICENSE.txt` and https://www.sqlite.org/copyright.html.
+- cgltf 1.15: MIT. See `licenses/cgltf-LICENSE.txt`. Used for native GLB/GLTF asset import.
+- LZ4 1.10.0: BSD 2-Clause. See `licenses/LZ4-LICENSE.txt`. Used for native UnityFS block compression.
 - AssetRipper TPK class database: MIT. See `licenses/AssetRipper-Tpk.txt`. The database describes serialized asset layouts; no Unity runtime is included.
 - Independent cloth adapter: NVIDIA PhysX SDK 3.4.2, BSD-style license. See `licenses/NVIDIA-PhysX-3.4.txt`. Source: https://github.com/NVIDIAGameWorks/PhysX-3.4.
 - Native FBX adapter: Autodesk FBX SDK 2020.3.7. See the supplied SDK terms in `licenses/Autodesk-FBX-SDK-2020.3.7.rtf`. Source/download: https://aps.autodesk.com/developer/overview/fbx-sdk.

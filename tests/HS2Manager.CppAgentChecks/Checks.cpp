@@ -166,9 +166,10 @@ int wmain(int argc, wchar_t **argv)
                 });
             Check(service.Call("hs2_get_session", {{"session_id", budget["session_id"]}})["revision"] == 12,
                   "twelve iteration budget retained best draft");
-            Json buildArgs{{"session_id", sessionId},
-                           {"expected_revision", 2},
-                           {"spec", {{"kind", "hair"}, {"asset_key", "missing-tool-fixture"}}}};
+            Json buildArgs{
+                {"session_id", sessionId},
+                {"expected_revision", 2},
+                {"spec", {{"kind", "hair"}, {"asset_key", "legacy-spec-fixture"}, {"source_script", "never-run.py"}}}};
             for (int attempt = 0; attempt < 4; ++attempt)
             {
                 auto job = service.Call("hs2_build_asset", buildArgs);
@@ -177,7 +178,10 @@ int wmain(int argc, wchar_t **argv)
                     std::this_thread::sleep_for(std::chrono::milliseconds(5));
                     job = service.Call("hs2_get_job", {{"job_id", job["job_id"]}});
                 }
-                Check(job["status"] == "failed", "missing-tool job failed without changing draft");
+                Check(job["status"] == "failed", "legacy spec failed without changing draft");
+                if (attempt < 3)
+                    Check(job.at("error").get<std::string>().starts_with("ASSET_SPEC_MIGRATION"),
+                          "legacy script migration diagnostic");
                 if (attempt == 3)
                     Check(job.at("error").get<std::string>().starts_with("ASSET_BUILD_LIMIT"),
                           "three asset attempt limit");

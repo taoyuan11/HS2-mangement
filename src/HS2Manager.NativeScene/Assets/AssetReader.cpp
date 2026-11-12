@@ -239,15 +239,15 @@ namespace hs2
             for (size_t i = 0; i < count; ++i)
             {
                 UnityTypeNode n;
-                r.Skip(2);
+                n.Version = r.Read<uint16_t>();
                 n.Level = r.Read<uint8_t>();
-                r.Skip(1);
+                n.TypeFlags = r.Read<uint8_t>();
                 Raw s{r.Read<uint32_t>(), r.Read<uint32_t>()};
                 n.Size = r.Read<int32_t>();
-                r.Skip(4);
+                n.Index = r.Read<int32_t>();
                 n.Flags = r.Read<uint32_t>();
                 if (version >= 19)
-                    r.Skip(8);
+                    n.ReferenceTypeHash = r.Read<uint64_t>();
                 raw.push_back(s);
                 result.push_back(n);
             }
@@ -849,6 +849,8 @@ namespace hs2
         uint64_t dataOffset = r.Read<uint32_t>();
         Require(version >= 17 && version <= 22, "Unsupported serialized file version.");
         bigEndian_ = r.Read<uint8_t>() != 0;
+        metadata_.FormatVersion = version;
+        metadata_.BigEndian = bigEndian_;
         r.Skip(3);
         if (version >= 22)
         {
@@ -862,18 +864,25 @@ namespace hs2
         r.Big = bigEndian_;
         UnityVersion = r.CString();
         Require(UnityVersion.starts_with("2018."), "Only Unity 2018 assets are supported.");
-        r.Skip(4);
+        metadata_.UnityVersion = UnityVersion;
+        metadata_.Platform = r.Read<int32_t>();
         bool hasTree = r.Read<uint8_t>() != 0;
+        metadata_.HasTypeTree = hasTree;
         auto count = r.Count(100000);
         for (size_t i = 0; i < count; ++i)
         {
-            Type t;
+            UnitySerializedType t;
             t.ClassId = r.Read<int32_t>();
-            r.Skip(1);
+            t.Stripped = r.Read<uint8_t>() != 0;
             auto script = r.Read<int16_t>();
+            t.ScriptTypeIndex = script;
             if (t.ClassId == 114)
-                r.Skip(16);
-            r.Skip(16);
+            {
+                auto id = r.Take(16);
+                std::copy(id.begin(), id.end(), t.ScriptId.begin());
+            }
+            auto hash = r.Take(16);
+            std::copy(hash.begin(), hash.end(), t.TypeHash.begin());
             if (hasTree)
             {
                 t.Nodes = ReadTree(r, version);
@@ -913,19 +922,24 @@ namespace hs2
         auto scripts = r.Count(1000000);
         for (size_t i = 0; i < scripts; ++i)
         {
-            r.Skip(4);
+            auto fileId = r.Read<int32_t>();
             r.Align();
-            r.Skip(8);
+            metadata_.ScriptReferences.emplace_back(fileId, r.Read<int64_t>());
         }
         auto externals = r.Count(100000);
         for (size_t i = 0; i < externals; ++i)
         {
-            r.CString();
-            r.Skip(20);
-            ExternalNames.push_back(Basename(r.CString()));
+            UnityExternalReference external;
+            external.Name = r.CString();
+            auto guid = r.Take(16);
+            std::copy(guid.begin(), guid.end(), external.Guid.begin());
+            external.Type = r.Read<int32_t>();
+            external.Path = r.CString();
+            ExternalNames.push_back(Basename(external.Path));
+            metadata_.Externals.push_back(std::move(external));
         }
         Require(version < 20, "Reference type metadata requires a newer Unity format.");
-        r.CString();
+        metadata_.UserInformation = r.CString();
         Require(r.Position <= dataOffset, "Serialized metadata overlaps object data.");
     }
 
@@ -935,6 +949,34 @@ namespace hs2
         if (i == index_.end())
             throw std::runtime_error("Serialized object is missing.");
         return assets_[i->second];
+    }
+
+    const UnitySerializedType &UnitySerializedFile::TypeOf(int64_t id) const
+    {
+        return types_.at(Asset(id).TypeIndex);
+    }
+
+    UnitySerializedDocument UnitySerializedFile::Document() const
+    {
+        auto result = metadata_;
+        result.Types = types_;
+        for (const auto &asset : assets_)
+        {
+            auto bytes = Bytes(asset.PathId);
+            result.Objects.push_back({asset.PathId, asset.TypeIndex, {bytes.begin(), bytes.end()}});
+        }
+        return result;
+    }
+
+    const UnitySerializedType &NativeGpuAssetReader::TypeOf(int64_t id) const
+    {
+        return file_->TypeOf(id);
+    }
+
+    std::vector<uint8_t> NativeGpuAssetReader::RawObject(int64_t id) const
+    {
+        auto bytes = file_->Bytes(id);
+        return {bytes.begin(), bytes.end()};
     }
 
     size_t UnitySerializedFile::ResidentBytes() const

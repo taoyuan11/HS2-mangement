@@ -1,6 +1,6 @@
 #include "Agent.h"
 #include "Model/ModelExport.h"
-#include "Tools/OwnedToolProcess.h"
+#include "AssetBundleBuild.h"
 #include "Export/CardExport.h"
 #include "Archive/ZipArchive.h"
 #include <fstream>
@@ -191,11 +191,11 @@ namespace hs2::agent
         return Overlay(std::move(document), spec, std::move(png));
     }
 
-    Json Service::PrepareAsset(Json &session, const Json &, std::stop_token token)
+    Json Service::PrepareAsset(Json &session, const Json &args, std::stop_token token)
     {
         auto document = Document(session);
         auto card = CardParser().Parse(document.SourcePath(), token);
-        // FBX SDK 与旧版 Unity 的部分文件 API 不支持深层路径；缩短本机工具工作目录。
+        // 参考 FBX 与结构化场景均由内置原生模块导出。
         auto output = data_ / "Reference" / Path(NewId());
         ModelExportOptions options;
         options.Clothing = 2;
@@ -207,22 +207,30 @@ namespace hs2::agent
             throw std::runtime_error("建模参考导出失败：" + report.Summary() +
                                      (report.Items.empty() ? std::string{} : "；" + report.Items.front().Message));
         auto model = Path(report.Items.front().Directory) / "character.fbx";
-        auto work = output / "Blender";
-        fs::create_directories(work);
-        Json spec{{"mode", "reference"}, {"reference_model", Utf8(model)}, {"work_directory", Utf8(work)}};
-        WriteJson(work / "spec.json", spec);
-        auto blender = Path(config_.value("blender_path", ""));
-        if (!fs::is_regular_file(blender))
-            throw std::runtime_error("未配置 Blender；参考模型已保留：" + Utf8(model));
-        int code = RunOwnedTool(
-            blender,
-            {L"--background", L"--factory-startup", L"--python-exit-code", L"1", L"--python",
-             (runtime_ / "Resources/Agent/BlenderAsset.py").wstring(), L"--", (work / "spec.json").wstring()},
-            work, std::chrono::seconds(config_.value("tool_timeout_seconds", 900)), work / "blender.log", token);
-        if (code)
-            throw std::runtime_error("Blender UV 参考导出失败；见 " + Utf8(work / "blender.log"));
-        auto result = ReadJson(work / "result.json");
+        NativeCharacterService service(game_, data_ / "Cache", runtime_ / "classdata.tpk", Resources(session, token));
+        auto prepared = service.Prepare(card, &document, {2, false}, {}, token);
+        auto reference = asset::CaptureReference(prepared, token);
+        auto result = asset::WriteReference(reference, output, token);
         result["reference_model"] = Utf8(model);
+        result["reference_revision"] = session.at("revision");
+        result["templates"] = Json::object();
+        auto &catalog = service.Catalog();
+        auto fields = CharacterEditSchema::Build(document, CharacterSliderLimits::Read(game_));
+        for (const auto &field : fields)
+        {
+            if (field.Kind != CharacterFieldKind::Asset)
+                continue;
+            if (auto binding = CharacterAssetReferences::Describe(document, field.Path))
+                if (field.Path.starts_with("accessory.") || field.Path.starts_with("hair.") ||
+                    field.Path.starts_with("clothes."))
+                {
+                    auto category = std::to_string(binding->Category);
+                    if (!result["templates"].contains(category))
+                        result["templates"][category] = asset::TemplateChoices(catalog, binding->Category);
+                }
+        }
+        CheckCancelled(token);
+        (void)args;
         session["reference_assets"] = result;
         WriteJson(SessionPath(session.at("session_id")) / "session.json", session);
         return result;
@@ -258,6 +266,7 @@ namespace hs2::agent
             auto render = Render(trial, next, {{"views", {"front", "face"}}, {"probe", true}}, token);
             if (!render.at("diagnostics").empty())
                 return {{"status", "needs_work"}, {"render", render}};
+            CheckCancelled(token);
             WriteAtomic(data_ / "Assets" / Path(hash + ".png"), bytes);
             Json record{{"kind", kind},
                         {"hash", hash},
@@ -270,20 +279,12 @@ namespace hs2::agent
             SaveRevision(session, next, args);
             return {{"status", "applied"}, {"session", session}, {"render", render}};
         }
-        auto blender = Path(config_.value("blender_path", "")), unity = Path(config_.value("unity_path", ""));
-        auto project = Path(config_.value("modding_project", ""));
-        if (!fs::is_regular_file(blender) || !fs::is_regular_file(unity) || !fs::is_directory(project / "Assets"))
-            throw std::runtime_error("缺少 Blender、Unity 2018.4.11f1 或 ModdingTool 工程；草稿保留");
-        auto version = ReadFile(project / "ProjectSettings/ProjectVersion.txt", 4096);
-        if (std::string(version.begin(), version.end()).find("2018.4.11f1") == std::string::npos)
-            throw std::runtime_error("ModdingTool 工程必须固定到 Unity 2018.4.11f1");
-        auto work = data_ / "Builds" / Path(NewId());
-        fs::create_directories(work);
-        spec["work_directory"] = Utf8(work);
-        if (!session.contains("reference_assets"))
-            throw std::runtime_error("请先运行 hs2_prepare_asset 导出目标人物参考");
-        spec["reference_model"] = session["reference_assets"]["reference_model"];
-        spec["mode"] = "build";
+        for (auto legacyKey : {"source_script", "template_material", "shader", "unity_project", "modding_project"})
+            if (spec.contains(legacyKey))
+                throw std::invalid_argument("ASSET_SPEC_MIGRATION：请使用 schema_version:2、recipe/source_model 和 "
+                                            "template_asset_id；不再执行 Blender Python 或加载 Unity 工程材质");
+        if (spec.value("schema_version", 0) != asset::SchemaVersion)
+            throw std::invalid_argument("ASSET_SPEC_VERSION：原生建模描述需要 schema_version:2");
         auto target = spec.at("target_path").get<std::string>();
         auto binding = CharacterAssetReferences::Describe(document, target);
         if (!binding)
@@ -295,76 +296,35 @@ namespace hs2::agent
             throw std::invalid_argument("素材类型和目标槽位不匹配");
         spec["category"] = binding->Category;
         spec["sex"] = document.Sex();
+        auto work = data_ / "Builds" / Path(NewId());
+        fs::create_directories(work);
+        // Rebuild the reference for this revision: a previous prepare result may precede a body edit.
+        auto card = CardParser().Parse(document.SourcePath(), token);
+        NativeCharacterService service(game_, data_ / "Cache", runtime_ / "classdata.tpk", Resources(session, token));
+        auto prepared = service.Prepare(card, &document, {2, false}, {}, token);
+        auto reference = asset::CaptureReference(prepared, token);
+        auto source = asset::ResolveTemplate(service.Catalog(), document, spec, game_, token);
+        if (spec.contains("source_model") == spec.contains("recipe"))
+            throw std::invalid_argument("必须提供 recipe 或 source_model，且只能选择一种");
+        auto mesh = spec.contains("source_model")
+                        ? asset::ImportModel(Path(spec.at("source_model")),
+                                             runtime_ / "native/win-x64/HS2Manager.FbxBridge.dll", token)
+                        : asset::BuildRecipe(spec.at("recipe"), reference, token);
+        asset::AdaptGeometry(mesh, reference, spec, token);
+        auto geometry = asset::GeometryReport(mesh);
+        auto built = asset::BuildGameBundle(mesh, source, spec, game_, work / "Package", token);
+        asset::WriteSideloaderList(source, spec, built, work / "Package");
+        auto hash = built.at("hash").get<std::string>();
+        spec["guid"] = built.at("guid");
+        spec["slot_id"] = built.at("slot_id");
         WriteJson(work / "spec.json", spec);
-        auto timeout = std::chrono::seconds(config_.value("tool_timeout_seconds", 900));
-        if (RunOwnedTool(blender,
-                         {L"--background", L"--factory-startup", L"--python-exit-code", L"1", L"--python",
-                          (runtime_ / "Resources/Agent/BlenderAsset.py").wstring(), L"--",
-                          (work / "spec.json").wstring()},
-                         work, timeout, work / "blender.log", token))
-            throw std::runtime_error("Blender 素材适配失败；见 " + Utf8(work / "blender.log"));
-        auto geometry = ReadJson(work / "result.json");
-        if (!geometry.at("valid").get<bool>())
-            throw std::runtime_error("素材几何或权重检查未通过");
-        auto fingerprintSpec = spec;
-        fingerprintSpec.erase("work_directory");
-        auto fingerprint = fingerprintSpec.dump() + HashFile(work / "asset.fbx", token);
-        fingerprint += HashFile(runtime_ / "Resources/Agent/BlenderAsset.py", token);
-        fingerprint += HashFile(runtime_ / "Resources/Agent/HS2AgentBuilder.cs", token);
-        fingerprint += HashFile(project / "ProjectSettings/ProjectVersion.txt", token);
-        if (fs::is_regular_file(project / "Packages/agent-package-lock.json"))
-            fingerprint += HashFile(project / "Packages/agent-package-lock.json", token);
-        for (auto &texture : geometry.value("textures", Json::array()))
-            fingerprint += HashFile(Path(texture), token);
-        auto hash = Sha256(Bytes(fingerprint.begin(), fingerprint.end()));
-        spec["guid"] = "hs2agent." + hash;
-        spec["slot_id"] = 100000 + static_cast<int>(std::stoul(hash.substr(0, 6), nullptr, 16));
-        spec["model"] = Utf8(work / "asset.fbx");
-        spec["package_directory"] = Utf8(work / "Package");
-        // 在每次构建独享的工程副本中导入，避免污染用户工程和抢占 Library 锁。
-        auto copy = work / "Project";
-        fs::create_directories(copy);
-        for (auto &root : {"Assets", "Packages", "ProjectSettings"})
-            if (fs::exists(project / root))
-                for (auto it = fs::recursive_directory_iterator(project / root);
-                     it != fs::recursive_directory_iterator(); ++it)
-                {
-                    CheckCancelled(token);
-                    ExportPaths::NoLinks(it->path());
-                    auto dest = copy / it->path().lexically_relative(project);
-                    if (it->is_directory())
-                        fs::create_directories(dest);
-                    else if (it->is_regular_file())
-                    {
-                        fs::create_directories(dest.parent_path());
-                        fs::copy_file(it->path(), dest);
-                    }
-                }
-        WriteAtomic(copy / "Assets/Editor/HS2AgentBuilder.cs",
-                    ReadFile(runtime_ / "Resources/Agent/HS2AgentBuilder.cs"));
-        WriteJson(work / "spec.json", spec);
-        if (RunOwnedTool(unity,
-                         {L"-batchmode", L"-quit", L"-projectPath", copy.wstring(), L"-executeMethod",
-                          L"HS2AgentBuilder.Build", L"-hs2AgentSpec", (work / "spec.json").wstring(), L"-logFile",
-                          (work / "unity.log").wstring()},
-                         work, timeout, work / "unity-process.log", token))
-        {
-            auto logBytes = fs::is_regular_file(work / "unity.log")
-                                ? ReadFile(work / "unity.log", 16 * 1024 * 1024, token)
-                                : Bytes{};
-            std::string log(logBytes.begin(), logBytes.end());
-            if (log.find("not been activated with a valid License") != std::string::npos ||
-                log.find("Failed to activate/update license") != std::string::npos)
-                throw std::runtime_error(
-                    "UNITY_LICENSE_REQUIRED：请在 Unity Editor 完成账号登录与许可激活；草稿保留。日志：" +
-                    Utf8(work / "unity.log"));
-            throw std::runtime_error("Unity 构建失败；见 " + Utf8(work / "unity.log"));
-        }
+        WriteJson(work / "build-result.json", built);
         auto package = work / "Package";
-        std::string manifest =
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?><manifest schema-ver=\"1\"><guid>" +
-            spec.at("guid").get<std::string>() + "</guid><name>" + Xml(spec.value("name", key)) +
-            "</name><version>1.0</version><author>HS2Agent</author><game>HoneySelect2</game></manifest>";
+        std::string manifest = "<?xml version=\"1.0\" encoding=\"utf-8\"?><manifest schema-ver=\"1\"><guid>" +
+                               spec.at("guid").get<std::string>() + "</guid><name>" + Xml(spec.value("name", key)) +
+                               "</name><version>1.0</version><author>HS2Agent</author><game>HoneySelect2</game>" +
+                               (built.at("additional_bones").empty() ? std::string{} : "<BonesFramework/>") +
+                               "</manifest>";
         WriteAtomic(package / "manifest.xml", Bytes(manifest.begin(), manifest.end()));
         auto candidate = work / Path(hash + ".zipmod");
         Zip(package, candidate, token);
@@ -416,6 +376,7 @@ namespace hs2::agent
                     throw std::runtime_error("服装穿脱状态验证失败");
                 checks.push_back({{"kind", "clothing_state"}, {"state", state}, {"render", check}});
             }
+        CheckCancelled(token);
         auto installed = data_ / "Assets" / candidate.filename();
         if (!fs::exists(installed))
             WriteAtomic(installed, ReadFile(candidate, 1024ull * 1024 * 1024, token));
@@ -425,6 +386,8 @@ namespace hs2::agent
                     {"hash", hash},
                     {"path", Utf8(installed)},
                     {"geometry", geometry},
+                    {"build", built},
+                    {"spec", spec},
                     {"checks", checks},
                     {"game_validation", "not_run"}};
         WriteJson(data_ / "Assets" / Path(hash + ".json"), record);

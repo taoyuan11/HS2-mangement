@@ -370,6 +370,11 @@ namespace hs2
                                      static_cast<int>(c.Int("format")), static_cast<int>(c.Int("dimension")) & 15};
             if (!channel.Dimension)
                 continue;
+            // Unity 2017/2018 keeps legacy Color at 2; UNorm8 through SInt32 use 3..12.
+            // Normalize to the renderer's compact format enum (Color and UNorm8 both map to 2).
+            Require(channel.Format >= 0 && channel.Format <= 12, "Invalid Unity 2018 vertex format.");
+            if (channel.Format >= 3)
+                --channel.Format;
             Require(channel.Stream >= 0 && channel.Stream < 16 && channel.Offset >= 0 && channel.Dimension <= 4,
                     "Invalid vertex channel.");
             m.StreamStrides[channel.Stream] = std::max(m.StreamStrides[channel.Stream],
