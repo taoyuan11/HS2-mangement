@@ -12,6 +12,8 @@ namespace hs2
         Matrix4x4 View() const;
         Matrix4x4 Projection(float aspect, bool jittered = true) const;
         Matrix4x4 World() const;
+        // 保持整个包围球位于远裁剪面内，包括拉远和偏离人物中心的平移。
+        void IncludeBounds(Vector3 center, Vector3 extents);
     };
 
     std::vector<float> MatrixValues(const Matrix4x4 &matrix);

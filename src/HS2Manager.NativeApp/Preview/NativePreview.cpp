@@ -97,6 +97,7 @@ namespace hs2::ui
                                             owner->editor_->Definition(result.Definition);
                                         self->body_ = result.Body;
                                         self->face_ = result.Face;
+                                        self->Motions(result);
                                         owner->model_->Put(L"PreviewBusy", false);
                                         owner->model_->Put(L"CanControlPreview", true);
                                         if (owner->temporaryPreview_)
@@ -158,6 +159,29 @@ namespace hs2::ui
                         if (self->epoch_ == epoch)
                             if (auto owner = self->owner_.lock())
                                 owner->Report(error.empty() ? "截图已保存：" + Utf8(path) : "截图未保存：" + error);
+                });
+        };
+        callbacks.MotionChanged = [weak, queue, epoch](uint64_t generation, int requested, int selected,
+                                                       NativeRendererBounds body, NativeRendererBounds face,
+                                                       std::string error)
+        {
+            queue.TryEnqueue(
+                [weak, epoch, generation, requested, selected, body, face, error = std::move(error)]
+                {
+                    if (auto self = weak.lock(); self && self->epoch_ == epoch && self->generation_ == generation)
+                        if (auto owner = self->owner_.lock())
+                        {
+                            self->body_ = body;
+                            self->face_ = face;
+                            if (!error.empty() &&
+                                unbox_value_or<int>(owner->model_->Get(L"PreviewMotionIndex"), -1) == requested)
+                            {
+                                self->syncingMotions_ = true;
+                                owner->model_->Put(L"PreviewMotionIndex", selected);
+                                self->syncingMotions_ = false;
+                                owner->Report(error);
+                            }
+                        }
                 });
         };
         worker_ = std::make_unique<NativePreviewWorker>(Path(owner->settings_.GamePath), owner->dataDirectory_,
@@ -344,6 +368,11 @@ namespace hs2::ui
             owner->model_->Put(L"ShowPreviewRail", false);
         owner->model_->Put(L"PreviewBusy", true);
         owner->model_->Put(L"CanControlPreview", false);
+        syncingMotions_ = true;
+        motions_.clear();
+        owner->model_->Set(L"PreviewMotions", single_threaded_observable_vector<hstring>(), false);
+        owner->model_->Put(L"PreviewMotionIndex", -1);
+        syncingMotions_ = false;
         owner->model_->Put(L"HasPreviewError", false);
         owner->model_->Put(L"HasPreviewWarnings", false);
         owner->model_->Put(L"PreviewError", L"");
@@ -511,6 +540,7 @@ namespace hs2::ui
                             center_.y + static_cast<float>(std::sin(pitch) * distance_),
                             center_.z + static_cast<float>(std::cos(yaw) * std::cos(pitch) * distance_)};
         camera_.FieldOfView = 35;
+        camera_.IncludeBounds(body_.Center, body_.Extents);
         worker_->View(camera_, dragging_);
     }
 
@@ -530,6 +560,35 @@ namespace hs2::ui
             options.Background = color;
             options.KeyLightMultiplier = static_cast<float>(light);
             worker_->Environment(options);
+        }
+    }
+
+    void NativePreview::Motions(PreviewReady const &ready)
+    {
+        if (motions_ == ready.Motions)
+            return;
+        if (auto owner = owner_.lock())
+        {
+            syncingMotions_ = true;
+            motions_ = ready.Motions;
+            auto choices = single_threaded_observable_vector<hstring>();
+            for (auto const &name : motions_)
+                choices.Append(to_hstring(name));
+            owner->model_->Set(L"PreviewMotions", choices, false);
+            owner->model_->Put(L"PreviewMotionIndex", ready.MotionIndex);
+            syncingMotions_ = false;
+        }
+    }
+
+    void NativePreview::Motion()
+    {
+        if (!worker_ || syncingMotions_)
+            return;
+        if (auto owner = owner_.lock())
+        {
+            auto index = unbox_value_or<int>(owner->model_->Get(L"PreviewMotionIndex"), -1);
+            if (index >= 0 && static_cast<size_t>(index) < motions_.size())
+                worker_->Motion(generation_, index);
         }
     }
 

@@ -76,6 +76,32 @@ namespace
         return {bytes, bytes + blob->GetBufferSize()};
     }
 
+    void CameraChecks()
+    {
+        using namespace DirectX;
+        Vector3 center{2, 8, -3}, extents{4, 9, 3};
+        for (float distance : {40.f, 95.f, 100.f, 110.f, 250.f, 500.f})
+            for (float yaw : {0.f, 1.57f, 3.14f})
+            {
+                NativeRenderCamera camera;
+                camera.Target = center;
+                camera.Position = {center.x + std::sin(yaw) * distance, center.y + 4,
+                                   center.z + std::cos(yaw) * distance};
+                camera.IncludeBounds(center, extents);
+                auto view = camera.View(), projection = camera.Projection(.75f);
+                auto transform = XMLoadFloat4x4(&view) * XMLoadFloat4x4(&projection);
+                for (int corner = 0; corner < 8; ++corner)
+                {
+                    auto point = XMVectorSet(center.x + (corner & 1 ? extents.x : -extents.x),
+                                             center.y + (corner & 2 ? extents.y : -extents.y),
+                                             center.z + (corner & 4 ? extents.z : -extents.z), 1);
+                    auto depth = XMVectorGetZ(XMVector3TransformCoord(point, transform));
+                    Require(std::isfinite(depth) && depth > 0 && depth < 1,
+                            "Zoomed-out character bounds crossed a camera clipping plane.");
+                }
+            }
+    }
+
     void TextureChecks()
     {
         GpuTextureData rgb;
@@ -495,6 +521,7 @@ int wmain(int argc, wchar_t **argv)
     try
     {
         TextureChecks();
+        CameraChecks();
         ConstantsChecks();
         PostChecks();
         GpuChecks();

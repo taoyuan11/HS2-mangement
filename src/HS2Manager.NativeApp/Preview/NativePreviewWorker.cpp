@@ -145,6 +145,7 @@ namespace hs2::ui
         loading_.request_stop();
         visibility_ = visibility;
         pendingDraft_.reset();
+        pendingMotion_.reset();
         pending_ = Request{++generation_, std::move(card), std::move(draft),    visibility, {},
                            preserveTime,  false,           std::move(resources)};
         viewGeneration_ = 0;
@@ -163,6 +164,7 @@ namespace hs2::ui
         loading_.request_stop();
         pending_.reset();
         pendingDraft_.reset();
+        pendingMotion_.reset();
         unload_ = true;
         wake_.notify_all();
     }
@@ -176,6 +178,7 @@ namespace hs2::ui
             pending_->Cancellation.request_stop();
         pending_.reset();
         pendingDraft_.reset();
+        pendingMotion_.reset();
         wake_.notify_all();
         wake_.wait(lock,
                    [&]
@@ -234,6 +237,16 @@ namespace hs2::ui
         wake_.notify_all();
     }
 
+    void NativePreviewWorker::Motion(uint64_t generation, int index)
+    {
+        std::lock_guard lock(mutex_);
+        if (generation != generation_ || index < 0)
+            return;
+        pendingMotion_ = index;
+        dirty_ = true;
+        wake_.notify_all();
+    }
+
     void NativePreviewWorker::Visible(bool value)
     {
         std::lock_guard lock(mutex_);
@@ -285,6 +298,11 @@ namespace hs2::ui
             std::optional<PreviewReady> pendingReady;
             uint64_t loaded = 0;
             float time = 0;
+            std::vector<NativeAssetEntry> motions;
+            std::vector<std::string> motionNames;
+            AssetReference defaultMotion;
+            std::optional<AssetReference> selectedMotion;
+            int motionIndex = 0;
             bool recovered = false;
             bool needsDraw = true, interactiveApplied = false;
             auto last = std::chrono::steady_clock::now();
@@ -304,6 +322,7 @@ namespace hs2::ui
             {
                 std::optional<Request> request;
                 std::optional<CharacterDocument> draft;
+                std::optional<int> motion;
                 std::optional<ScreenshotTarget> screenshot;
                 PreviewViewportSize size;
                 NativeRenderCamera camera;
@@ -314,8 +333,8 @@ namespace hs2::ui
                     std::unique_lock lock(mutex_);
                     auto command = [&]
                     {
-                        return quiesce_ || pending_.has_value() || pendingDraft_.has_value() || unload_ ||
-                               screenshot_.has_value() || dirty_ || environmentDirty_;
+                        return quiesce_ || pending_.has_value() || pendingDraft_.has_value() || pendingMotion_ ||
+                               unload_ || screenshot_.has_value() || dirty_ || environmentDirty_;
                     };
                     bool canDraw = loaded && viewGeneration_ == loaded;
                     if (visible_ && canDraw && (!paused_ || needsDraw))
@@ -345,6 +364,7 @@ namespace hs2::ui
                     pending_.reset();
                     draft = std::move(pendingDraft_);
                     pendingDraft_.reset();
+                    motion = std::exchange(pendingMotion_, {});
                     screenshot = std::move(screenshot_);
                     screenshot_.reset();
                     size = size_;
@@ -406,7 +426,14 @@ namespace hs2::ui
                     runtime.reset();
                     prepared = {};
                     if (!request->PreserveTime)
+                    {
                         time = 0;
+                        if (!request->Recovery)
+                        {
+                            selectedMotion.reset();
+                            motionIndex = 0;
+                        }
+                    }
                     try
                     {
                         auto progress = [&](WorkProgress const &value)
@@ -424,11 +451,39 @@ namespace hs2::ui
                         prepared = service->Prepare(request->Card, request->Draft ? &*request->Draft : nullptr,
                                                     request->Visibility, progress, token, true);
                         CheckCancelled(token);
+                        motions.clear();
+                        motionNames.clear();
+                        defaultMotion = {};
+                        for (auto const &selection : prepared.Scene->Definition->Selections)
+                            if (selection.Key == "motion.controller")
+                                defaultMotion = {selection.Reference.Bundle, prepared.Scene->Definition->MotionState};
+                        if (!defaultMotion.Bundle.empty())
+                        {
+                            motionNames.push_back("默认待机");
+                            for (auto const &entry :
+                                 service->Catalog().Query(prepared.Scene->Definition->Sex == 0 ? 500 : 501))
+                                if (!entry.Bundle.empty() && !entry.Get("Clip").empty() && entry.Get("Clip") != "0")
+                                {
+                                    motions.push_back(entry);
+                                    auto label = entry.Get("Name");
+                                    if (entry.Get("Clip") == "mannequin")
+                                        label = "基准站姿";
+                                    else if (entry.Guid.empty() && label.starts_with("ポーズ"))
+                                        label = "姿势 " + label.substr(std::string("ポーズ").size());
+                                    if (label.empty())
+                                        label = entry.Get("Clip");
+                                    if (!entry.Guid.empty())
+                                        label += " · " + entry.Source;
+                                    motionNames.push_back(std::move(label));
+                                }
+                        }
                         if (!graphics)
                             graphics = std::make_unique<GraphicsDevice>();
                         runtime = std::make_unique<NativeCharacterRuntime>(prepared.Scene, prepared.Assets,
                                                                            tpk_.parent_path() / L"native" / L"win-x64");
                         runtime->Update(0);
+                        if (selectedMotion)
+                            runtime->Motion(*selectedMotion);
                         PoseCharacterFace(*prepared.Scene, 1);
                         pipeline = std::make_unique<NativeFramePipeline>(*graphics, *prepared.Scene, *prepared.Assets,
                                                                          environment);
@@ -462,7 +517,9 @@ namespace hs2::ui
                                             Bounds(*prepared.Scene, true),
                                             std::move(diagnostics),
                                             std::make_shared<CharacterDefinition>(*prepared.Scene->Definition),
-                                            prepared.Assets->ReaderStats().Loads};
+                                            prepared.Assets->ReaderStats().Loads,
+                                            motionNames,
+                                            motionIndex};
                         }
                         CheckCancelled(token);
                         if (callbacks_.Progress)
@@ -529,8 +586,12 @@ namespace hs2::ui
                         UpdateCharacterScene(*prepared.Scene, *next.Scene);
                         bool created = !runtime;
                         if (created)
+                        {
                             runtime = std::make_unique<NativeCharacterRuntime>(
                                 prepared.Scene, prepared.Assets, tpk_.parent_path() / L"native" / L"win-x64");
+                            if (selectedMotion)
+                                runtime->Motion(*selectedMotion);
+                        }
                         else if (reshape)
                             runtime->Reset();
                         if (created || reshape)
@@ -553,7 +614,9 @@ namespace hs2::ui
                                             Bounds(*prepared.Scene, true),
                                             prepared.Scene->Diagnostics,
                                             std::make_shared<CharacterDefinition>(*prepared.Scene->Definition),
-                                            prepared.Assets->ReaderStats().Loads};
+                                            prepared.Assets->ReaderStats().Loads,
+                                            motionNames,
+                                            motionIndex};
                     }
                     catch (Cancelled const &)
                     {
@@ -591,6 +654,38 @@ namespace hs2::ui
                 try
                 {
                     applyVisibility(visibility);
+                    if (motion && *motion != motionIndex)
+                    {
+                        std::string error;
+                        try
+                        {
+                            if (*motion < 0 || static_cast<size_t>(*motion) >= motionNames.size())
+                                throw std::runtime_error("所选动作已不可用。");
+                            auto reference = defaultMotion;
+                            if (*motion > 0)
+                            {
+                                auto const &entry = motions.at(*motion - 1);
+                                reference = entry.Get("Clip") == "mannequin"
+                                                ? AssetReference{}
+                                                : AssetReference{service->Catalog().Bundle(entry.Bundle, entry.Archive),
+                                                                 entry.Get("Clip")};
+                            }
+                            runtime->Motion(reference);
+                            selectedMotion = std::move(reference);
+                            motionIndex = *motion;
+                            time = 0;
+                            resetClock = true;
+                            pipeline->ResetHistory();
+                            needsDraw = true;
+                        }
+                        catch (std::exception const &e)
+                        {
+                            error = std::string("动作切换失败：") + e.what();
+                        }
+                        if (callbacks_.MotionChanged)
+                            callbacks_.MotionChanged(loaded, *motion, motionIndex, Bounds(*prepared.Scene, false),
+                                                     Bounds(*prepared.Scene, true), std::move(error));
+                    }
                     auto now = std::chrono::steady_clock::now();
                     auto delta =
                         resetClock ? 0.f : std::clamp(std::chrono::duration<float>(now - last).count(), 0.f, .1f);
@@ -620,10 +715,15 @@ namespace hs2::ui
                         // 每次编辑创建新运行状态后，不重放此前累计的全部时间。
                         runtime->AdvanceFrame(delta, time);
                     }
+                    auto bounds = Bounds(*prepared.Scene, false);
+                    camera.IncludeBounds(bounds.Center, bounds.Extents);
                     auto const &frame = pipeline->Draw(camera, size.Width, size.Height, time);
                     surface->Present(frame);
                     if (pendingReady)
                     {
+                        pendingReady->MotionIndex = motionIndex;
+                        pendingReady->Body = bounds;
+                        pendingReady->Face = Bounds(*prepared.Scene, true);
                         if (callbacks_.Ready)
                             callbacks_.Ready(std::move(*pendingReady));
                         pendingReady.reset();

@@ -77,6 +77,7 @@ namespace hs2
         std::vector<std::string> Diagnostics;
         IndependentBlink Blink{1979};
         bool Initialized = false, PhysicsInitialized = false;
+        bool IdlePose = true;
         int Frame = -1;
         float Time = -1;
 
@@ -126,16 +127,7 @@ namespace hs2
                                        });
             if (motion != definition.Selections.end())
             {
-                auto reader = Assets->Reader(motion->Reference.Bundle);
-                auto clip = std::make_shared<NativeAnimationClip>(
-                    reader->Metadata(reader->Find(definition.MotionState, 74).PathId));
-                auto rig = std::find_if(Scene->Parts.begin(), Scene->Parts.end(),
-                                        [](auto &p)
-                                        {
-                                            return p->Definition->Role == "rig";
-                                        });
-                Require(rig != Scene->Parts.end(), "Character rig is missing.");
-                Idle = std::make_unique<NativeAnimationPlayer>(clip, *(*rig)->Root, (*rig)->Nodes);
+                Idle = MotionPlayer({motion->Reference.Bundle, definition.MotionState});
             }
             for (auto &part : Scene->Parts)
                 if (part->Definition->Role != "rig" && part->Definition->Role != "headRig")
@@ -183,6 +175,22 @@ namespace hs2
         {
             Scene->Root->LocalPosition({0, Scene->Definition->Heels.Height, 0});
             ApplyHeels();
+        }
+
+        std::unique_ptr<NativeAnimationPlayer> MotionPlayer(const AssetReference &reference)
+        {
+            if (reference.Asset.empty())
+                return {};
+            auto reader = Assets->Reader(reference.Bundle);
+            auto clip =
+                std::make_shared<NativeAnimationClip>(reader->Metadata(reader->Find(reference.Asset, 74).PathId));
+            auto rig = std::find_if(Scene->Parts.begin(), Scene->Parts.end(),
+                                    [](auto &part)
+                                    {
+                                        return part->Definition->Role == "rig";
+                                    });
+            Require(rig != Scene->Parts.end(), "Character rig is missing.");
+            return std::make_unique<NativeAnimationPlayer>(clip, *(*rig)->Root, (*rig)->Nodes);
         }
 
         void ApplyHeels()
@@ -325,12 +333,13 @@ namespace hs2
                     }
                 for (auto &c : def.Components)
                 {
-                    if (c.Type == "FullBodyBipedIK" && def.Role == "rig" && c.Data.Float("m_Enabled", 1) != 0)
+                    if (IdlePose && c.Type == "FullBodyBipedIK" && def.Role == "rig" &&
+                        c.Data.Float("m_Enabled", 1) != 0)
                         IdleLimbs = std::make_unique<NativeIdleLimbs>(c.Data, Scene->Bones, Sources.at(&def).ByName,
                                                                       Diagnostics);
                     if (c.Type == "EyeLookCalc")
                         EyeLook = std::make_unique<NativeEyeLook>(c.Data, nodes, Sources.at(&def).ByName);
-                    if (c.Type == "NeckLookCalcVer2")
+                    if (IdlePose && c.Type == "NeckLookCalcVer2")
                         for (auto &item : c.Data.Get("aBones").Children)
                             if (nodes.contains(item.String("neckBone")))
                                 ForwardNeck.push_back(nodes.at(item.String("neckBone")));
@@ -777,6 +786,24 @@ namespace hs2
     void NativeCharacterRuntime::Reset()
     {
         impl_->Reset();
+    }
+
+    void NativeCharacterRuntime::Motion(const AssetReference &clip)
+    {
+        // 先完成读取和绑定；无效动作不会破坏当前播放状态。
+        auto player = impl_->MotionPlayer(clip);
+        impl_->Reset();
+        // 原待机的固定 IK 目标和朝前颈部控制会覆盖其它动作的四肢与头部。
+        auto const &definition = *impl_->Scene->Definition;
+        impl_->IdlePose = std::any_of(definition.Selections.begin(), definition.Selections.end(),
+                                      [&](auto const &selection)
+                                      {
+                                          return selection.Key == "motion.controller" &&
+                                                 selection.Reference.Bundle == clip.Bundle &&
+                                                 definition.MotionState == clip.Asset;
+                                      });
+        impl_->Idle = std::move(player);
+        impl_->Update(0);
     }
 
     const std::vector<std::string> &NativeCharacterRuntime::Diagnostics() const

@@ -16,6 +16,8 @@ namespace hs2::ui
         std::vector<std::string> Diagnostics;
         std::shared_ptr<const CharacterDefinition> Definition;
         std::size_t ResourceLoads = 0;
+        std::vector<std::string> Motions;
+        int MotionIndex = 0;
     };
 
     struct PreviewCallbacks
@@ -26,6 +28,7 @@ namespace hs2::ui
         std::function<void(PreviewReady)> Ready;
         std::function<void(uint64_t, std::string)> Progress, Failure;
         std::function<void(std::filesystem::path, std::string)> Screenshot;
+        std::function<void(uint64_t, int, int, NativeRendererBounds, NativeRendererBounds, std::string)> MotionChanged;
     };
 
     // 界面队列只持有信箱，关闭时可以立即释放尚未投递的交换链引用。
@@ -85,6 +88,7 @@ namespace hs2::ui
         bool ConfirmView(uint64_t generation, NativeRenderCamera camera);
         void Environment(NativeFrameOptions options);
         void Paused(bool value);
+        void Motion(uint64_t generation, int index);
         void Visible(bool value);
         void Visibility(CharacterPreviewVisibility value);
         void Screenshot(ScreenshotTarget target);
@@ -109,6 +113,7 @@ namespace hs2::ui
         std::condition_variable_any wake_;
         std::optional<Request> pending_;
         std::optional<CharacterDocument> pendingDraft_;
+        std::optional<int> pendingMotion_;
         std::stop_source loading_;
         uint64_t generation_ = 0, viewGeneration_ = 0;
         PreviewViewportSize size_{640, 640, 1};

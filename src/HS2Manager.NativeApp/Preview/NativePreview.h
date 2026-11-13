@@ -19,6 +19,7 @@ namespace hs2::ui
         winrt::Windows::Foundation::IAsyncAction StopAsync();
         bool Action(std::wstring_view name, Object sender);
         void Environment();
+        void Motion();
 
         void Visible(bool value)
         {
@@ -47,6 +48,7 @@ namespace hs2::ui
         void Resize();
         void Camera();
         void Frame(bool face = false);
+        void Motions(PreviewReady const &ready);
         winrt::fire_and_forget Screenshot();
         std::weak_ptr<NativeWindow> owner_;
         std::unique_ptr<NativePreviewWorker> worker_;
@@ -54,6 +56,8 @@ namespace hs2::ui
         xaml::FrameworkElement view_{nullptr}, viewport_{nullptr};
         controls::SwapChainPanel panel_{nullptr};
         std::vector<std::function<void()>> unbind_;
+        std::vector<std::string> motions_;
+        bool syncingMotions_ = false;
         CardRecord card_;
         uint64_t generation_ = 0, epoch_ = 0;
         std::optional<CharacterDocument> draft_;

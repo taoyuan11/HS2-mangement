@@ -311,6 +311,12 @@ namespace hs2::ui
                         self->preview_->Environment();
                     return;
                 }
+                if (property == L"PreviewMotionIndex")
+                {
+                    if (self->preview_)
+                        self->preview_->Motion();
+                    return;
+                }
                 if (property == L"SearchText" || property == L"GenderFilter" || property == L"TagFilter" ||
                     property == L"SortOrder")
                 {

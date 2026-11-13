@@ -22,6 +22,8 @@ namespace hs2
         void RefreshRestPose(const NativeCharacterScene &next);
         void ResetFixturePhysics();
         void Reset();
+        // 切换预览动作并恢复初始姿态，避免旧动作和物理状态残留。
+        void Motion(const AssetReference &clip);
         const std::vector<std::string> &Diagnostics() const;
 
     private:

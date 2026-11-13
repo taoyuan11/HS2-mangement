@@ -1,0 +1,46 @@
+{
+  "Date": "2026-11-13",
+  "Configuration": "Release x64",
+  "ExecutableSHA256": "9d831c5945c8c59ca75abf75874021faf36ed40ee2bf1a2805ea5799a712b0f8",
+  "AutomatedTests": {
+    "Passed": 21,
+    "Failed": 0,
+    "Includes": "camera clipping at distances 40, 95, 100, 110, 250, 500 and three viewing angles; preview worker lifetime"
+  },
+  "RealCards": [
+    {
+      "UnavailableModChoices": 21,
+      "Passed": true,
+      "AllStockChoicesPassed": true,
+      "Choices": 200,
+      "Card": "UserData/chara/navi/navi.png"
+    },
+    {
+      "UnavailableModChoices": 21,
+      "Passed": true,
+      "AllStockChoicesPassed": true,
+      "Choices": 101,
+      "Card": "UserData/chara/male/HS2_ill_M_000.png"
+    }
+  ],
+  "RealChecks": [
+    "Paused selection and screenshot redraw",
+    "Invalid and stale motion requests preserve current selection",
+    "GPU frames at camera distances 110, 250, 500",
+    "Motion selection survives live shape, color, extension, accessory, undo and redo updates",
+    "Character resource loading is not restarted for motion-only changes",
+    "Existing first-frame, visibility, cancellation and lifetime checks"
+  ],
+  "UiChecks": [
+    "Normal preview: selected pose 04 and observed changed limbs",
+    "Paused preview: selected pose 06 and observed new pose while still paused",
+    "Repeated outward wheel input: character remained visible at maximum zoom",
+    "Editor preview: selected pose 02 and observed new pose; draft remained saved"
+  ],
+  "Limitations": [
+    "Some MOD entries reference controller state names or clips unavailable under the listed name; these report a nonfatal switch error and retain the previous motion. They are excluded from successful motion coverage.",
+    "Temporary preview shares the same controls and worker; its action selection was not separately exercised through the UI."
+  ],
+  "RawResults": "%LOCALAPPDATA%/HS2Manager/Tests/PreviewMotionZoom-20261113",
+  "OwnedProcessesStopped": true
+}

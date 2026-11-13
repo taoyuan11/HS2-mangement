@@ -18,6 +18,8 @@ int wmain(int argc, wchar_t **argv)
         std::mutex mutex;
         std::condition_variable changed;
         int views = 0, ready = 0, progress = 0, screenshots = 0;
+        int motionChanges = 0, selectedMotion = 0;
+        std::string motionError;
         uint64_t viewGeneration = 0;
         NativeRendererBounds viewBounds;
         UINT firstPresentCount = 0;
@@ -57,6 +59,14 @@ int wmain(int argc, wchar_t **argv)
             std::lock_guard lock(mutex);
             error = std::move(message);
             ++screenshots;
+            changed.notify_all();
+        };
+        events.MotionChanged = [&](auto, int, int selected, auto, auto, std::string message)
+        {
+            std::lock_guard lock(mutex);
+            selectedMotion = selected;
+            motionError = std::move(message);
+            ++motionChanges;
             changed.notify_all();
         };
         auto wait = [&](auto complete)
@@ -135,6 +145,64 @@ int wmain(int argc, wchar_t **argv)
             return HashFile(path);
         };
         auto bare = screenshot();
+        if (result->Motions.size() < 3 || result->MotionIndex != 0)
+            throw std::runtime_error("Preview did not publish the character's motion choices.");
+        auto chooseMotion = [&](int index, bool reject = false, bool optionalMod = false)
+        {
+            int before;
+            int previous;
+            {
+                std::lock_guard lock(mutex);
+                before = motionChanges;
+                previous = selectedMotion;
+            }
+            worker.Motion(generation, index);
+            wait(
+                [&]
+                {
+                    return motionChanges > before;
+                });
+            if (optionalMod && !motionError.empty())
+            {
+                if (selectedMotion != previous)
+                    throw std::runtime_error("An unavailable MOD motion replaced the current pose.");
+                std::cout << "Unavailable MOD motion: " << result->Motions.at(index) << ": " << motionError << '\n';
+            }
+            else if (reject ? motionError.empty() : !motionError.empty() || selectedMotion != index)
+                throw std::runtime_error("Motion selection failed: " + motionError);
+            return screenshot();
+        };
+        // 遍历真实清单，验证跨资源包动作可以绑定，并在暂停时直接重绘。
+        bool changedPose = false;
+        for (size_t index = 1; index < result->Motions.size(); ++index)
+        {
+            auto hash =
+                chooseMotion(static_cast<int>(index), false, result->Motions[index].find(" · ") != std::string::npos);
+            changedPose = changedPose || hash != bare;
+        }
+        if (!changedPose)
+            throw std::runtime_error("Switching motions never changed the paused pose.");
+        auto lastMotion = selectedMotion;
+        chooseMotion(static_cast<int>(result->Motions.size()) + 5, true);
+        if (selectedMotion != lastMotion)
+            throw std::runtime_error("Invalid motion changed the current selection.");
+        chooseMotion(0);
+        worker.Motion(generation - 1, 1);
+        screenshot();
+        if (selectedMotion != 0)
+            throw std::runtime_error("A stale character changed the motion.");
+        // 覆盖超过旧远裁剪面和最大滚轮距离的实际 GPU 帧。
+        for (float zoom : {110.f, 250.f, 500.f})
+        {
+            auto distant = camera;
+            distant.Position.z = bounds.Center.z + zoom;
+            worker.View(distant, false);
+            screenshot();
+        }
+        worker.View(camera, false);
+        bare = chooseMotion(2);
+        std::cout << "PASS motion choices=" << result->Motions.size()
+                  << ", paused switching, invalid/stale selection, and zoom frames to distance 500\n";
         int initialProgress;
         {
             std::lock_guard lock(mutex);
@@ -182,7 +250,7 @@ int wmain(int argc, wchar_t **argv)
                     return ready > completed;
                 });
             if (result->Generation != generation || result->Chain.Get() != chain || progress != initialProgress ||
-                result->Definition->Visibility != CharacterPreviewVisibility{2, false})
+                result->Definition->Visibility != CharacterPreviewVisibility{2, false} || result->MotionIndex != 2)
                 throw std::runtime_error("A parameter edit reloaded the preview or lost the current visibility.");
             auto milliseconds =
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();

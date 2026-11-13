@@ -7,6 +7,14 @@
 
 namespace hs2
 {
+    void NativeRenderCamera::IncludeBounds(Vector3 center, Vector3 extents)
+    {
+        auto dx = center.x - Position.x, dy = center.y - Position.y, dz = center.z - Position.z;
+        auto distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        auto radius = std::sqrt(extents.x * extents.x + extents.y * extents.y + extents.z * extents.z);
+        Far = std::max(100.f, distance + radius * 2 + 1.f);
+    }
+
     Matrix4x4 NativeRenderCamera::View() const
     {
         Matrix4x4 result;

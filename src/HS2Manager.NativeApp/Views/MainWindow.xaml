@@ -1017,6 +1017,16 @@
                                     Style="{StaticResource QuietButton}"
                                     IsEnabled="{Binding CanControlPreview}"
                                     x:Name="ActionMainWindow45"/>
+                                <ComboBox
+                                    x:Name="PreviewMotionChoice"
+                                    Width="180"
+                                    Margin="8,0,0,0"
+                                    PlaceholderText="选择动作"
+                                    ItemsSource="{Binding PreviewMotions}"
+                                    SelectedIndex="{Binding PreviewMotionIndex, Mode=TwoWay}"
+                                    IsEnabled="{Binding CanControlPreview}"
+                                    AutomationProperties.Name="预览动作"
+                                    ToolTipService.ToolTip="选择角色动作；暂停时显示动作的起始姿势"/>
                             </StackPanel>
                             <StackPanel
                                 x:Name="EnvironmentControls"
