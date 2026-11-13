@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "Update.h"
 #undef GetCurrentTime
 #include "Infrastructure/DataLocation.h"
 #include "Infrastructure/ProcessLifetime.h"
@@ -26,6 +27,7 @@ namespace hs2::ui
         std::shared_ptr<NativeWindow> window;
         std::unique_ptr<CardRepository> repository;
         static inline int exitCode = 0;
+        static inline std::wstring updateReadyEvent;
         static inline std::filesystem::path dataDirectory;
 
         explicit Application(std::unique_ptr<CardRepository> value) : repository(std::move(value))
@@ -62,6 +64,12 @@ namespace hs2::ui
             {
                 InitializeResources();
                 window = NativeWindow::Create(dataDirectory, std::move(repository));
+                if (!updateReadyEvent.empty())
+                {
+                    update::Handle ready(OpenEventW(EVENT_MODIFY_STATE, FALSE, updateReadyEvent.c_str()));
+                    if (ready.Value)
+                        SetEvent(ready.Value);
+                }
             }
             catch (hresult_error const &e)
             {
@@ -96,6 +104,14 @@ int RunApplication()
         for (int i = 1; i < argc; ++i)
             arguments.emplace_back(argv[i]);
         LocalFree(argv);
+        for (size_t i = 0; i + 1 < arguments.size(); ++i)
+            if (arguments[i] == L"--update-ready")
+            {
+                hs2::ui::Application::updateReadyEvent = arguments[i + 1];
+                arguments.erase(arguments.begin() + i, arguments.begin() + i + 2);
+                break;
+            }
+        auto installationLease = hs2::update::InstallationLease(hs2::ui::ExecutableDirectory());
         PWSTR local{};
         check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local));
         std::filesystem::path localPath(local);

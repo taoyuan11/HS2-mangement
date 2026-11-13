@@ -11,7 +11,7 @@ if (!(Test-Path -LiteralPath $root -PathType Container)) {
 }
 $failures = New-Object System.Collections.Generic.List[string]
 $required = @(
-    'HS2Manager.exe', 'HS2Agent.exe', 'resources.pri', 'MainWindow.xaml', 'CharacterEditorView.xaml', 'CreationView.xaml', 'SettingsView.xaml', 'Styles.xaml',
+    'HS2Manager.exe', 'HS2Agent.exe', 'HS2Updater.exe', 'resources.pri', 'MainWindow.xaml', 'CharacterEditorView.xaml', 'CreationView.xaml', 'SettingsView.xaml', 'Styles.xaml',
     'agent.example.json', 'agent.mcp.example.toml', 'AI-INSTALL.md',
     'skills/hs2-card-agent/SKILL.md', 'skills/hs2-card-agent/references/assets.md',
     'Microsoft.UI.Xaml.dll', 'Microsoft.UI.Xaml.Controls.dll', 'Microsoft.UI.Xaml.Controls.pri', 'Microsoft.WindowsAppRuntime.dll',
@@ -31,6 +31,19 @@ $required = @(
     'licenses/NVIDIA-PhysX-3.4.txt', 'licenses/sqlite-LICENSE.txt', 'licenses/Unity-PostProcessing.md',
     'licenses/WindowsAppSDK-LICENSE.txt', 'licenses/WindowsAppSDK-NOTICE.txt'
 )
+if (!$DevelopmentOutput) {
+    $required += 'package-info.json'
+    . (Join-Path $PSScriptRoot '../build/Version.ps1')
+    $version = Get-AppVersion
+    $infoPath = Join-Path $root 'package-info.json'
+    if (Test-Path -LiteralPath $infoPath) {
+        $info = Get-Content -LiteralPath $infoPath -Raw | ConvertFrom-Json
+        $exeVersion = (Get-Item -LiteralPath (Join-Path $root 'HS2Manager.exe')).VersionInfo.ProductVersion
+        if ($info.version -ne $version -or $exeVersion -ne $version -or $info.platform -ne 'win-x64' -or $info.schemaVersion -ne 1) {
+            $failures.Add('Package and executable versions must match VERSION.')
+        }
+    }
+}
 foreach ($relative in $required) {
     $path = Join-Path $root $relative
     if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0) {

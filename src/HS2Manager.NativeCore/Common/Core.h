@@ -134,6 +134,8 @@ namespace hs2
         std::string GamePath = "Z:\\games\\hs2\\HS two DX - TSYMQ";
         std::vector<std::string> ExtraRoots, Collections;
         bool RecursiveCardSearch = false;
+        bool AutoCheckUpdates = true;
+        int64_t LastUpdateCheck = 0;
         std::string Theme = "System", BlenderPath, UnrealEditorPath, Sort = "名称";
         double WindowWidth = 1440, WindowHeight = 900;
         std::vector<fs::path> ScanRoots() const;

@@ -1,0 +1,87 @@
+name: Windows build and release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate version and release tests
+        shell: pwsh
+        run: |
+          . ./scripts/build/Version.ps1
+          $version = Get-AppVersion
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne "v$version") {
+            throw 'Tag must exactly match VERSION.'
+          }
+          python -m unittest discover -s tests/release -p 'test_*.py'
+          if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            .tools/ci
+            ~/.nuget/packages
+          key: windows-2022-sdk-${{ hashFiles('scripts/build/Restore-CiDependencies.ps1', 'src/HS2Manager.NativeApp/packages.lock.json') }}
+      - name: Restore native SDKs
+        shell: pwsh
+        run: ./scripts/build/Restore-CiDependencies.ps1
+      - name: Build, test and package
+        shell: pwsh
+        run: |
+          ./build.ps1 -FbxSdkRoot "$pwd/.tools/ci/fbx-2020.3.7" -PhysXSource "$pwd/.tools/ci/physx-3.4" -Jobs 4
+          ./tests/package/Test-ParallelPackage.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-x64-release
+          path: |
+            artifacts/release/*.zip
+            artifacts/release/*.sha256
+            artifacts/release/update.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-diagnostics
+          path: |
+            ~/AppData/Local/HS2Manager/CppBuild/**/Testing/Temporary/*.log
+            ~/AppData/Local/HS2Manager/NativeBuild/**/*.log
+          if-no-files-found: ignore
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    concurrency:
+      group: official-release
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: windows-x64-release
+          path: artifacts/release
+      - name: Publish verified release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release/publish_release.py --directory artifacts/release --tag "$env:GITHUB_REF_NAME" --commit "$env:GITHUB_SHA"

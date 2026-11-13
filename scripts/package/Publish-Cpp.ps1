@@ -15,7 +15,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'RuntimeLanguages.ps1')
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $env:MSBUILDDISABLENODEREUSE = '1'
-$packageName = 'HS2Manager-1.4.0-cpp-win-x64'
+. (Join-Path $PSScriptRoot '../build/Version.ps1')
+$version = Get-AppVersion
+$packageName = 'HS2Manager-' + $version + '-cpp-win-x64'
 $destination = if ($OutputDirectory) {
     [IO.Path]::GetFullPath($OutputDirectory)
 }
@@ -30,7 +32,7 @@ if (!$parent -or $destination -eq [IO.Path]::GetPathRoot($destination).TrimEnd('
 if (Test-Path -LiteralPath $destination) {
     throw "输出目录已存在，请指定新的输出位置：$destination"
 }
-$archive = $destination + '.zip'
+$archive = Join-Path $parent ($packageName + '.zip')
 if (!$SkipArchive -and (Test-Path -LiteralPath $archive)) {
     throw "压缩包已存在，请指定新的输出位置：$archive"
 }
@@ -73,11 +75,11 @@ try {
     if (!('HS2Manager.Build.PackageFiles' -as [type])) {
         Add-Type -Path (Join-Path $PSScriptRoot 'PackageFiles.cs')
     }
-    $fbx = @{Jobs = $Jobs}
+    $fbx = @{Jobs = $Jobs }
     if ($FbxSdkRoot) {
         $fbx.SdkRoot = $FbxSdkRoot
     }
-    $physics = @{Jobs = $Jobs}
+    $physics = @{Jobs = $Jobs }
     if ($PhysXSource) {
         $physics.Source = $PhysXSource
     }
@@ -123,7 +125,7 @@ try {
         $relative = $file.FullName.Substring($packageRoot.Length).TrimStart('\', '/')
         if ($relative -match '^(Data|Logs|Covers|CardBackups|Operations|NativeCpp|NativePreview[^\\/]*|UnityPreview)[\\/]' -or
             $file.Extension -in '.pdb', '.ilk', '.exp', '.lib', '.iobj', '.ipdb', '.log' -or
-            $file.Name -match '^(native-.*error.*|hs2_.*_(checks|fixtures)\.exe|library\.db.*|settings\.json)$' -or
+            $file.Name -match '^(native-.*error.*|hs2_.*_(checks|fixtures)\.exe|library\.db.*|settings\.json|\.hs2-.*)$' -or
             (Test-UnusedRuntimeLanguageFile $relative)) {
             continue
         }
@@ -140,6 +142,10 @@ try {
         $copyTargets.Add((Join-Path $staging ('docs/' + $relative)))
     }
     [HS2Manager.Build.PackageFiles]::Copy($copySources.ToArray(), $copyTargets.ToArray(), $Jobs)
+    @{ version = $version
+        platform = 'win-x64'
+        schemaVersion = 1
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging 'package-info.json') -Encoding UTF8
     & (Join-Path $PSScriptRoot 'Test-CppPackage.ps1') -Package $staging
     $files = @(Get-ChildItem -LiteralPath $staging -File -Recurse | Sort-Object FullName | Select-Object -ExpandProperty FullName)
     $manifest = [HS2Manager.Build.PackageFiles]::Manifest($staging, $files, $Jobs)
@@ -147,8 +153,18 @@ try {
     [IO.Directory]::Move($staging, $destination)
     if (!$SkipArchive) {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [IO.Compression.ZipFile]::CreateFromDirectory($destination, $archiveStaging, [IO.Compression.CompressionLevel]::Optimal, $true)
+        $zip = [IO.Compression.ZipFile]::Open($archiveStaging, [IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($file in Get-ChildItem -LiteralPath $destination -File -Recurse) {
+                $relative = $file.FullName.Substring($destination.Length).TrimStart('\', '/').Replace('\', '/')
+                [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, ($packageName + '/' + $relative), [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+            }
+        }
+        finally {
+            $zip.Dispose()
+        }
         [IO.File]::Move($archiveStaging, $archive)
+        & (Join-Path $PSScriptRoot 'New-UpdateManifest.ps1') -Archive $archive -Version $version
         Write-Output "便携压缩包：$archive"
     }
     Write-Output "纯 C++ 便携目录：$destination"

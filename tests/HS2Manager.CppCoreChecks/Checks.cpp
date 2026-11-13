@@ -621,7 +621,12 @@ namespace
         Check(repository.LoadMetadata("test")->at("value") == 42, "SQLite metadata persistence");
         repository.Backup(root / L"backup.db");
         Check(fs::file_size(root / L"backup.db") > 0, "SQLite WAL backup");
+        Check(Json::object().get<AppSettings>().AutoCheckUpdates &&
+                  Json::object().get<AppSettings>().LastUpdateCheck == 0,
+              "old settings default update preferences");
         AppSettings settings;
+        settings.AutoCheckUpdates = false;
+        settings.LastUpdateCheck = 1794560000;
         settings.GamePath = Utf8(root);
         settings.ExtraRoots = {Utf8(folder)};
         settings.Theme = "Dark";
@@ -629,7 +634,8 @@ namespace
         settings.Save(data);
         auto loaded = AppSettings::Load(data);
         Check(loaded.ExtraRoots == settings.ExtraRoots && loaded.LastCardExportLevel == settings.LastCardExportLevel &&
-                  loaded.Theme == "Dark",
+                  loaded.Theme == "Dark" && !loaded.AutoCheckUpdates &&
+                  loaded.LastUpdateCheck == settings.LastUpdateCheck,
               "settings compatible roundtrip");
         CardLibraryService library(repository);
         auto scan = library.Scan({folder});

@@ -774,6 +774,9 @@ namespace hs2::ui
                 if (!item)
                     return;
                 auto section = unbox_value<hstring>(item.Tag());
+                view.FindName(L"UpdatePage")
+                    .as<UIElement>()
+                    .Visibility(section == L"update" ? Visibility::Visible : Visibility::Collapsed);
                 view.FindName(L"LibraryPage")
                     .as<UIElement>()
                     .Visibility(section == L"library" ? Visibility::Visible : Visibility::Collapsed);
@@ -788,19 +791,21 @@ namespace hs2::ui
                     .Visibility(section == L"data" ? Visibility::Visible : Visibility::Collapsed);
                 view.FindName(L"SectionTitle")
                     .as<TextBlock>()
-                    .Text(section == L"library"        ? L"资源库"
+                    .Text(section == L"update"         ? L"程序更新"
+                          : section == L"library"      ? L"资源库"
                           : section == L"appearance"   ? L"外观主题"
                           : section == L"model-export" ? L"模型导出"
                                                        : L"数据与维护");
                 view.FindName(L"SectionDescription")
                     .as<TextBlock>()
-                    .Text(section == L"library"        ? L"连接游戏与人物卡目录，设置你的检索范围。"
+                    .Text(section == L"update"         ? L"从 GitHub 获取正式版本，确认后下载与安装。"
+                          : section == L"library"      ? L"连接游戏与人物卡目录，设置你的检索范围。"
                           : section == L"appearance"   ? L"让工作空间适应你的使用习惯。"
                           : section == L"model-export" ? L"配置生成原生模型所需的本机软件。"
                                                        : L"管理本地数据、数据库备份与预览缓存。");
             };
             nav.SelectionChanged(change);
-            nav.SelectedIndex(0);
+            nav.SelectedIndex(updateRelease_ ? 4 : 0);
             for (auto const &event : UiEvents)
                 if (event.View == L"SettingsView" && event.Event == L"Click")
                     if (auto button = view.FindName(hstring(event.Name)).try_as<Button>())
@@ -899,6 +904,7 @@ namespace hs2::ui
             dialog.RequestedTheme(root_.RequestedTheme());
             dialog.Title(box_value(L"设置与连接"));
             dialog.Content(view);
+            BindUpdates(view, dialog);
             dialog.PrimaryButtonText(L"保存");
             dialog.CloseButtonText(L"取消");
             dialog.DefaultButton(ContentDialogButton::Primary);
@@ -915,6 +921,8 @@ namespace hs2::ui
                         next.ExtraRoots.clear();
                         for (auto const &value : roots)
                             next.ExtraRoots.push_back(Utf8(fs::absolute(Path(to_string(unbox_value<hstring>(value))))));
+                        next.AutoCheckUpdates =
+                            unbox_value_or<bool>(view.FindName(L"AutoUpdateBox").as<CheckBox>().IsChecked(), true);
                         next.RecursiveCardSearch =
                             unbox_value_or<bool>(view.FindName(L"RecursiveBox").as<CheckBox>().IsChecked(), false);
                         next.BlenderPath = Trim(to_string(view.FindName(L"BlenderPathBox").as<TextBox>().Text()));
@@ -942,6 +950,12 @@ namespace hs2::ui
             dialogOpen_ = true;
             auto result = co_await dialog.ShowAsync();
             dialogOpen_ = false;
+            updateView_ = {};
+            if (installRequested_)
+            {
+                RequestClose();
+                co_return;
+            }
             if (result == ContentDialogResult::Primary)
             {
                 ApplyTheme();

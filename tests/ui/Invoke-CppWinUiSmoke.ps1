@@ -26,7 +26,7 @@ function Test-WindowStartup([string]$DataDirectory, [string]$Label, [switch]$For
     $ownedId = 0
     try {
         # 显示真实窗口，使首次布局及封面加载参与检查。
-        $owned = Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList @('--data', ('"' + $DataDirectory + '"')) -PassThru
+        $owned = Start-Process -WindowStyle Hidden -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList @('--data', ('"' + $DataDirectory + '"')) -PassThru
         $ownedId = $owned.Id
         Write-Output "Owned C++ smoke PID: $($owned.Id)"
         $deadline = [DateTime]::UtcNow.AddSeconds(30)

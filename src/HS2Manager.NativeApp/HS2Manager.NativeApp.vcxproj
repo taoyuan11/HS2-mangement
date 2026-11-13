@@ -63,14 +63,14 @@
             <SDLCheck>true</SDLCheck>
             <ConformanceMode>true</ConformanceMode>
             <ExceptionHandling>Sync</ExceptionHandling>
-            <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\HS2Manager.NativeCore;$(ProjectDir)..\HS2Manager.NativeScene;$(ProjectDir)..\HS2Manager.NativeRendering;$(ProjectDir)..\HS2Manager.NativeExport;$(ProjectDir)..\HS2Manager.NativeCreation;$(ProjectDir)..\HS2Manager.NativeAssetBuild;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+            <AdditionalIncludeDirectories>$(NativeBuildRoot)\modules\generated;$(ProjectDir)..\HS2Manager.NativeUpdate;$(ProjectDir);$(ProjectDir)..\HS2Manager.NativeCore;$(ProjectDir)..\HS2Manager.NativeScene;$(ProjectDir)..\HS2Manager.NativeRendering;$(ProjectDir)..\HS2Manager.NativeExport;$(ProjectDir)..\HS2Manager.NativeCreation;$(ProjectDir)..\HS2Manager.NativeAssetBuild;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
         </ClCompile>
         <Link>
             <SubSystem>Windows</SubSystem>
-            <AdditionalDependencies>$(NativeBuildRoot)\modules\src\HS2Manager.NativeCreation\$(Configuration)\hs2_creation.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeAssetBuild\$(Configuration)\hs2_asset_build.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeExport\$(Configuration)\hs2_model_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeExport\$(Configuration)\hs2_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_core.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_card_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_core_components.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeScene\$(Configuration)\hs2_scene.lib;$(NativeBuildRoot)\modules\$(Configuration)\hs2_character.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeRendering\$(Configuration)\hs2_rendering.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeScene\$(Configuration)\hs2_archive.lib;windowsapp.lib;runtimeobject.lib;shell32.lib;dwmapi.lib;bcrypt.lib;winsqlite3.lib;ole32.lib;oleaut32.lib;xmllite.lib;shlwapi.lib;mpr.lib;d3d11.lib;dxgi.lib;d3dcompiler.lib;windowscodecs.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+            <AdditionalDependencies>$(NativeBuildRoot)\modules\src\HS2Manager.NativeUpdate\$(Configuration)\hs2_update.lib;winhttp.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCreation\$(Configuration)\hs2_creation.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeAssetBuild\$(Configuration)\hs2_asset_build.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeExport\$(Configuration)\hs2_model_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeExport\$(Configuration)\hs2_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_core.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_card_export.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeCore\$(Configuration)\hs2_core_components.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeScene\$(Configuration)\hs2_scene.lib;$(NativeBuildRoot)\modules\$(Configuration)\hs2_character.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeRendering\$(Configuration)\hs2_rendering.lib;$(NativeBuildRoot)\modules\src\HS2Manager.NativeScene\$(Configuration)\hs2_archive.lib;windowsapp.lib;runtimeobject.lib;shell32.lib;dwmapi.lib;bcrypt.lib;winsqlite3.lib;ole32.lib;oleaut32.lib;xmllite.lib;shlwapi.lib;mpr.lib;d3d11.lib;dxgi.lib;d3dcompiler.lib;windowscodecs.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
         </Link>
         <Manifest>
-            <AdditionalManifestFiles>app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
+            <AdditionalManifestFiles>$(NativeBuildRoot)\modules\generated\app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
         </Manifest>
     </ItemDefinitionGroup>
     <ItemGroup>
@@ -81,23 +81,25 @@
         <ClCompile
             Include="Infrastructure/DataLocation.cpp;Infrastructure/ProcessLifetime.cpp;Preview/NativePreviewWorker.cpp;Creation/CreationViewport.cpp"/>
         <ClCompile
-            Include="Creation/NativeCreation.cpp;Creation/NativeProjects.cpp;Creation/CreationActions.cpp;Creation/CreationTools.cpp;Creation/CreationInteraction.cpp;Creation/CreationEntry.cpp;Application/Main.cpp;Application/NativeWindow.cpp;Application/NativeActions.cpp;Editor/NativeEditor.cpp;Preview/NativePreview.cpp;Preview/NativeTemporaryPreview.cpp;Export/NativeCardExport.cpp;Editor/NativeEditorAssets.cpp;Editor/NativeEditorBackups.cpp;Export/NativeModelExport.cpp">
+            Include="Creation/NativeCreation.cpp;Creation/NativeProjects.cpp;Creation/CreationActions.cpp;Creation/CreationTools.cpp;Creation/CreationInteraction.cpp;Creation/CreationEntry.cpp;Application/Main.cpp;Application/NativeWindow.cpp;Application/NativeActions.cpp;Application/NativeUpdates.cpp;Editor/NativeEditor.cpp;Preview/NativePreview.cpp;Preview/NativeTemporaryPreview.cpp;Export/NativeCardExport.cpp;Editor/NativeEditorAssets.cpp;Editor/NativeEditorBackups.cpp;Export/NativeModelExport.cpp">
             <PrecompiledHeader>Use</PrecompiledHeader>
             <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
             <ForcedIncludeFiles>pch.h</ForcedIncludeFiles>
         </ClCompile>
         <ClInclude Include="**\*.h"/>
-        <ResourceCompile Include="NativeApp.rc"/>
+        <ResourceCompile Include="NativeApp.rc">
+            <AdditionalIncludeDirectories>$(NativeBuildRoot)\modules\generated;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+        </ResourceCompile>
         <None Include="Views\*.xaml"/>
-        <Manifest Include="app.manifest"/>
+        <None Include="app.manifest"/>
     </ItemGroup>
     <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
     <Import Project="NativePackages.targets"/>
-    <Target Name="BuildNativeModules" BeforeTargets="ClCompile" Condition="'$(NativeModulesBuilt)'!='true'">
+    <Target Name="BuildNativeModules" BeforeTargets="PrepareForBuild" Condition="'$(NativeModulesBuilt)'!='true'">
         <Exec
             Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; -S &quot;$(ProjectDir)..\..&quot; -B &quot;$(NativeBuildRoot)\modules&quot; -G &quot;Visual Studio 17 2022&quot; -A x64 -DBUILD_TESTING=ON"/>
         <Exec
-            Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; --build &quot;$(NativeBuildRoot)\modules&quot; --config $(Configuration) --target hs2_creation hs2_core hs2_archive hs2_character hs2_rendering hs2_card_export hs2_core_components hs2_model_export --parallel $(NativeBuildParallelism) -- /nr:false /v:minimal"/>
+            Command="&quot;$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe&quot; --build &quot;$(NativeBuildRoot)\modules&quot; --config $(Configuration) --target HS2Updater hs2_update hs2_creation hs2_core hs2_archive hs2_character hs2_rendering hs2_card_export hs2_core_components hs2_model_export --parallel $(NativeBuildParallelism) -- /nr:false /v:minimal"/>
     </Target>
     <Target Name="CopyNativeUiResources" AfterTargets="Build">
         <ItemGroup>

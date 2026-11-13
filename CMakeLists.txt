@@ -1,13 +1,18 @@
 cmake_minimum_required(VERSION 3.24)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" HS2_VERSION LIMIT_COUNT 1)
 project(
     HS2ManagerNative
-    VERSION 1.4.0
+    VERSION ${HS2_VERSION}
     LANGUAGES C CXX
 )
 if(NOT WIN32 OR NOT MSVC)
     message(FATAL_ERROR "HS2 Manager requires Windows and the Visual Studio C++ toolchain.")
 endif()
 include(CTest)
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated")
+configure_file(scripts/build/AppVersion.h.in generated/AppVersion.h @ONLY)
+configure_file(src/HS2Manager.NativeApp/app.manifest generated/app.manifest @ONLY)
+add_subdirectory(src/HS2Manager.NativeUpdate)
 add_subdirectory(src/HS2Manager.NativeScene)
 add_subdirectory(src/HS2Manager.NativeCore)
 include(src/HS2Manager.NativeScene/Character.cmake)

@@ -185,6 +185,9 @@ namespace hs2::ui
         if (searchTimer_)
             searchTimer_.Stop();
         temporaryCancellation_.request_stop();
+        updateWork_.request_stop();
+        if (updateWork_.joinable())
+            updateWork_.join();
         work_.request_stop();
         if (editor_)
             editor_->Stop();
@@ -420,6 +423,7 @@ namespace hs2::ui
         ApplyTheme();
         Reload();
         window_.Activate();
+        InitializeUpdates();
         Work("检查未完成操作",
              [this](auto stop, auto progress)
              {

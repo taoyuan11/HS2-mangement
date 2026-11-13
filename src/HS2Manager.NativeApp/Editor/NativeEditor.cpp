@@ -1021,7 +1021,10 @@ namespace hs2::ui
     {
         auto lifetime = shared_from_this();
         if (closePrompt_ || busy_)
+        {
+            installRequested_ = false;
             co_return;
+        }
         // 不给保存/放弃/取消对话框计时；用户决定离开后再启动清理期限。
         CancelProcessShutdown();
         closePrompt_ = true;
@@ -1029,6 +1032,7 @@ namespace hs2::ui
         {
             if (co_await CloseEditor())
             {
+                LaunchPendingUpdate();
                 BeginProcessShutdown();
                 closing_ = true;
                 CancelTemporaryPreview();
@@ -1074,6 +1078,7 @@ namespace hs2::ui
             closing_ = false;
             Report(e.what());
         }
+        installRequested_ = false;
         closePrompt_ = false;
     }
 } // 命名空间 hs2::ui

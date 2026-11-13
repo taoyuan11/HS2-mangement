@@ -146,6 +146,10 @@ namespace hs2
             auto p = std::span(central).subspan(cursor);
             Require(p.size() >= 46 && ::hs2::Read<uint32_t>(p, 0) == 0x02014b50, "Invalid ZIP central entry.");
             ZipEntry e;
+            auto creator = ::hs2::Read<uint16_t>(p, 4) >> 8;
+            auto attributes = ::hs2::Read<uint32_t>(p, 38);
+            e.Link = (creator == 3 && ((attributes >> 16) & 0170000) == 0120000) ||
+                     (creator == 0 && (attributes & FILE_ATTRIBUTE_REPARSE_POINT));
             e.Flags = ::hs2::Read<uint16_t>(p, 8);
             e.Method = ::hs2::Read<uint16_t>(p, 10);
             e.Crc32 = ::hs2::Read<uint32_t>(p, 16);

@@ -6,6 +6,7 @@
 #include "Mods/ModIndex.h"
 #include "Preview/TemporaryPreviewSession.h"
 #include "Infrastructure/Observable.h"
+#include "Update.h"
 #include <set>
 #include <thread>
 #include <unordered_map>
@@ -95,6 +96,19 @@ namespace hs2::ui
             return root_.FindName(winrt::hstring(name)).as<T>();
         }
 
+        void InitializeUpdates();
+        void BindUpdates(xaml::FrameworkElement const &view, controls::ContentDialog const &dialog);
+        void RefreshUpdateView();
+        void CheckUpdates(bool automatic = false);
+        void DownloadUpdate();
+        void LaunchPendingUpdate();
+        std::jthread updateWork_;
+        std::optional<update::Release> updateRelease_;
+        fs::path updatePackage_, updateRequest_;
+        std::string updateStatus_ = "尚未检查更新";
+        double updateProgress_ = 0;
+        bool updateBusy_ = false, installRequested_ = false;
+        winrt::weak_ref<xaml::FrameworkElement> updateView_;
         HWND Handle() const;
         fs::path dataDirectory_;
         AppSettings settings_;

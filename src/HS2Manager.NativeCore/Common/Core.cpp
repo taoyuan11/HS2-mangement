@@ -400,6 +400,8 @@ namespace hs2
         HS2_JSON_WRITE(ExtraRoots);
         HS2_JSON_WRITE(Collections);
         HS2_JSON_WRITE(RecursiveCardSearch);
+        HS2_JSON_WRITE(AutoCheckUpdates);
+        HS2_JSON_WRITE(LastUpdateCheck);
         HS2_JSON_WRITE(Theme);
         HS2_JSON_WRITE(BlenderPath);
         HS2_JSON_WRITE(UnrealEditorPath);
@@ -415,6 +417,8 @@ namespace hs2
         HS2_JSON_READ(ExtraRoots);
         HS2_JSON_READ(Collections);
         HS2_JSON_READ(RecursiveCardSearch);
+        HS2_JSON_READ(AutoCheckUpdates);
+        HS2_JSON_READ(LastUpdateCheck);
         HS2_JSON_READ(Theme);
         HS2_JSON_READ(BlenderPath);
         HS2_JSON_READ(UnrealEditorPath);

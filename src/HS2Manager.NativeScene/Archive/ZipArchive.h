@@ -18,6 +18,7 @@ namespace hs2
         std::uint32_t Crc32 = 0;
         std::uint16_t Method = 0, Flags = 0;
         bool Directory = false;
+        bool Link = false;
     };
 
     // 只读 ZIP/ZIP64 读取器，不解压由归档指定的路径；

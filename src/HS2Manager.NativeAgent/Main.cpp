@@ -1,4 +1,5 @@
 #include "Agent.h"
+#include "Update.h"
 #include <windows.h>
 #include <objbase.h>
 #include <iostream>
@@ -67,9 +68,13 @@ int wmain(int argc, wchar_t **argv)
             throw std::invalid_argument("请通过 --config 指定 Agent 配置文件");
         wchar_t executable[32768]{};
         GetModuleFileNameW(nullptr, executable, 32768);
+        auto installationLease = update::InstallationLease(fs::path(executable).parent_path());
         auto config = agent::ReadJson(configPath);
         auto runtime = config.contains("runtime_directory") ? Path(config.at("runtime_directory"))
                                                             : fs::path(executable).parent_path();
+        update::Handle runtimeLease;
+        if (fs::weakly_canonical(runtime) != fs::weakly_canonical(fs::path(executable).parent_path()))
+            runtimeLease = update::InstallationLease(runtime);
         agent::Service service(config, runtime);
         if (check)
             std::cout << service.Call("hs2_capabilities", Json::object()).dump(2) << std::endl;
