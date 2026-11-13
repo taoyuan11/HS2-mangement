@@ -361,7 +361,8 @@ class PushReleaseCases:
         self.env["LOCALAPPDATA"] = str(self.root / "local")
         self.command(self.cmd_line("start.cmd", "--data", "D:\\Test Data"))
         result = json.loads((self.repo / "launch-result.json").read_text(encoding="utf-8-sig"))
-        self.assertEqual(Path(result["Source"]), self.repo)
+        # Windows 临时目录可能使用 8.3 短路径，启动脚本会将其展开为长路径。
+        self.assertTrue(Path(result["Source"]).samefile(self.repo), f"{result['Source']!r} != {str(self.repo)!r}")
         self.assertEqual(result["Arguments"], ["--data", "D:\\Test Data"])
         self.assertEqual(list((self.root / "local").rglob("launch-*.json")), [])
 
