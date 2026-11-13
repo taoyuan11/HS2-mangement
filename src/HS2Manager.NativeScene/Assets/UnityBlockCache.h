@@ -28,6 +28,8 @@ namespace hs2
         std::shared_ptr<const Bytes> Get(std::span<const std::uint8_t> compressed, std::size_t outputSize,
                                          unsigned compression, std::stop_token cancellation = {});
         Statistics Stats() const;
+        // 仅释放缓存持有权，不影响借用者或磁盘缓存。
+        void ReleaseMemory();
 
     private:
         std::filesystem::path directory_;

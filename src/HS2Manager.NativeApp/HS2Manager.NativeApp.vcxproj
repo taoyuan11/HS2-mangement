@@ -81,7 +81,7 @@
         <ClCompile
             Include="Infrastructure/DataLocation.cpp;Infrastructure/ProcessLifetime.cpp;Preview/NativePreviewWorker.cpp;Creation/CreationViewport.cpp"/>
         <ClCompile
-            Include="Creation/NativeCreation.cpp;Creation/CreationActions.cpp;Creation/CreationTools.cpp;Creation/CreationInteraction.cpp;Creation/CreationEntry.cpp;Application/Main.cpp;Application/NativeWindow.cpp;Application/NativeActions.cpp;Editor/NativeEditor.cpp;Preview/NativePreview.cpp;Preview/NativeTemporaryPreview.cpp;Export/NativeCardExport.cpp;Editor/NativeEditorAssets.cpp;Editor/NativeEditorBackups.cpp;Export/NativeModelExport.cpp">
+            Include="Creation/NativeCreation.cpp;Creation/NativeProjects.cpp;Creation/CreationActions.cpp;Creation/CreationTools.cpp;Creation/CreationInteraction.cpp;Creation/CreationEntry.cpp;Application/Main.cpp;Application/NativeWindow.cpp;Application/NativeActions.cpp;Editor/NativeEditor.cpp;Preview/NativePreview.cpp;Preview/NativeTemporaryPreview.cpp;Export/NativeCardExport.cpp;Editor/NativeEditorAssets.cpp;Editor/NativeEditorBackups.cpp;Export/NativeModelExport.cpp">
             <PrecompiledHeader>Use</PrecompiledHeader>
             <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
             <ForcedIncludeFiles>pch.h</ForcedIncludeFiles>

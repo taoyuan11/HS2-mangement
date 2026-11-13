@@ -12,6 +12,7 @@ namespace hs2
     {
         GraphicsDevice &Graphics;
         NativeCharacterScene &Scene;
+        NativeGpuAssetStore &Assets;
         GpuMaterialComposer Composer;
         GpuCharacterAppearance Appearance;
         NativeForwardRenderer Renderer;
@@ -25,11 +26,12 @@ namespace hs2
         std::array<float, 27> Probe{};
         std::unique_ptr<GpuTexture> Hdr, PostTarget, BlurTarget, Output;
         bool Interactive = false;
+        bool ReleaseLoadingCache = true;
 
         State(GraphicsDevice &g, NativeCharacterScene &scene, NativeGpuAssetStore &assets,
               const NativeFrameOptions &options)
-            : Graphics(g), Scene(scene), Composer(g, assets, *scene.Definition), Appearance(scene, Composer),
-              Renderer(g, scene, Appearance, Composer, assets),
+            : Graphics(g), Scene(scene), Assets(assets), Composer(g, assets, *scene.Definition),
+              Appearance(scene, Composer), Renderer(g, scene, Appearance, Composer, assets),
               Post(g, assets, Composer, scene.Definition->Environment, options.StaticReference),
               Invalid(g, assets, Composer)
         {
@@ -66,6 +68,7 @@ namespace hs2
             };
             NativeSkybox sky(g, Composer, scene.Definition->Environment);
             Probe = sky.GenerateAmbientProbe(64);
+            Assets.ReleaseLoadingCache();
         }
     };
 
@@ -83,6 +86,8 @@ namespace hs2
         s.Graphics.VerifyThread();
         s.Composer.UpdateSelections();
         s.Renderer.UpdateCharacter(s.Appearance.Update(previous));
+        s.Assets.ReleaseLoadingCache();
+        s.ReleaseLoadingCache = true;
         if (s.Vectors)
             s.Vectors->ResetHistory();
         ResetHistory();
@@ -153,6 +158,12 @@ namespace hs2
         if (temporal)
             s.Temporal->Draw(*s.PostTarget, s.Vectors->Texture(), *s.Output, renderCamera.BottomOrigin);
         CompleteVisibility(s.Scene, renderCamera, width, height);
+        // 首帧还会按需上传材质贴图；完成后清掉这部分源数据，后续帧无需重读。
+        if (s.ReleaseLoadingCache)
+        {
+            s.Assets.ReleaseLoadingCache();
+            s.ReleaseLoadingCache = false;
+        }
         return *s.Output;
     }
 

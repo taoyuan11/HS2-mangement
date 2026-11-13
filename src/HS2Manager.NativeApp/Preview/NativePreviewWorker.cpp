@@ -147,6 +147,7 @@ namespace hs2::ui
         pendingDraft_.reset();
         pending_ = Request{++generation_, std::move(card), std::move(draft),    visibility, {},
                            preserveTime,  false,           std::move(resources)};
+        viewGeneration_ = 0;
         unload_ = false;
         quiesce_ = false;
         // 只有渲染线程离开暂停点时才能撤销确认。若界面在它醒来前再次请求暂停，
@@ -209,6 +210,21 @@ namespace hs2::ui
         wake_.notify_all();
     }
 
+    bool NativePreviewWorker::ConfirmView(uint64_t generation, NativeRenderCamera camera)
+    {
+        std::lock_guard lock(mutex_);
+        if (generation != generation_)
+            return false;
+        camera_ = camera;
+        viewGeneration_ = generation;
+        // 初始取景不属于拖动，首帧直接完成正常的后处理。
+        interactionUntil_ = {};
+        resetClock_ = true;
+        dirty_ = true;
+        wake_.notify_all();
+        return true;
+    }
+
     void NativePreviewWorker::Paused(bool value)
     {
         std::lock_guard lock(mutex_);
@@ -266,6 +282,7 @@ namespace hs2::ui
             std::unique_ptr<NativeFramePipeline> pipeline;
             std::unique_ptr<NativeSwapChainSurface> surface;
             std::optional<Request> active;
+            std::optional<PreviewReady> pendingReady;
             uint64_t loaded = 0;
             float time = 0;
             bool recovered = false;
@@ -292,7 +309,7 @@ namespace hs2::ui
                 NativeRenderCamera camera;
                 NativeFrameOptions environment;
                 CharacterPreviewVisibility visibility;
-                bool paused, visible, interactive, unload, environmentDirty, resetClock;
+                bool paused, visible, interactive, unload, environmentDirty, resetClock, viewReady;
                 {
                     std::unique_lock lock(mutex_);
                     auto command = [&]
@@ -300,9 +317,10 @@ namespace hs2::ui
                         return quiesce_ || pending_.has_value() || pendingDraft_.has_value() || unload_ ||
                                screenshot_.has_value() || dirty_ || environmentDirty_;
                     };
-                    if (visible_ && loaded && (!paused_ || needsDraw))
+                    bool canDraw = loaded && viewGeneration_ == loaded;
+                    if (visible_ && canDraw && (!paused_ || needsDraw))
                         wake_.wait_until(lock, stop, nextFrame, command);
-                    else if (visible_ && loaded && interactiveApplied)
+                    else if (visible_ && canDraw && interactiveApplied)
                         wake_.wait_until(lock, stop, interactionUntil_, command);
                     else
                         wake_.wait(lock, stop, command);
@@ -331,6 +349,8 @@ namespace hs2::ui
                     screenshot_.reset();
                     size = size_;
                     camera = camera_;
+                    // 确认标记必须与相机一起读取，不能给已经取出的旧相机补发许可。
+                    viewReady = loaded && viewGeneration_ == loaded;
                     environment = environment_;
                     paused = paused_;
                     visible = visible_;
@@ -361,6 +381,7 @@ namespace hs2::ui
                 }
                 if (unload)
                 {
+                    pendingReady.reset();
                     surface.reset();
                     pipeline.reset();
                     runtime.reset();
@@ -372,6 +393,11 @@ namespace hs2::ui
                 }
                 if (request)
                 {
+                    pendingReady.reset();
+                    {
+                        std::lock_guard lock(mutex_);
+                        viewGeneration_ = 0;
+                    }
                     active = request;
                     loaded = 0;
                     recovered = request->Recovery;
@@ -430,10 +456,25 @@ namespace hs2::ui
                             for (auto const &message : pipeline->SourceReferenceDiagnostics())
                                 if (std::find(diagnostics.begin(), diagnostics.end(), message) == diagnostics.end())
                                     diagnostics.push_back(message);
-                            callbacks_.Ready({loaded, surface->Acquire(), Bounds(*prepared.Scene, false),
-                                              Bounds(*prepared.Scene, true), std::move(diagnostics),
-                                              std::make_shared<CharacterDefinition>(*prepared.Scene->Definition),
-                                              prepared.Assets->ReaderStats().Loads});
+                            pendingReady = {loaded,
+                                            surface->Acquire(),
+                                            Bounds(*prepared.Scene, false),
+                                            Bounds(*prepared.Scene, true),
+                                            std::move(diagnostics),
+                                            std::make_shared<CharacterDefinition>(*prepared.Scene->Definition),
+                                            prepared.Assets->ReaderStats().Loads};
+                        }
+                        CheckCancelled(token);
+                        if (callbacks_.Progress)
+                            callbacks_.Progress(loaded, "正在渲染人物首帧…");
+                        if (callbacks_.PrepareView)
+                            callbacks_.PrepareView(loaded, Bounds(*prepared.Scene, false),
+                                                   Bounds(*prepared.Scene, true));
+                        else
+                        {
+                            std::lock_guard lock(mutex_);
+                            viewGeneration_ = loaded;
+                            dirty_ = true;
                         }
                     }
                     catch (Cancelled const &)
@@ -441,6 +482,7 @@ namespace hs2::ui
                     }
                     catch (std::exception const &error)
                     {
+                        pendingReady.reset();
                         surface.reset();
                         pipeline.reset();
                         runtime.reset();
@@ -448,6 +490,9 @@ namespace hs2::ui
                         if (!request->Cancellation.stop_requested() && callbacks_.Failure)
                             callbacks_.Failure(request->Generation, error.what());
                     }
+                    // PrepareView 可能同步确认，也可能排队等待界面。两种情况都必须
+                    // 重新读取相机、视口和环境，不能使用资源加载开始前的快照。
+                    continue;
                 }
                 if (draft && pipeline && surface && loaded && active &&
                     (!prepared.Document || !prepared.Document->ContentEquals(*draft)))
@@ -502,10 +547,13 @@ namespace hs2::ui
                         needsDraw = true;
                         resetClock = true;
                         if (callbacks_.Ready)
-                            callbacks_.Ready({loaded, surface->Acquire(), Bounds(*prepared.Scene, false),
-                                              Bounds(*prepared.Scene, true), prepared.Scene->Diagnostics,
-                                              std::make_shared<CharacterDefinition>(*prepared.Scene->Definition),
-                                              prepared.Assets->ReaderStats().Loads});
+                            pendingReady = {loaded,
+                                            surface->Acquire(),
+                                            Bounds(*prepared.Scene, false),
+                                            Bounds(*prepared.Scene, true),
+                                            prepared.Scene->Diagnostics,
+                                            std::make_shared<CharacterDefinition>(*prepared.Scene->Definition),
+                                            prepared.Assets->ReaderStats().Loads};
                     }
                     catch (Cancelled const &)
                     {
@@ -515,6 +563,7 @@ namespace hs2::ui
                         if (callbacks_.Failure)
                             callbacks_.Failure(loaded, error.what());
                         // 更新提交过程中失败时不再使用可能已失效的骨骼或材质引用。
+                        pendingReady.reset();
                         loaded = 0;
                         runtime.reset();
                         pipeline.reset();
@@ -532,6 +581,12 @@ namespace hs2::ui
                     if (loaded != generation_)
                         continue;
                     visibility = visibility_;
+                }
+                if (!viewReady)
+                {
+                    if (screenshot && callbacks_.Screenshot)
+                        callbacks_.Screenshot(screenshot->Path, "预览尚未就绪。");
+                    continue;
                 }
                 try
                 {
@@ -567,6 +622,12 @@ namespace hs2::ui
                     }
                     auto const &frame = pipeline->Draw(camera, size.Width, size.Height, time);
                     surface->Present(frame);
+                    if (pendingReady)
+                    {
+                        if (callbacks_.Ready)
+                            callbacks_.Ready(std::move(*pendingReady));
+                        pendingReady.reset();
+                    }
                     needsDraw = false;
                     nextFrame = now + std::chrono::microseconds(16667);
                     if (screenshot)
@@ -591,6 +652,7 @@ namespace hs2::ui
                 catch (std::exception const &error)
                 {
                     auto removed = graphics->Device()->GetDeviceRemovedReason();
+                    pendingReady.reset();
                     surface.reset();
                     pipeline.reset();
                     runtime.reset();

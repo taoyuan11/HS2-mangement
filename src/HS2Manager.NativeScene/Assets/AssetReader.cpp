@@ -1114,6 +1114,23 @@ namespace hs2
         }
     }
 
+    Parameter NativeGpuAssetReader::ReadMetadata(int64_t id) const
+    {
+        if (auto found = fields_.find(id); found != fields_.end())
+            return found->second;
+        try
+        {
+            return file_->Read(id);
+        }
+        catch (const std::exception &)
+        {
+            if (AssetClass(id) != 114 || !ScriptSchema)
+                throw;
+            auto header = MetadataHeader(id);
+            return file_->ReadScript(id, ScriptSchema(Pointer(header.Get("m_Script")), file_->UnityVersion));
+        }
+    }
+
     const std::vector<UnityAssetInfo> &NativeGpuAssetReader::AssetIndex() const
     {
         return file_->Assets();
@@ -1155,7 +1172,7 @@ namespace hs2
         auto prefix = file_->NamedPrefix(id);
         auto name = prefix ? *prefix : Metadata(id).String("m_Name");
         if (name.empty() && AssetClass(id) == 48)
-            name = Metadata(id).Get("m_ParsedForm").String("m_Name");
+            name = ReadMetadata(id).Get("m_ParsedForm").String("m_Name");
         return name;
     }
 
@@ -1291,7 +1308,9 @@ namespace hs2
     GpuTextureData NativeGpuAssetReader::Texture(int64_t id)
     {
         Require(AssetClass(id) == 28 || AssetClass(id) == 89, "Asset is not a texture.");
-        auto &p = Metadata(id);
+        auto found = fields_.find(id);
+        auto parsed = found == fields_.end() ? file_->Read(id) : Parameter{};
+        const auto &p = found == fields_.end() ? parsed : found->second;
         GpuTextureData t;
         t.Name = p.String("m_Name");
         t.Width = static_cast<int>(p.Int("m_Width"));

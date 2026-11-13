@@ -34,75 +34,37 @@ namespace hs2::ui
             TextBox name;
             name.Header(box_value(L"工程名称"));
             name.Text(mode == "mod" ? L"新 Mod" : L"新角色");
-            ComboBox choice, operation, sex;
-            ListView projects;
-            std::vector<creation::ProjectSummary> summaries;
-            if (mode == "projects")
+            ComboBox choice;
+            dialog.Title(box_value(mode == "mod" ? L"新建mod工程" : L"新建角色工程"));
+            content.Children().Append(name);
+            if (source.empty())
             {
-                dialog.Title(box_value(L"创作工程"));
-                dialog.PrimaryButtonText(L"继续");
-                summaries = creation::CreationProject::List(service->ProjectsRoot());
-                projects.MaxHeight(360);
-                for (auto &p : summaries)
-                    projects.Items().Append(box_value(to_hstring(p.Name + (p.HasRecovery ? " · 有恢复快照" : "") +
-                                                                 (p.Error.empty() ? "" : " · " + p.Error))));
-                if (!summaries.empty())
-                    projects.SelectedIndex(0);
-                content.Children().Append(projects);
-                operation.Header(box_value(L"操作"));
-                for (auto label : {L"继续编辑", L"恢复自动快照", L"复制为新工程", L"重命名"})
-                    operation.Items().Append(box_value(label));
-                operation.SelectedIndex(0);
-                content.Children().Append(operation);
-                content.Children().Append(name);
+                choice.Header(box_value(L"起始角色"));
+                for (auto label : {L"默认女性", L"默认男性", L"选择已有角色卡"})
+                    choice.Items().Append(box_value(label));
+                choice.SelectedIndex(0);
+                content.Children().Append(choice);
             }
             else
             {
-                dialog.Title(box_value(mode == "mod" ? L"创建 Mod 工程" : L"创建角色"));
-                content.Children().Append(name);
-                if (source.empty())
-                {
-                    choice.Header(box_value(L"起始角色"));
-                    for (auto label : {L"默认女性", L"默认男性", L"选择已有角色卡"})
-                        choice.Items().Append(box_value(label));
-                    choice.SelectedIndex(0);
-                    content.Children().Append(choice);
-                }
-                else
-                {
-                    TextBlock text;
-                    text.Text(to_hstring("复制来源：" + Utf8(source.filename())));
-                    text.TextWrapping(TextWrapping::Wrap);
-                    content.Children().Append(text);
-                }
-                TextBlock hint;
-                hint.Text(L"默认角色读取本机游戏原版预设。资源缺失时，可选择已有卡继续创建。");
-                hint.TextWrapping(TextWrapping::Wrap);
-                content.Children().Append(hint);
+                TextBlock text;
+                text.Text(to_hstring("复制来源：" + Utf8(source.filename())));
+                text.TextWrapping(TextWrapping::Wrap);
+                content.Children().Append(text);
             }
+            TextBlock hint;
+            hint.Text(L"默认角色读取本机游戏原版预设。资源缺失时，可选择已有卡继续创建。");
+            hint.TextWrapping(TextWrapping::Wrap);
+            content.Children().Append(hint);
             dialog.Content(content);
             auto result = co_await dialog.ShowAsync();
             dialogOpen_ = false;
-            if (result != ContentDialogResult::Primary)
+            if (result != ContentDialogResult::Primary || closing_)
                 co_return;
-            if (name.Text().empty())
+            if (to_string(name.Text()).find_first_not_of(" \t\r\n") == std::string::npos)
                 throw std::runtime_error("工程名称不能为空");
             int gender = 1;
-            int projectAction = 0;
-            fs::path projectPath;
-            if (mode == "projects")
-            {
-                if (projects.SelectedIndex() < 0)
-                    co_return;
-                auto selected = summaries.at(projects.SelectedIndex());
-                if (!selected.Error.empty())
-                    throw std::runtime_error(selected.Error);
-                projectPath = selected.Path;
-                projectAction = operation.SelectedIndex();
-                if (projectAction == 1 && !selected.HasRecovery)
-                    throw std::runtime_error("此工程没有自动恢复快照");
-            }
-            else if (source.empty())
+            if (source.empty())
             {
                 gender = choice.SelectedIndex() == 1 ? 0 : 1;
                 if (choice.SelectedIndex() == 2)
@@ -110,36 +72,24 @@ namespace hs2::ui
                     winrt::Windows::Storage::Pickers::FileOpenPicker picker;
                     picker.as<IInitializeWithWindow>()->Initialize(Handle());
                     picker.FileTypeFilter().Append(L".png");
+                    dialogOpen_ = true;
                     auto file = co_await picker.PickSingleFileAsync();
-                    if (!file)
+                    dialogOpen_ = false;
+                    if (!file || closing_)
                         co_return;
                     source = fs::path(file.Path().c_str());
                 }
             }
             SetBusy(true);
+            model_->Put(L"WorkLabel", L"正在创建工程…");
+            model_->Put(L"ProgressIndeterminate", true);
             auto projectName = to_string(name.Text());
             co_await resume_background();
             try
             {
                 service->RecoverInstallations();
-                if (mode == "projects")
-                {
-                    project = projectAction == 2 ? creation::CreationProject::Duplicate(service->ProjectsRoot(),
-                                                                                        projectPath, projectName)
-                                                 : creation::CreationProject::Open(projectPath, projectAction == 1);
-                    if (projectAction == 3)
-                    {
-                        project->Edit("重命名",
-                                      [&](creation::CreationState &s)
-                                      {
-                                          s.Name = projectName;
-                                      });
-                        project->Save();
-                    }
-                }
-                else
-                    project = service->Create(projectName, mode == "mod" ? "mod" : "character", gender,
-                                              source.empty() ? std::nullopt : std::optional<fs::path>(source));
+                project = service->Create(projectName, mode == "mod" ? "mod" : "character", gender,
+                                          source.empty() ? std::nullopt : std::optional<fs::path>(source));
             }
             catch (const std::exception &e)
             {
@@ -168,6 +118,6 @@ namespace hs2::ui
         if (closing_)
             RequestClose();
         else if (!error.empty())
-            Report(error);
+            ShowReport(L"创建工程失败", to_hstring(error));
     }
 }

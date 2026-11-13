@@ -1,0 +1,66 @@
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Margin="28,25,26,18" RowSpacing="16">
+    <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid ColumnSpacing="16">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <StackPanel Spacing="5">
+            <TextBlock Text="{Binding Title}" FontSize="26" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding Summary}" Foreground="{ThemeResource MutedBrush}"/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <Button x:Name="New" Content="{Binding NewLabel}" IsEnabled="{Binding CanCreate}"/>
+            <Button x:Name="Refresh" Content="刷新" IsEnabled="{Binding CanRefresh}"/>
+        </StackPanel>
+    </Grid>
+    <ScrollViewer Grid.Row="1" MaxHeight="160" VerticalScrollBarVisibility="Auto"
+        Visibility="{Binding HasWarning, Converter={StaticResource BoolVisible}}">
+        <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+    </ScrollViewer>
+    <Grid Grid.Row="2" Padding="12,0" ColumnSpacing="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/><ColumnDefinition Width="200"/><ColumnDefinition Width="2*"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="工程名称" Foreground="{ThemeResource MutedBrush}"/>
+        <TextBlock Grid.Column="1" Text="最近修改（UTC）" Foreground="{ThemeResource MutedBrush}"/>
+        <TextBlock Grid.Column="2" Text="状态" Foreground="{ThemeResource MutedBrush}"/>
+    </Grid>
+    <Grid Grid.Row="3">
+        <ListView x:Name="Projects" ItemsSource="{Binding Projects}" SelectionMode="Single"
+            IsEnabled="{Binding CanSelect}" AutomationProperties.Name="工程列表">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Padding" Value="12,10"/>
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnSpacing="16" ToolTipService.ToolTip="{Binding Path}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/><ColumnDefinition Width="200"/><ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Updated}" Foreground="{ThemeResource MutedBrush}"/>
+                        <TextBlock Grid.Column="2" Text="{Binding State}" TextWrapping="Wrap"/>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+        <TextBlock Text="{Binding EmptyMessage}" HorizontalAlignment="Center" VerticalAlignment="Center"
+            Foreground="{ThemeResource MutedBrush}" Visibility="{Binding Empty, Converter={StaticResource BoolVisible}}"/>
+    </Grid>
+    <ScrollViewer Grid.Row="4" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="Open" Content="继续编辑" IsEnabled="{Binding CanOpen}"/>
+            <Button x:Name="Recover" Content="恢复自动快照" IsEnabled="{Binding CanRecover}"/>
+            <Button x:Name="Duplicate" Content="复制为新工程" IsEnabled="{Binding CanOpen}"/>
+            <Button x:Name="Rename" Content="重命名" IsEnabled="{Binding CanOpen}"/>
+        </StackPanel>
+    </ScrollViewer>
+</Grid>

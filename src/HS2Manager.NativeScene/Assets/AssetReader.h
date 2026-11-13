@@ -189,6 +189,8 @@ namespace hs2
         std::function<std::vector<UnityTypeNode>(const GpuAssetPointer &, std::string_view)> ScriptSchema;
         const std::string &UnityVersion() const;
         const Parameter &Metadata(std::int64_t id);
+        // 返回独立值，不把转换用的大型参数树留在读取器中；已有借用保持有效。
+        Parameter ReadMetadata(std::int64_t id) const;
         Parameter MetadataHeader(std::int64_t id) const;
         const Parameter &ReadScript(std::int64_t id, const std::vector<UnityTypeNode> &schema);
         const std::vector<UnityAssetInfo> &AssetIndex() const;

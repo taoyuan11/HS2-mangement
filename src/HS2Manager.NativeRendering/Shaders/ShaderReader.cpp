@@ -8,6 +8,22 @@ namespace hs2
 {
     namespace
     {
+        Parameter TakeField(Parameter &value, std::string_view name)
+        {
+            for (auto &field : value.Children)
+                if (field.Name == name)
+                    return std::move(field);
+            return {};
+        }
+
+        std::vector<Parameter> &Array(Parameter &value)
+        {
+            for (auto &field : value.Children)
+                if (field.Name == "Array")
+                    return field.Children;
+            return value.Children;
+        }
+
         std::vector<std::uint8_t> Bytes(const Parameter &field)
         {
             if (!field.Bytes.empty())
@@ -35,7 +51,7 @@ namespace hs2
     {
         if (reader.AssetClass(pathId) != 48)
             throw std::invalid_argument("Resource is not a Shader.");
-        const auto &shader = reader.Metadata(pathId);
+        auto shader = reader.ReadMetadata(pathId);
         const auto platforms = shader.Get("platforms").Array();
         auto found = std::find_if(platforms.begin(), platforms.end(),
                                   [](const Parameter &p)
@@ -54,17 +70,33 @@ namespace hs2
         auto decoded = DecompressUnityBlock(
             std::span<const std::uint8_t>(bytes).subspan(static_cast<size_t>(offset), static_cast<size_t>(length)),
             static_cast<size_t>(size), 2);
-        const auto &parsed = shader.Get("m_ParsedForm");
+        auto parsed = TakeField(shader, "m_ParsedForm");
         NativeShaderAsset result;
         result.Name = parsed.String("m_Name");
         result.PathId = pathId;
-        result.Properties = parsed.Get("m_PropInfo");
+        result.Properties = TakeField(parsed, "m_PropInfo");
         result.SourceBundle = reader.Path;
         int index = 0;
-        for (const auto &sub : parsed.Get("m_SubShaders").Array())
+        auto subShaders = TakeField(parsed, "m_SubShaders");
+        for (auto &sub : Array(subShaders))
         {
-            for (const auto &pass : sub.Get("m_Passes").Array())
-                result.Passes.push_back({pass, index});
+            auto passes = TakeField(sub, "m_Passes");
+            for (auto &pass : Array(passes))
+            {
+                // 选择器只使用 D3D11 (15..22)；其余平台的参数树无需随预览常驻。
+                for (auto &stage : pass.Children)
+                    if (stage.Name == "progFragment" || stage.Name == "progVertex" || stage.Name == "progGeometry" ||
+                        stage.Name == "progHull" || stage.Name == "progDomain")
+                        for (auto &programs : stage.Children)
+                            if (programs.Name == "m_SubPrograms")
+                                std::erase_if(Array(programs),
+                                              [](const Parameter &program)
+                                              {
+                                                  auto type = program.Get("m_GpuProgramType").Number;
+                                                  return type < 15 || type > 22;
+                                              });
+                result.Passes.push_back({std::move(pass), index});
+            }
             Parameter summary;
             summary.Children = {sub.Get("m_Tags"), sub.Get("m_LOD")};
             result.SubShaders.push_back(std::move(summary));
@@ -78,7 +110,7 @@ namespace hs2
     {
         if (reader.AssetClass(pathId) != 72)
             throw std::invalid_argument("Resource is not a ComputeShader.");
-        const auto &field = reader.Metadata(pathId);
+        const auto field = reader.ReadMetadata(pathId);
         const auto variants = field.Get("variants").Array();
         auto variant = std::find_if(variants.begin(), variants.end(),
                                     [](const Parameter &p)

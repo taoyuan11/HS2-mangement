@@ -74,7 +74,7 @@ namespace hs2
         size_t bytes = 0;
         for (auto &[name, reader] : readers_)
             bytes += reader->ResidentBytes();
-        while (readers_.size() > 1 && (bytes > 512ULL * 1024 * 1024 || readers_.size() > 64))
+        while (readers_.size() > 1 && (bytes > 128ULL * 1024 * 1024 || readers_.size() > 64))
         {
             auto last = recent_.back();
             if (last == keep)
@@ -88,6 +88,23 @@ namespace hs2
             readers_.erase(last);
             ++readerStats_.Evictions;
         }
+    }
+
+    std::size_t NativeGpuAssetStore::ReaderResidentBytes() const
+    {
+        std::size_t bytes = 0;
+        for (const auto &[key, reader] : readers_)
+            bytes += reader->ResidentBytes();
+        return bytes;
+    }
+
+    void NativeGpuAssetStore::ReleaseLoadingCache()
+    {
+        readerStats_.Evictions += readers_.size();
+        readers_.clear();
+        recent_.clear();
+        if (blockCache_)
+            blockCache_->ReleaseMemory();
     }
 
     std::shared_ptr<NativeGpuAssetReader> NativeGpuAssetStore::Reader(const std::filesystem::path &path)
@@ -345,6 +362,26 @@ namespace hs2
         }
         resolved_[key] = result;
         return result;
+    }
+
+    GpuAssetPointer NativeGpuAssetStore::Find(const std::filesystem::path &path, std::string_view name, int classId)
+    {
+        auto pointer = TryFind(path, name, classId);
+        if (!pointer)
+            throw std::runtime_error("Resource is missing: " + std::to_string(classId) + "/" + std::string(name));
+        return *pointer;
+    }
+
+    std::optional<GpuAssetPointer> NativeGpuAssetStore::TryFind(const std::filesystem::path &path,
+                                                                std::string_view name, int classId)
+    {
+        Cancel();
+        auto key = Key(path) + "|" + std::to_string(classId) + "|" + Lower(std::string(name));
+        if (auto found = namedAssets_.find(key); found != namedAssets_.end())
+            return found->second;
+        auto pointer = Reader(path)->TryFind(name, classId);
+        namedAssets_.emplace(std::move(key), pointer);
+        return pointer;
     }
 
     std::shared_ptr<GpuMeshData> NativeGpuAssetStore::Mesh(const GpuAssetPointer &pointer)

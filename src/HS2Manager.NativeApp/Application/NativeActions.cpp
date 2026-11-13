@@ -1,5 +1,6 @@
 #include "Editor/NativeEditor.h"
 #include "Creation/NativeCreation.h"
+#include "Creation/NativeProjects.h"
 #include "Preview/NativePreview.h"
 #include "Application/NativeWindow.h"
 #include "Infrastructure/UiEvents.h"
@@ -79,16 +80,28 @@ namespace hs2::ui
         {
             if (closing_ || closePrompt_)
                 co_return;
-            if (name == L"CreateCharacter_Click" || name == L"CreateMod_Click" || name == L"CreationProjects_Click" ||
-                name == L"CreateFromCard_Click")
+            if (name == L"CharacterProjects_Click" || name == L"ModProjects_Click")
+            {
+                ShowProjects(name == L"ModProjects_Click" ? "mod" : "character");
+                co_return;
+            }
+            if (model_->Bool(L"IsProjects") && !editor_)
+            {
+                // 工程页不允许隐藏的人物卡菜单或快捷键修改此前选中的人物卡。
+                bool allowed = name == L"Navigate_Click" || name == L"Collection_SelectionChanged" ||
+                               name == L"Duplicates_Click" || name == L"Settings_Click" || name == L"Logs_Click" ||
+                               name == L"Operations_Click" || name == L"Cancel_Click" ||
+                               name == L"NewCollection_Click" || name == L"RenameCollection_Click" ||
+                               name == L"RemoveCollection_Click";
+                if (!allowed)
+                    co_return;
+            }
+            if (name == L"CreateFromCard_Click")
             {
                 auto selected = Selected();
-                if (name == L"CreateFromCard_Click" && selected.empty())
+                if (selected.empty())
                     co_return;
-                OpenCreation(name == L"CreateMod_Click"          ? "mod"
-                             : name == L"CreationProjects_Click" ? "projects"
-                                                                 : "character",
-                             name == L"CreateFromCard_Click" ? Path(selected.front().Path) : fs::path{});
+                OpenCreation("character", Path(selected.front().Path));
                 co_return;
             }
             if (name == L"Cancel_Click" && creation_)
@@ -191,6 +204,7 @@ namespace hs2::ui
                 auto item = Control<ListView>(L"CollectionList").SelectedItem();
                 if (item)
                 {
+                    HideProjects();
                     ClosePreview();
                     collection_ = to_string(unbox_value<hstring>(item));
                     folder_.clear();
@@ -262,6 +276,7 @@ namespace hs2::ui
                 co_return;
             if (name == L"Duplicates_Click")
             {
+                HideProjects();
                 ClosePreview();
                 Work("校验重复文件",
                      [this](auto stop, auto progress)

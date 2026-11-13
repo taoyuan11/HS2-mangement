@@ -3,7 +3,7 @@
  <StackPanel Spacing="6" Margin="12,8">
   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <TextBlock x:Name="Title" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"><Button x:Name="Rename" Content="重命名"/><Button x:Name="Close" Content="返回资料库"/></StackPanel>
+   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"><Button x:Name="Rename" Content="重命名"/><Button x:Name="Close" Content="返回工程列表"/></StackPanel>
   </Grid>
   <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
    <StackPanel Orientation="Horizontal" Spacing="6">

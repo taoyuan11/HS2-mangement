@@ -436,6 +436,39 @@ namespace
         Check(store.Mesh({path, 0, 7}) == store.Mesh({path, 0, 7}), "Converted mesh was not reused.");
     }
 
+    void TransientTexture(const std::filesystem::path &root)
+    {
+        std::vector<UnityTypeNode> schema{{"Texture2D", "Base", -1, 0, 0}};
+        StringSchema(schema, "m_Name", 1);
+        for (auto name : {"m_Width", "m_Height", "m_TextureFormat"})
+            schema.push_back({"int", name, 4, 0, 1});
+        schema.push_back({"TypelessData", "image data", -1, 0, 1});
+        Bytes payload;
+        FieldString(payload, "texture");
+        for (auto value : {512, 512, 4, 1024 * 1024})
+            Number(payload, value, 4, false);
+        payload.resize(payload.size() + 1024 * 1024, 7);
+        auto path = root / "texture.assets";
+        Write(path, ObjectFile({{28, schema}}, {{7, 0, payload}}));
+        NativeGpuAssetReader reader(path);
+        const auto bytes = reader.ResidentBytes();
+        auto metadata = reader.ReadMetadata(7);
+        metadata.Children.clear();
+        Check(reader.ReadMetadata(7).String("m_Name") == "texture" && reader.ResidentBytes() == bytes,
+              "Transient metadata was retained or shared with a mutable result.");
+        auto texture = reader.Texture(7);
+        Check(texture.Width == 512 && texture.Height == 512 && texture.Bytes.size() == 1024 * 1024 &&
+                  texture.Bytes.front() == 7 && texture.Bytes.back() == 7 && reader.ResidentBytes() == bytes,
+              "Texture conversion changed pixels or retained its temporary metadata tree.");
+        const auto &borrowed = reader.Metadata(7);
+        const auto retained = reader.ResidentBytes();
+        reader.Texture(7);
+        auto copy = reader.ReadMetadata(7);
+        copy.Children.clear();
+        Check(borrowed.Get("image data").Bytes == texture.Bytes && reader.ResidentBytes() == retained,
+              "Transient reads invalidated previously borrowed metadata.");
+    }
+
     void ParallelShaderNames(const std::filesystem::path &root)
     {
         std::vector<UnityTypeNode> schema{{"Shader", "Base", -1, 0, 0}};
@@ -460,6 +493,22 @@ namespace
                   store.FindShader(paths[0], "casesensitive/shader")->PathId == 17 &&
                   borrowed->AssetName(17) == expected.front(),
               "Shader scan did not retain case, lookup aliases, or borrowed readers after eviction.");
+        Check(store.ReaderResidentBytes() > 0, "Reader cache accounting is empty.");
+        Check(store.Find(paths.back(), "CaseSensitive/Shader", 48).PathId == 17,
+              "Named asset lookup changed the pointer.");
+        Check(!store.TryFind(paths.back(), "missing", 48), "Missing optional asset lookup changed.");
+        loads = store.ReaderStats().Loads;
+        store.ReleaseLoadingCache();
+        store.ReleaseLoadingCache();
+        Check(store.ReaderResidentBytes() == 0 && store.ShaderNames() == expected &&
+                  store.FindShader(paths[0], "casesensitive/shader")->PathId == 17 &&
+                  store.Find(paths.back(), "casesensitive/shader", 48).PathId == 17 &&
+                  !store.TryFind(paths.back(), "missing", 48) && store.ReaderStats().Loads == loads &&
+                  borrowed->AssetName(17) == expected.front(),
+              "Releasing loading data lost indexes or invalidated a borrowed reader.");
+        Check(store.Reader(paths[0])->AssetName(17) == expected.front() && store.ReaderStats().Loads == loads + 1,
+              "A released reader could not be reloaded.");
+        loads = store.ReaderStats().Loads;
         auto missing = root / "missing-shader.assets";
         store.AddPath(missing);
         Reject(
@@ -513,6 +562,7 @@ namespace
 
         ExportAliases(root);
         TransientMesh(root);
+        TransientTexture(root);
         ParallelShaderNames(root);
 
         for (bool atEnd : {false, true})

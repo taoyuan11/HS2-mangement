@@ -1008,6 +1008,12 @@ namespace hs2::ui
         Control<ContentControl>(L"EditorHost").Content(nullptr);
         editor_.reset();
         model_->Put(L"IsEditing", false);
+        if (!creationKind_.empty())
+        {
+            auto kind = std::exchange(creationKind_, {});
+            if (!closing_ && !closePrompt_)
+                ShowProjects(std::move(kind));
+        }
         co_return true;
     }
 

@@ -251,8 +251,8 @@ namespace hs2::ui
         try
         {
             TextBox text;
-            text.Text(message);
             text.AcceptsReturn(true);
+            text.Text(message);
             text.IsReadOnly(true);
             text.TextWrapping(TextWrapping::Wrap);
             text.MaxHeight(460);

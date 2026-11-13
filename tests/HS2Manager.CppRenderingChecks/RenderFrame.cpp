@@ -9,11 +9,21 @@
 #include <cmath>
 #include <algorithm>
 #include <chrono>
+#include <psapi.h>
 
 using namespace hs2;
 
 namespace
 {
+    Json Memory()
+    {
+        PROCESS_MEMORY_COUNTERS_EX counters{};
+        if (!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&counters),
+                                  sizeof(counters)))
+            throw std::runtime_error("Cannot measure process memory.");
+        return {{"PrivateBytes", counters.PrivateUsage}, {"WorkingSetBytes", counters.WorkingSetSize}};
+    }
+
     void Png(const std::filesystem::path &file, int width, int height, std::span<const std::uint8_t> pixels)
     {
         ComPtr<IWICImagingFactory> factory;
@@ -107,6 +117,7 @@ int wmain(int argc, wchar_t **argv)
                 started = std::chrono::steady_clock::now();
             }
             Json phases = Json::array();
+            Json memory = {{"BeforePrepare", Memory()}};
             std::string phase = "读取角色与素材目录";
             auto phaseStarted = elapsed();
             auto finishPhase = [&]
@@ -128,6 +139,7 @@ int wmain(int argc, wchar_t **argv)
                                             });
             finishPhase();
             auto prepareSeconds = elapsed();
+            memory["Prepared"] = Memory();
             std::cout << "prepared parts=" << prepared.Scene->Parts.size()
                       << " renderers=" << prepared.Scene->Renderers.size()
                       << " selections=" << prepared.Scene->Definition->Selections.size() << std::endl;
@@ -135,8 +147,10 @@ int wmain(int argc, wchar_t **argv)
             NativeCharacterRuntime runtime(prepared.Scene, prepared.Assets,
                                            argc >= 7 ? std::filesystem::path(argv[6]) : std::filesystem::path{});
             auto runtimeSeconds = elapsed() - prepareSeconds;
+            memory["Runtime"] = Memory();
             NativeFramePipeline pipeline(graphics, *prepared.Scene, *prepared.Assets);
             auto pipelineSeconds = elapsed() - prepareSeconds - runtimeSeconds;
+            memory["Pipeline"] = Memory();
             runtime.Update(0);
             Vector3 lo{INFINITY, INFINITY, INFINITY}, hi{-INFINITY, -INFINITY, -INFINITY};
             for (const auto &renderer : prepared.Scene->Renderers)
@@ -164,6 +178,7 @@ int wmain(int argc, wchar_t **argv)
                 output /= "sequence-" + std::to_string(run);
             std::filesystem::create_directories(output);
             std::set<std::uint32_t> unique;
+            std::size_t firstFrameLoads = 0;
             for (int i = 0; i < 8; ++i)
             {
                 float time = i / 30.f;
@@ -172,24 +187,29 @@ int wmain(int argc, wchar_t **argv)
                 auto pixels = graphics.Readback(frame.Texture.Get());
                 if (i == 0)
                 {
+                    memory["FirstFrame"] = Memory();
                     auto stats = prepared.Assets->ReaderStats();
+                    firstFrameLoads = stats.Loads;
                     auto blocks = prepared.Assets->BlockStats();
-                    WriteJson(output / "loading-performance.json", {{"PrepareSeconds", prepareSeconds},
-                                                                    {"PreparationPhases", phases},
-                                                                    {"RuntimeSeconds", runtimeSeconds},
-                                                                    {"PipelineSeconds", pipelineSeconds},
-                                                                    {"FirstFrameSeconds", elapsed()},
-                                                                    {"ReaderLoads", stats.Loads},
-                                                                    {"ReaderHits", stats.Hits},
-                                                                    {"ReaderEvictions", stats.Evictions},
-                                                                    {"ReaderLoadSeconds", stats.LoadSeconds},
-                                                                    {"CabIndexLoads", stats.CabIndexLoads},
-                                                                    {"CabIndexSeconds", stats.CabIndexSeconds},
-                                                                    {"ReaderResources", stats.Resources},
-                                                                    {"BlockMemoryHits", blocks.MemoryHits},
-                                                                    {"BlockDiskHits", blocks.DiskHits},
-                                                                    {"BlockDecodes", blocks.Decodes},
-                                                                    {"BlockResidentBytes", blocks.ResidentBytes}});
+                    WriteJson(output / "loading-performance.json",
+                              {{"Memory", memory},
+                               {"PrepareSeconds", prepareSeconds},
+                               {"PreparationPhases", phases},
+                               {"RuntimeSeconds", runtimeSeconds},
+                               {"PipelineSeconds", pipelineSeconds},
+                               {"FirstFrameSeconds", elapsed()},
+                               {"ReaderLoads", stats.Loads},
+                               {"ReaderResidentBytes", prepared.Assets->ReaderResidentBytes()},
+                               {"ReaderHits", stats.Hits},
+                               {"ReaderEvictions", stats.Evictions},
+                               {"ReaderLoadSeconds", stats.LoadSeconds},
+                               {"CabIndexLoads", stats.CabIndexLoads},
+                               {"CabIndexSeconds", stats.CabIndexSeconds},
+                               {"ReaderResources", stats.Resources},
+                               {"BlockMemoryHits", blocks.MemoryHits},
+                               {"BlockDiskHits", blocks.DiskHits},
+                               {"BlockDecodes", blocks.Decodes},
+                               {"BlockResidentBytes", blocks.ResidentBytes}});
                 }
                 if (pixels.size() != 512 * 640 * 4)
                     throw std::runtime_error("Unexpected output frame size.");
@@ -203,7 +223,18 @@ int wmain(int argc, wchar_t **argv)
                     }
                     Png(output / (i == 0 ? L"frame-000.png" : L"frame-007.png"), 512, 640, pixels);
                 }
-                std::cout << "frame " << i << " complete\n";
+                std::cout << "frame " << i << " complete; reader loads=" << prepared.Assets->ReaderStats().Loads
+                          << " resident bytes=" << prepared.Assets->ReaderResidentBytes() << '\n';
+            }
+            if (prepared.Assets->ReaderResidentBytes() || prepared.Assets->BlockStats().ResidentBytes ||
+                prepared.Assets->ReaderStats().Loads != firstFrameLoads)
+                throw std::runtime_error("Steady rendering retained loading caches or reloaded source assets.");
+            {
+                std::ifstream file(output / "loading-performance.json");
+                auto report = Json::parse(file);
+                file.close();
+                report["Memory"]["AfterEightFrames"] = Memory();
+                WriteJson(output / "loading-performance.json", report);
             }
             if (unique.size() < 128)
                 throw std::runtime_error("Rendered frame has insufficient colour variation.");

@@ -93,6 +93,10 @@ namespace hs2
         final_ = std::make_unique<NativeFullscreenPass>(g, *shader, 0, keywords);
         if (mode == 1)
             spatialFinal_ = std::make_unique<NativeFullscreenPass>(g, *shader, 0);
+        // 64 张 64×64 抖动贴图会逐帧轮换。先上传这一小组，避免释放加载缓存后
+        // 为下一相位重新打开整个内置资源包；相位及随机数序列保持不变。
+        for (int phase = 0; phase < 64; ++phase)
+            composer.Texture(store.GameResource("LDR_LLL1_" + std::to_string(phase), 28, 64));
     }
 
     void NativeSpatialAntialiasing::ResetHistory(int phase)

@@ -17,13 +17,26 @@ int wmain(int argc, wchar_t **argv)
         fs::path output = fs::path(argv[2]) / ("visibility-" + NewId());
         std::mutex mutex;
         std::condition_variable changed;
-        int ready = 0, progress = 0, screenshots = 0;
+        int views = 0, ready = 0, progress = 0, screenshots = 0;
+        uint64_t viewGeneration = 0;
+        NativeRendererBounds viewBounds;
+        UINT firstPresentCount = 0;
         std::string error;
         std::optional<PreviewReady> result;
         PreviewCallbacks events;
+        events.PrepareView = [&](uint64_t generation, NativeRendererBounds body, NativeRendererBounds)
+        {
+            std::lock_guard lock(mutex);
+            viewGeneration = generation;
+            viewBounds = body;
+            ++views;
+            changed.notify_all();
+        };
         events.Ready = [&](PreviewReady value)
         {
             std::lock_guard lock(mutex);
+            if (ready == 0 && FAILED(value.Chain->GetLastPresentCount(&firstPresentCount)))
+                error = "Cannot inspect the first presented frame.";
             result = std::move(value);
             ++ready;
             changed.notify_all();
@@ -72,11 +85,24 @@ int wmain(int argc, wchar_t **argv)
         wait(
             [&]
             {
-                return ready == 1;
+                return views == 1;
             });
-        if (result->Generation != generation || result->Definition->Visibility != CharacterPreviewVisibility{2, false})
-            throw std::runtime_error("Navigation during loading lost the latest visibility state.");
-        auto bounds = result->Body;
+        // 普通镜头命令或已过期的界面回调都不能放行新人物的默认镜头。
+        worker.View({}, false);
+        if (worker.ConfirmView(generation - 1, {}))
+            throw std::runtime_error("A stale camera acknowledgement was accepted.");
+        {
+            std::unique_lock lock(mutex);
+            if (changed.wait_for(lock, std::chrono::milliseconds(250),
+                                 [&]
+                                 {
+                                     return ready != 0 || !error.empty();
+                                 }))
+                throw std::runtime_error("Preview became ready before the UI framed the character: " + error);
+        }
+        if (viewGeneration != generation)
+            throw std::runtime_error("Camera preparation belongs to a stale character.");
+        auto bounds = viewBounds;
         NativeRenderCamera camera;
         camera.Target = bounds.Center;
         float distance = std::max(bounds.Extents.x * 2 / .75f, bounds.Extents.y * 2) /
@@ -84,7 +110,18 @@ int wmain(int argc, wchar_t **argv)
                          bounds.Extents.z * 2;
         camera.Position = {bounds.Center.x, bounds.Center.y, bounds.Center.z + distance};
         camera.FieldOfView = 35;
-        worker.View(camera, false);
+        if (!worker.ConfirmView(generation, camera))
+            throw std::runtime_error("The current character camera was rejected.");
+        wait(
+            [&]
+            {
+                return ready == 1;
+            });
+        if (firstPresentCount != 1)
+            throw std::runtime_error(
+                "Ready must follow exactly one framed presentation, without a default-camera frame.");
+        if (result->Generation != generation || result->Definition->Visibility != CharacterPreviewVisibility{2, false})
+            throw std::runtime_error("Navigation during loading lost the latest visibility state.");
         int frame = 0;
         auto screenshot = [&]
         {
@@ -213,7 +250,19 @@ int wmain(int argc, wchar_t **argv)
             throw std::runtime_error("Rapid parameter edits rebuilt the preview surface.");
         worker.Quiesce();
         worker.Unload();
-        std::cout << "PASS: paused redraw, reversible clothing, live shape/color/part edits, undo/redo and rapid "
+        // 资源就绪、等待界面取景时取消也必须立即返回；不能等待一个已离开的界面确认。
+        generation = worker.Load(card);
+        wait(
+            [&]
+            {
+                return views == 2;
+            });
+        worker.Quiesce();
+        worker.Unload();
+        if (worker.ConfirmView(generation, camera))
+            throw std::runtime_error("An unloaded character accepted a camera acknowledgement.");
+        std::cout << "PASS: framed first presentation, delayed/stale camera callbacks, cancel before first frame, "
+                     "paused redraw, reversible clothing, live shape/color/part edits, undo/redo and rapid "
                      "edits; frames="
                   << Utf8(output) << '\n';
         return 0;

@@ -138,6 +138,20 @@ namespace
             Check(file.path().extension() != ".tmp", "Temporary cache file was left behind.");
     }
 
+    void ReleaseMemory(const fs::path &root)
+    {
+        UnityBlockCache cache(root / "release");
+        auto borrowed = cache.Get(Hello, 5, 2);
+        cache.ReleaseMemory();
+        cache.ReleaseMemory();
+        Check(cache.Stats().ResidentBytes == 0 && Text(borrowed) == "hello" && cache.Stats().Decodes == 1,
+              "Releasing cache memory invalidated a borrower or reset lifetime statistics.");
+        auto reloaded = cache.Get(Hello, 5, 2);
+        Check(Text(reloaded) == "hello" && reloaded != borrowed && cache.Stats().DiskHits == 1 &&
+                  cache.Stats().ResidentBytes == 5 && cache.Stats().Decodes == 1,
+              "Releasing memory lost the persisted cache or prevented reloading.");
+    }
+
     void ConcurrentAccess(const fs::path &root)
     {
         UnityBlockCache shared(root / "shared");
@@ -192,6 +206,7 @@ int main()
         ReuseAndIntegrity(root / "reuse");
         BudgetsAndFailures(root / "limits");
         ConcurrentAccess(root / "concurrent");
+        ReleaseMemory(root);
         std::cout << "Unity block cache checks passed\n";
         return 0;
     }

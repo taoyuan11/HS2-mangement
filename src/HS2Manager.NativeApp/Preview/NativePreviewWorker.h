@@ -20,6 +20,9 @@ namespace hs2::ui
 
     struct PreviewCallbacks
     {
+        // 先在界面线程按人物尺寸定位，再用 ConfirmView 允许绘制首帧。
+        std::function<void(uint64_t, NativeRendererBounds, NativeRendererBounds)> PrepareView;
+        // 交换链至少已提交一帧，收到后才能绑定面板并结束加载提示。
         std::function<void(PreviewReady)> Ready;
         std::function<void(uint64_t, std::string)> Progress, Failure;
         std::function<void(std::filesystem::path, std::string)> Screenshot;
@@ -79,6 +82,7 @@ namespace hs2::ui
         void Quiesce();
         void Resize(PreviewViewportSize size);
         void View(NativeRenderCamera camera, bool interactive);
+        bool ConfirmView(uint64_t generation, NativeRenderCamera camera);
         void Environment(NativeFrameOptions options);
         void Paused(bool value);
         void Visible(bool value);
@@ -106,7 +110,7 @@ namespace hs2::ui
         std::optional<Request> pending_;
         std::optional<CharacterDocument> pendingDraft_;
         std::stop_source loading_;
-        uint64_t generation_ = 0;
+        uint64_t generation_ = 0, viewGeneration_ = 0;
         PreviewViewportSize size_{640, 640, 1};
         NativeRenderCamera camera_;
         NativeFrameOptions environment_;

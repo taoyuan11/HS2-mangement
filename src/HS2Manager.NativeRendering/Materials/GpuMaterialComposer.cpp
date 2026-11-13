@@ -353,13 +353,13 @@ namespace hs2
     std::shared_ptr<GpuMaterialInstance> GpuMaterialComposer::Material(const std::string &selection)
     {
         const auto &ref = Selection(selection);
-        return CreateMaterial(*store_.Material(store_.Reader(ref.Bundle)->Find(ref.Asset, 21)));
+        return CreateMaterial(*store_.Material(store_.Find(ref.Bundle, ref.Asset, 21)));
     }
 
     std::shared_ptr<GpuMaterialInstance> GpuMaterialComposer::ShaderMaterial(const std::string &selection)
     {
         const auto &ref = Selection(selection);
-        auto shader = Shader(store_.Reader(ref.Bundle)->Find(ref.Asset, 48));
+        auto shader = Shader(store_.Find(ref.Bundle, ref.Asset, 48));
         GpuMaterialData source;
         source.Name = shader->Name;
         return std::make_shared<GpuMaterialInstance>(source, std::move(shader));
@@ -388,7 +388,7 @@ namespace hs2
             material.ImageSelections[property] = *reference;
             return;
         }
-        auto pointer = store_.Reader(reference->Bundle)->TryFind(reference->Asset, 28);
+        auto pointer = store_.TryFind(reference->Bundle, reference->Asset, 28);
         if (pointer)
             binding.Texture = *pointer;
         else
@@ -401,9 +401,8 @@ namespace hs2
         const auto &reference = Selection(selection);
         if (Png(reference.Bundle))
             return LooseImage(reference);
-        auto reader = store_.Reader(reference.Bundle);
-        auto pointer = reader->TryFind(reference.Asset, 28);
-        return Texture(pointer ? *pointer : reader->Find(reference.Asset, 89));
+        auto pointer = store_.TryFind(reference.Bundle, reference.Asset, 28);
+        return Texture(pointer ? *pointer : store_.Find(reference.Bundle, reference.Asset, 89));
     }
 
     std::shared_ptr<GpuTexture> GpuMaterialComposer::TryTexture(const std::string &selection)
@@ -411,7 +410,7 @@ namespace hs2
         const auto &ref = Selection(selection);
         if (Png(ref.Bundle))
             return LooseImage(ref);
-        auto p = store_.Reader(ref.Bundle)->TryFind(ref.Asset, 28);
+        auto p = store_.TryFind(ref.Bundle, ref.Asset, 28);
         if (p)
             return Texture(*p);
         SourceReferenceDiagnostics.insert("Missing authored composition texture: " + selection + ": " + ref.Asset);

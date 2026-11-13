@@ -128,9 +128,12 @@
                 </StackPanel>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Grid.Row="1">
                     <StackPanel>
-                        <Button x:Name="CreateCharacter" Content="创建角色" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
-                        <Button x:Name="CreateMod" Content="创建 Mod" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
-                        <Button x:Name="CreationProjects" Content="创作工程" HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
+                        <Button x:Name="CharacterProjects" Content="角色工程" Style="{StaticResource NavButton}"
+                            Background="{Binding CurrentNavigation, Converter={StaticResource NavigationBackground}, ConverterParameter=character-projects}"
+                            IsEnabled="{Binding IsIdle}" Margin="0,0,0,6"/>
+                        <Button x:Name="ModProjects" Content="mod工程" Style="{StaticResource NavButton}"
+                            Background="{Binding CurrentNavigation, Converter={StaticResource NavigationBackground}, ConverterParameter=mod-projects}"
+                            IsEnabled="{Binding IsIdle}" Margin="0,0,0,12"/>
                         <Button
                             x:Name="NavAll"
                             Tag="all"
@@ -284,6 +287,7 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="34"/>
             </Grid.RowDefinitions>
+            <Grid Visibility="{Binding IsProjects, Converter={StaticResource BoolVisible}, ConverterParameter=Invert}">
             <Grid Visibility="{Binding IsPreview, Converter={StaticResource BoolVisible}, ConverterParameter=Invert}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -1078,6 +1082,9 @@
                     </Expander>
                 </StackPanel>
             </Grid>
+            </Grid>
+            <ContentControl x:Name="ProjectsHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                Visibility="{Binding IsProjects, Converter={StaticResource BoolVisible}}"/>
             <Grid
                 Grid.Row="1"
                 Background="{ThemeResource SidebarBrush}"

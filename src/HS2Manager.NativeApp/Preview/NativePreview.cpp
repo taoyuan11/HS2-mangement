@@ -52,6 +52,28 @@ namespace hs2::ui
         auto epoch = ++epoch_;
         auto delivery = delivery_ = std::make_shared<PreviewReadyDelivery>();
         PreviewCallbacks callbacks;
+        callbacks.PrepareView =
+            [weak, queue, epoch](uint64_t generation, NativeRendererBounds body, NativeRendererBounds face)
+        {
+            queue.TryEnqueue(
+                [weak, epoch, generation, body, face]
+                {
+                    if (auto self = weak.lock())
+                        if (self->epoch_ == epoch && self->generation_ == generation && self->panel_ && self->worker_)
+                        {
+                            self->body_ = body;
+                            self->face_ = face;
+                            if (self->first_)
+                            {
+                                self->Frame();
+                                self->first_ = false;
+                            }
+                            else
+                                self->Camera();
+                            self->worker_->ConfirmView(generation, self->camera_);
+                        }
+                });
+        };
         callbacks.Ready = [weak, queue, epoch, delivery](PreviewReady result)
         {
             if (!delivery->Publish(std::move(result)))
@@ -75,13 +97,6 @@ namespace hs2::ui
                                             owner->editor_->Definition(result.Definition);
                                         self->body_ = result.Body;
                                         self->face_ = result.Face;
-                                        if (self->first_)
-                                        {
-                                            self->Frame();
-                                            self->first_ = false;
-                                        }
-                                        else
-                                            self->Camera();
                                         owner->model_->Put(L"PreviewBusy", false);
                                         owner->model_->Put(L"CanControlPreview", true);
                                         if (owner->temporaryPreview_)

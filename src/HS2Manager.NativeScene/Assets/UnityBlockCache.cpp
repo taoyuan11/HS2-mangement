@@ -202,6 +202,14 @@ namespace hs2
         return stats_;
     }
 
+    void UnityBlockCache::ReleaseMemory()
+    {
+        std::lock_guard lock(mutex_);
+        blocks_.clear();
+        recent_.clear();
+        stats_.ResidentBytes = 0;
+    }
+
     std::shared_ptr<const UnityBlockCache::Bytes> UnityBlockCache::Get(std::span<const std::uint8_t> compressed,
                                                                        std::size_t outputSize, unsigned compression,
                                                                        std::stop_token token)

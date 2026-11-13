@@ -361,8 +361,8 @@ namespace hs2
                                                   });
                     Require(selection != definition->Selections.end() && !r->Materials.empty(),
                             "Skin material selection is missing.");
-                    r->Materials[0] = std::make_shared<GpuMaterialData>(*assets.Material(
-                        assets.Reader(selection->Reference.Bundle)->Find(selection->Reference.Asset, 21)));
+                    r->Materials[0] = std::make_shared<GpuMaterialData>(
+                        *assets.Material(assets.Find(selection->Reference.Bundle, selection->Reference.Asset, 21)));
                 }
                 r->Bones = source.Skinned ? bones(source, *r->Mesh, shared) : std::vector<NativeSceneNode *>{};
                 r->BlendWeights.assign(r->Mesh->BlendShapes.size(), 0);

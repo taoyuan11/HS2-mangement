@@ -1,6 +1,7 @@
 #include "Application/NativeWindow.h"
 #include "Infrastructure/Layout.h"
 #include "Editor/NativeEditor.h"
+#include "Creation/NativeProjects.h"
 #include "Preview/NativePreview.h"
 #include "Infrastructure/UiEvents.h"
 #include "Infrastructure/ProcessLifetime.h"
@@ -179,6 +180,8 @@ namespace hs2::ui
             return;
         resourcesReleased_ = true;
         closing_ = true;
+        if (projects_)
+            projects_->Hide();
         if (searchTimer_)
             searchTimer_.Stop();
         temporaryCancellation_.request_stop();
@@ -251,6 +254,7 @@ namespace hs2::ui
         window_.Content(root_);
         model_->Put(L"IsEditing", false);
         model_->Put(L"IsPreview", false);
+        model_->Put(L"IsProjects", false);
         model_->Put(L"IsTemporaryPreview", false);
         model_->Put(L"IsIdle", true);
         model_->Put(L"IsBusy", false);
@@ -474,6 +478,8 @@ namespace hs2::ui
         model_->Put(L"EditorBusy", value && static_cast<bool>(editor_));
         if (editor_)
             Control<ContentControl>(L"EditorHost").IsEnabled(!value);
+        if (projects_)
+            projects_->SyncControls();
     }
 
     void NativeWindow::Work(std::string label, std::function<std::string(std::stop_token, Progress)> operation)
@@ -661,6 +667,7 @@ namespace hs2::ui
 
     void NativeWindow::Navigate(std::string mode)
     {
+        HideProjects();
         ClosePreview();
         mode_ = std::move(mode);
         folder_.clear();
@@ -968,6 +975,7 @@ namespace hs2::ui
                                     {
                                         auto value =
                                             get_self<Observable>(node.Content().as<data::ICustomPropertyProvider>());
+                                        self->HideProjects();
                                         self->ClosePreview();
                                         self->folder_ = to_string(value->String(L"Path"));
                                         self->mode_ = "all";
@@ -1081,6 +1089,17 @@ namespace hs2::ui
                     auto key = static_cast<int>(args.Key());
                     if (self->dialogOpen_)
                         return;
+                    if (self->model_->Bool(L"IsProjects") && !self->editor_)
+                    {
+                        if (ctrl && key == 'R')
+                            self->projects_->Refresh();
+                        else if (key == VK_F2 && !TextInputFocused(self->root_.XamlRoot()))
+                            self->projects_->Action("Rename");
+                        else if (!(ctrl && (key == 'F' || key == 'S')) && key != VK_DELETE && key != VK_ESCAPE)
+                            return;
+                        args.Handled(true);
+                        return;
+                    }
                     if (key == VK_ESCAPE)
                     {
                         if (self->editor_)
@@ -1145,7 +1164,7 @@ namespace hs2::ui
                 {
                     args.AcceptedOperation(
                         !self->busy_ && !self->editor_ && !self->closing_ &&
-                                !self->model_->Bool(L"IsTemporaryPreview") &&
+                                !self->model_->Bool(L"IsTemporaryPreview") && !self->model_->Bool(L"IsProjects") &&
                                 args.DataView().Contains(
                                     winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::StorageItems())
                             ? winrt::Windows::ApplicationModel::DataTransfer::DataPackageOperation::Copy
@@ -1163,12 +1182,12 @@ namespace hs2::ui
                     try
                     {
                         if (!self->busy_ && !self->editor_ && !self->closing_ &&
-                            !self->model_->Bool(L"IsTemporaryPreview") &&
+                            !self->model_->Bool(L"IsTemporaryPreview") && !self->model_->Bool(L"IsProjects") &&
                             args.DataView().Contains(
                                 winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::StorageItems()))
                         {
                             auto items = co_await args.DataView().GetStorageItemsAsync();
-                            if (self->busy_ || self->editor_ || self->closing_)
+                            if (self->busy_ || self->editor_ || self->closing_ || self->model_->Bool(L"IsProjects"))
                             {
                                 deferral.Complete();
                                 co_return;

@@ -20,6 +20,9 @@ namespace hs2
         void SetScriptSchema(
             std::function<std::vector<UnityTypeNode>(const GpuAssetPointer &, std::string_view)> resolver);
         void AddPath(const std::filesystem::path &path);
+        // 场景已持有转换结果时释放加载源；名称索引保留，后续编辑可按需重读。
+        void ReleaseLoadingCache();
+        std::size_t ReaderResidentBytes() const;
 
         void Cancellation(std::stop_token value)
         {
@@ -27,6 +30,8 @@ namespace hs2
         }
 
         GpuAssetPointer Resolve(const GpuAssetPointer &pointer);
+        GpuAssetPointer Find(const std::filesystem::path &path, std::string_view name, int classId);
+        std::optional<GpuAssetPointer> TryFind(const std::filesystem::path &path, std::string_view name, int classId);
         std::shared_ptr<GpuMeshData> Mesh(const GpuAssetPointer &pointer);
         GpuTextureData Texture(const GpuAssetPointer &pointer);
         std::shared_ptr<GpuMaterialData> Material(const GpuAssetPointer &pointer);
@@ -81,6 +86,7 @@ namespace hs2
         std::unordered_map<std::string, std::unordered_map<std::string, std::shared_ptr<const GpuPrefabData>>> prefabs_;
         std::unordered_map<std::string, std::shared_ptr<GpuMaterialData>> materials_;
         std::unordered_map<std::string, GpuAssetPointer> resolved_, gameResources_;
+        std::unordered_map<std::string, std::optional<GpuAssetPointer>> namedAssets_;
         std::unordered_map<std::string, std::optional<int>> classes_;
         size_t indexed_ = 0;
         ReaderStatistics readerStats_;

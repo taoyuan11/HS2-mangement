@@ -29,6 +29,7 @@ namespace hs2::ui
     void NativeCreation::Initialize()
     {
         auto owner = owner_.lock();
+        owner->creationKind_ = project_->State().Kind;
         CardRecord card;
         card.Name = project_->State().Name;
         card.Sex = project_->State().Character->Sex();
