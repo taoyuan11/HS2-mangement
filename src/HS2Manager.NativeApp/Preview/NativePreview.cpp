@@ -289,8 +289,9 @@ namespace hs2::ui
                             auto forward = XMVector3Normalize(XMVectorSubtract(XMLoadFloat3(&self->camera_.Target),
                                                                                XMLoadFloat3(&self->camera_.Position)));
                             auto up = XMLoadFloat3(&self->camera_.Up);
-                            auto right = XMVector3Normalize(XMVector3Cross(forward, up));
-                            up = XMVector3Cross(right, forward);
+                            // 视图矩阵镜像了 X 轴，平移基底也必须使用画面中的右方向。
+                            auto right = XMVector3Normalize(XMVector3Cross(up, forward));
+                            up = XMVector3Cross(forward, right);
                             auto units = 2 * self->distance_ * std::tan(35 * Pi / 360) * self->aspect_ / self->width_;
                             auto center = XMVectorAdd(XMLoadFloat3(&self->center_),
                                                       XMVectorAdd(XMVectorScale(right, static_cast<float>(-dx * units)),
@@ -370,7 +371,7 @@ namespace hs2::ui
         owner->model_->Put(L"CanControlPreview", false);
         syncingMotions_ = true;
         motions_.clear();
-        owner->model_->Set(L"PreviewMotions", single_threaded_observable_vector<hstring>(), false);
+        owner->model_->Set(L"PreviewMotions", single_threaded_observable_vector<Object>(), false);
         owner->model_->Put(L"PreviewMotionIndex", -1);
         syncingMotions_ = false;
         owner->model_->Put(L"HasPreviewError", false);
@@ -571,9 +572,16 @@ namespace hs2::ui
         {
             syncingMotions_ = true;
             motions_ = ready.Motions;
-            auto choices = single_threaded_observable_vector<hstring>();
+            auto choices = single_threaded_observable_vector<Object>();
             for (auto const &name : motions_)
-                choices.Append(to_hstring(name));
+            {
+                // MOD 可以有同名动作。每行保留独立对象身份，避免 WinUI 将等值字符串
+                // 合并到同一自动化节点，滚动后遍历兄弟节点时形成循环并卡死界面。
+                // https://github.com/microsoft/microsoft-ui-xaml/issues/11226
+                auto choice = make_self<Observable>();
+                choice->Text(L"Name", name);
+                choices.Append(choice.as<data::ICustomPropertyProvider>());
+            }
             owner->model_->Set(L"PreviewMotions", choices, false);
             owner->model_->Put(L"PreviewMotionIndex", ready.MotionIndex);
             syncingMotions_ = false;

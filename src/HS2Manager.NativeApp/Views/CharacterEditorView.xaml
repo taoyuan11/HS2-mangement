@@ -113,6 +113,7 @@
                         Width="180"
                         PlaceholderText="选择动作"
                         ItemsSource="{Binding PreviewMotions}"
+                        DisplayMemberPath="Name"
                         SelectedIndex="{Binding PreviewMotionIndex, Mode=TwoWay}"
                         IsEnabled="{Binding CanControlPreview}"
                         AutomationProperties.Name="预览动作"

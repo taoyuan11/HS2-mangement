@@ -1,0 +1,31 @@
+{
+  "Date": "2026-11-13",
+  "Configuration": "Release x64",
+  "ExecutableSHA256": "5177a1459114c780e6af8837b268ebbcc0fb974741c2219a77f88215a5cfeaa7",
+  "Reproduction": {
+    "Card": "UserData/chara/navi/navi.png",
+    "Steps": "Open the normal preview motion dropdown and scroll toward pose 20 without selecting a motion.",
+    "BeforeFix": "UI stopped responding. Two debugger samples showed the UI thread in WinUI ItemsControl/ComboBox automation traversal and UIAutomationCore UiaNodeTraverser sibling traversal.",
+    "Cause": "MOD motions can have identical display names. Binding equal strings as items allows WinUI to reuse automation peers and form a sibling traversal cycle when more rows are realized.",
+    "UpstreamIssue": "https://github.com/microsoft/microsoft-ui-xaml/issues/11226",
+    "Fix": "Give every motion a distinct Observable object and bind DisplayMemberPath to Name in both preview dropdowns. Preserve the original names, ordering and selected-index mapping."
+  },
+  "AutomatedTests": {
+    "Passed": 21,
+    "Failed": 0,
+    "PackageValidation": "Passed: 68 native PE files, x64 app/adapters, complete resources and resolved imports, no CLR."
+  },
+  "UiChecks": [
+    "Normal preview: repeated the original wheel-scroll sequence past pose 20; the UI stayed responsive.",
+    "Normal preview: scrolled through repeated identical MOD labels; accessibility traversal completed in 158 ms.",
+    "Normal preview: navigated to the last entry with End and returned with Home, then selected pose 20 and observed the changed character pose.",
+    "Editor preview: scrolled past pose 20 and into the identical MOD labels; accessibility traversal completed in 187 ms with distinct item nodes.",
+    "Editor preview: selected the third identically named NewMakerPoses pose 01 entry and observed the changed character pose; the draft remained saved at r0."
+  ],
+  "Limitations": [
+    "An existing MOD choice referencing missing resource 74/Ev_Shower_A_00 still reports a nonfatal switch failure and retains the previous motion; the dropdown remains responsive.",
+    "This regression run used one female card containing duplicate motion labels. It did not repeat the previous full male/female motion sweep."
+  ],
+  "RawResults": "%LOCALAPPDATA%/HS2Manager/Tests/PreviewMotionScroll-20261113",
+  "OwnedProcessesStopped": true
+}
