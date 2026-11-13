@@ -8,7 +8,7 @@ $previousOutput = $env:HS2MANAGER_SOURCE_OUTPUT
 $launchArguments = @($args)
 $code = 1
 try {
-    & (Join-Path $source 'build-cpp.ps1') -ResultFile $result
+    & (Join-Path $source 'scripts/build/Build-Cpp.ps1') -ResultFile $result
     $build = Get-Content -LiteralPath $result -Raw | ConvertFrom-Json
     if (!(Test-Path -LiteralPath $build.Executable -PathType Leaf)) {
         throw '原生构建没有生成程序。'

@@ -93,7 +93,7 @@ try {
     if ($BuildDirectory) {
         $arguments.BuildDirectory = $BuildDirectory
     }
-    & (Join-Path $source 'build-cpp.ps1') @arguments
+    & (Join-Path $source 'scripts/build/Build-Cpp.ps1') @arguments
     $build = Get-Content -LiteralPath $result -Raw | ConvertFrom-Json
     if (!(Test-Path -LiteralPath $build.Executable -PathType Leaf)) {
         throw '原生构建没有生成程序。'
@@ -152,6 +152,8 @@ try {
     $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $staging 'package-files.json') -Encoding UTF8
     [IO.Directory]::Move($staging, $destination)
     if (!$SkipArchive) {
+        # Windows PowerShell 5.1 不会仅凭 FileSystem 程序集自动解析 ZIP 枚举类型。
+        Add-Type -AssemblyName System.IO.Compression
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = [IO.Compression.ZipFile]::Open($archiveStaging, [IO.Compression.ZipArchiveMode]::Create)
         try {

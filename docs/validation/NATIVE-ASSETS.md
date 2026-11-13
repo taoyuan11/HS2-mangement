@@ -1,5 +1,7 @@
 # 原生素材制作验收
 
+> 本文保留历史验证记录，其中根目录 `build*.ps1` 命令及参数为当时入口。当前构建使用 `scripts/build/Build-Cpp.ps1`，打包使用 `scripts/package/Publish-Cpp.ps1`；现行用法见 [开发说明](../DEVELOPMENT.md)。
+
 日期：2026-11-12。构建版本：`native-assets-2.0.1`，建模描述版本：`2`。
 
 Agent 的参考输出、建模、导入、蒙皮、贴图、UnityFS／SerializedFile 写入、原生预览与 `.zipmod` 制作均使用内置 C++。验收配置未设置 Unity、Blender 或 ModdingTool 路径。Blender 仅用于另行保留的 3D 模型导出回归。

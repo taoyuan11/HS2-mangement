@@ -1,5 +1,7 @@
 # 3D 预览资源与角色组装优化
 
+> 本文保留历史验证记录，其中根目录 `build*.ps1` 命令及参数为当时入口。当前构建使用 `scripts/build/Build-Cpp.ps1`，打包使用 `scripts/package/Publish-Cpp.ps1`；现行用法见 [开发说明](DEVELOPMENT.md)。
+
 ## 第二轮：按需读取名称、释放中间网格数据和并行读取
 
 2026-11-11，以 `fc3919971dd44d6692f3149ff25b27bc254dc031` 为基线，在相同 NAS 游戏资源、DHH 环境和本地测试 Data 上交替运行新旧 Release 程序，各三次独立进程，取中位数。应用缓存已存在，没有清空操作系统或 NAS 缓存。

@@ -13,7 +13,7 @@ param(
     [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount)
 )
 $ErrorActionPreference = 'Stop'
-$source = $PSScriptRoot
+$source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if ($SkipUi -and ($Run -or $ResultFile)) {
     throw '-Run 和 -ResultFile 需要构建 WinUI 程序，不能与 -SkipUi 同时使用。'
 }

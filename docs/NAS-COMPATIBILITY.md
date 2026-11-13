@@ -1,5 +1,7 @@
 > 历史 C# 迁移与验证记录：下表的 .NET 构建路径、旧测试命令和 2026-11-09 通过结果不代表本次 C++ 验收。旧源码和专用脚本已移除，历史命令需检出相应 Git 版本后运行。当前数据兼容规则与构建位置见 [C++ 迁移说明](CPP-MIGRATION.md)，实测范围见 [C++ 验证结果](CPP-VALIDATION.md)。
 
+> 本文保留历史验证记录，其中根目录 `build*.ps1` 命令及参数为当时入口。当前构建使用 `scripts/build/Build-Cpp.ps1`，打包使用 `scripts/package/Publish-Cpp.ps1`；现行用法见 [开发说明](DEVELOPMENT.md)。
+
 # NAS 迁移与验证
 
 项目可以保留在映射盘或 UNC 共享目录中。源码入口为根目录 `start.cmd`；发布入口为完整解压后的 `HS2Manager.exe`。

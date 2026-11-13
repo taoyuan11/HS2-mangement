@@ -1,5 +1,7 @@
 # 模型加载性能验证
 
+> 本文保留历史验证记录，其中根目录 `build*.ps1` 命令及参数为当时入口。当前构建使用 `scripts/build/Build-Cpp.ps1`，打包使用 `scripts/package/Publish-Cpp.ps1`；现行用法见 [开发说明](DEVELOPMENT.md)。
+
 > 历史记录：本文的架构、命令、版本、性能和通过数量对应迁移前的 C# 实现及其当时的预览后端。旧源码和专用脚本已移除，历史命令需检出相应 Git 版本后运行。本次 C++ 重写的实际检查见 [C++ 验证结果](CPP-VALIDATION.md)，当前构建与架构见 [C++ 迁移说明](CPP-MIGRATION.md)；本文数字不自动计入新版本验收。
 
 > 本文性能数字记录迁移前的 WPF 宿主，不代表 WinUI 3 的测量结果。当前界面和回归检查已迁移到 WinUI 3，见 [WINUI3-MIGRATION.md](WINUI3-MIGRATION.md)。

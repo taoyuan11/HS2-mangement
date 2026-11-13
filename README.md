@@ -13,15 +13,13 @@
 
 关闭窗口、Alt+F4 和任务栏关闭会先取消当前任务、等待渲染线程结束、解除交换链并关闭资料库，再结束进程。确认退出后的清理最长等待 30 秒；超时会记录到 `native-error.log` 并结束当前进程，已提交数据及操作恢复日志保留，未完成任务交由下次启动恢复。保存／放弃／取消对话框等待用户选择期间不计时，取消关闭会撤销期限。原生或 XAML 致命异常记录后直接结束；程序启动时禁用本进程的 WER 崩溃／无响应快照，避免产生继续映射 DLL 和数据库的克隆。模型转换子进程由 Windows 作业管理，主程序被任务管理器强制结束时也随之回收。正常清理完成后不再运行第三方 DLL 的进程卸载回调，避免显卡或 COM 的卸载死锁。
 
-旧版本异常退出后，Windows 错误报告快照可能继续占用 SQLite 的共享内存文件，导致下次启动出现 `SQLite (1546, Win32 1224)`。程序会保留原始数据到同级 `Data.startup-backup-<标识>`，从 DB 和 WAL 建立通过完整性检查的备份，再使用独占 WAL 索引恢复启动，保留已提交的收藏、标签和备注。恢复记录及启动错误见实际数据目录中的 `native-error.log`。使用 `build-desktop.ps1` 更新桌面版本前需先关闭程序；更新仅替换程序文件，保留原位置的 Data、WAL 和恢复备份。
-
-发布完成后，旧 DLL 仍可能被 Windows 的进程映像或崩溃快照占用，删除时显示“Access is denied”并不一定是文件权限错误。桌面发布脚本会先清理可删除的旧文件，将仍占用的旧程序目录登记到当前用户的 RunOnce，下次登录时自动重试；异常退出后的残留占用通常需要重启 Windows 才能释放。后续发布也会重试已登记目录，或运行 `./build-desktop.ps1 -CleanupOnly` 单独清理，无需重新构建。清理仅针对本次发布成功后登记的 `HS2Manager-backup-<标识>`，不扫描其他备份，不结束现有进程，不修改 Data；权限或占用仍未解除时保留记录并报告原因。待清理记录和独立登录脚本位于 `%LOCALAPPDATA%\HS2Manager\DesktopBuildCleanup`。
+旧版本异常退出后，Windows 错误报告快照可能继续占用 SQLite 的共享内存文件，导致下次启动出现 `SQLite (1546, Win32 1224)`。程序会保留原始数据到同级 `Data.startup-backup-<标识>`，从 DB 和 WAL 建立通过完整性检查的备份，再使用独占 WAL 索引恢复启动，保留已提交的收藏、标签和备注。恢复记录及启动错误见实际数据目录中的 `native-error.log`。
 
 ## 程序更新
 
 在“设置与连接 → 程序更新”查看版本、更新说明和下载进度。默认启动后每天检查一次正式版，可关闭自动检查；发现新版本后由你点击下载，校验完成后确认“重启并安装”。更新保留资料库、恢复备份和用户文件；安装前请关闭同一安装的其他实例及 MCP 连接。旧版用户需先手动安装一次 1.5.0 或更新的便携包。
 
-推送与 `VERSION` 一致的 `v主.次.修订` 标签会在 GitHub 云端构建、测试并发布 Release。使用方法、发布附件和失败恢复见 [发布与程序更新](docs/UPDATES.md)。
+在 `main` 分支运行 `./push-releases.cmd 1.5.1`，自动更新 `VERSION`、提交全部未忽略改动，并推送代码和版本标签，在 GitHub 云端构建、测试及发布 Release。版本号为必填参数，也接受 `v1.5.1`。使用方法、发布附件和失败恢复见 [发布与程序更新](docs/UPDATES.md)。
 
 ## 浏览与整理
 
@@ -149,29 +147,27 @@ C++ 版本已执行真实人物字段、无损读写、保存事务和界面流�
 
 ## 源码构建
 
-目录职责、中文注释要求、4 空格缩进规则与统一格式化命令见 [项目结构与代码规范](docs/DEVELOPMENT.md)。
+根目录命令入口只有 `start.cmd` 和 `push-releases.cmd`。本地构建与打包实现位于 `scripts`；桌面部署功能已移除。目录职责、中文注释要求、4 空格缩进规则与统一格式化命令见 [项目结构与代码规范](docs/DEVELOPMENT.md)。
 
-正式构建需要 Windows x64、Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake，无需 .NET SDK。脚本通过 Visual Studio Installer 定位工具，还原固定版本的 C++/WinRT 与 Windows App SDK 1.8。独立布料适配层使用 PhysX 3.4.2 源码；FBX 适配层使用 Autodesk FBX SDK 2020.3.7。将按各自许可取得的 SDK 放入 `.tools/physx-3.4` 和 `.tools/fbx-native-2020.3.7`，或向 `build.ps1` / `build-desktop.ps1` 传入 `-PhysXSource` / `-FbxSdkRoot` 指定外部目录。单独运行适配层构建脚本时，分别使用 `-Source` / `-SdkRoot`。
+正式构建需要 Windows x64、Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake，无需 .NET SDK。脚本通过 Visual Studio Installer 定位工具，还原固定版本的 C++/WinRT 与 Windows App SDK 1.8。独立布料适配层使用 PhysX 3.4.2 源码；FBX 适配层使用 Autodesk FBX SDK 2020.3.7。将按各自许可取得的 SDK 放入 `.tools/physx-3.4` 和 `.tools/fbx-native-2020.3.7`，或向 `scripts/package/Publish-Cpp.ps1` 传入 `-PhysXSource` / `-FbxSdkRoot` 指定外部目录。单独运行适配层构建脚本时，分别使用 `-Source` / `-SdkRoot`。
 
 ```powershell
-.\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ'
+.\scripts\package\Publish-Cpp.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ'
 # 追加真实人物的场景、动态及 GPU 帧检查
-.\build.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ' -PreviewTest
+.\scripts\package\Publish-Cpp.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ' -PreviewTest
 # 日常编译原生模块及 WinUI 界面，不生成便携 ZIP
-.\build-cpp.ps1
+.\scripts\build\Build-Cpp.ps1
 ```
 
-`build.ps1` 编译独立 FBX / 物理适配层、C++ 业务模块及 WinUI 程序，运行 CTest，发布自带 Windows App SDK 与 VC++ 运行库的便携目录及 ZIP，并写入 SHA-256 清单。构建和打包不再运行 GUI 窗口测试；需要时可单独执行 `tests/ui/Invoke-CppWinUiSmoke.ps1`。输出位于 `artifacts/release`；已有输出不会被覆盖，可用 `-OutputDirectory` 指定新目录。`-SkipTests` 跳过自动测试，发布包的纯原生依赖审计仍然执行。无需构建或下载 Unity。
+`scripts/package/Publish-Cpp.ps1` 编译独立 FBX / 物理适配层、C++ 业务模块及 WinUI 程序，运行 CTest，发布自带 Windows App SDK 与 VC++ 运行库的便携目录及 ZIP，并写入 SHA-256 清单。构建和打包不再运行 GUI 窗口测试；需要时可单独执行 `tests/ui/Invoke-CppWinUiSmoke.ps1`。输出位于 `artifacts/release`；已有输出不会被覆盖，可用 `-OutputDirectory` 指定新目录。`-SkipTests` 跳过自动测试，发布包的纯原生依赖审计仍然执行。无需构建或下载 Unity。
 
 各构建入口支持 `-Jobs 4` 控制编译、CTest、发布文件复制及 SHA-256 计算的并行度，默认最多 4 路；内存紧张时可指定 `-Jobs 1`。ZIP 使用快速压缩，文件内容保持一致，包体积可能略大。PhysX 兼容头文件仅在内容变化时更新，重复打包可复用已有编译结果。
 
-`build-cpp.ps1` 默认使用增量构建。若 WinUI 的 PCH / PDB 缓存不一致导致 C2859 或 LNK1209，脚本会自动重建当前配置的 WinUI 项目并重试一次，保留已构建的 CMake 模块；重建失败或其他错误仍会终止构建。
+`scripts/build/Build-Cpp.ps1` 默认使用增量构建。若 WinUI 的 PCH / PDB 缓存不一致导致 C2859 或 LNK1209，脚本会自动重建当前配置的 WinUI 项目并重试一次，保留已构建的 CMake 模块；重建失败或其他错误仍会终止构建。
 
 PhysX 构建将编译器 PDB 放入各项目的中间目录，与链接器 PDB 分开，避免旧 SDK 共用调试数据库。遇到 LNK1318 等 PDB 缓存错误时，脚本会清理相关 Release 依赖并串行重建一次；其他错误或重试失败仍会终止发布。首次失败、清理和重建日志分别保存在 PhysX 构建目录的 `build-sdk.log`、`build-sdk-clean.log` 和 `build-sdk-rebuild.log` 中。
 
-日常可双击 `start.cmd`，以 Release 配置构建并运行；首次使用先运行一次完整 `build.ps1` 准备原生适配层。源码在 NAS 时，编译产物放在 `%LOCALAPPDATA%/HS2Manager/CppBuild/<项目标识>`，资料库保留原来的 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
-
-`build-desktop.ps1` 创建当前用户桌面的 `HS2Manager` 目录，不生成 ZIP；若已有安装，完整构建成功后替换程序并保留 `Data`，失败则保留或恢复旧目录。支持 `-GamePath`、`-SkipTests`、`-PreviewTest`、`-PreviewCard` 和 `-Jobs`。更新前关闭该安装的程序。
+日常可双击 `start.cmd`，以 Release 配置构建并运行；首次使用先运行一次完整 `scripts/package/Publish-Cpp.ps1` 准备原生适配层。源码在 NAS 时，编译产物放在 `%LOCALAPPDATA%/HS2Manager/CppBuild/<项目标识>`，资料库保留原来的 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
 
 在 Visual Studio 打开 `HS2Manager.Native.sln` 或 `HS2Manager.slnx`。生产代码在 `src/HS2Manager.NativeApp`、`NativeCore`、`NativeScene`、`NativeRendering`、`NativeExport`、`NativeAssetBuild` 和 `NativeAgent`；底层库也可通过根目录 `CMakeLists.txt` 构建。旧 C#、Unity 与桥接源代码、参考解决方案及专用构建和测试脚本已移除，可通过 Git 历史查看。冻结数值基准保留在 `tests/fixtures`，供 C++ 回归检查及历史对照使用。
 

@@ -32,13 +32,13 @@
 
 ## 构建与检查
 
-使用 Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake。`build-cpp.ps1` 还原固定版本的 C++/WinRT / Windows App SDK NuGet 包，并行构建原生模块与 WinUI 程序、运行 CTest、检查发布目录的 PE CLR 数据目录。并行度通过 `-Jobs` 设置（默认最多 4）；GUI 启动和关闭检查改由 `tests/ui/Invoke-CppWinUiSmoke.ps1` 单独执行。
+使用 Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake。`scripts/build/Build-Cpp.ps1` 还原固定版本的 C++/WinRT / Windows App SDK NuGet 包，并行构建原生模块与 WinUI 程序、运行 CTest、检查发布目录的 PE CLR 数据目录。并行度通过 `-Jobs` 设置（默认最多 4）；GUI 启动和关闭检查改由 `tests/ui/Invoke-CppWinUiSmoke.ps1` 单独执行。
 
 ```powershell
-.\build-cpp.ps1
-.\build-cpp.ps1 -BuildDirectory C:\Build\HS2Manager
+.\scripts\build\Build-Cpp.ps1
+.\scripts\build\Build-Cpp.ps1 -BuildDirectory C:\Build\HS2Manager
 # 仅编译原生库及其检查，适合不带 WinUI 的开发验证
-.\build-cpp.ps1 -SkipUi
+.\scripts\build\Build-Cpp.ps1 -SkipUi
 ```
 
 CMake 的普通检查不需要游戏。实际资源检查接受本机游戏路径，游戏资源只读，生成数据写入指定本机测试目录。`hs2_character_checks` 检查人物准备，`hs2_runtime_checks` 检查动态，`hs2_render_frame_checks` 检查实际 GPU 预览，`hs2_model_export_checks --real` 检查完整模型导出。固定样本比较脚本在 `tests/native/Run-CppFrozenCatalog.py`；Python 仅用于开发验证。

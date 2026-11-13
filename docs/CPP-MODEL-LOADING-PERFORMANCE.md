@@ -1,5 +1,7 @@
 # C++ 模型加载性能
 
+> 本文保留历史验证记录，其中根目录 `build*.ps1` 命令及参数为当时入口。当前构建使用 `scripts/build/Build-Cpp.ps1`，打包使用 `scripts/package/Publish-Cpp.ps1`；现行用法见 [开发说明](DEVELOPMENT.md)。
+
 2026-11-13 的后续内存优化已将读取器缓存目标降到 128 MiB，并在场景加载及更新后释放加载缓存，详见 [角色卡预览内存优化](PREVIEW-MEMORY.md)。下文预算及测量保留为当时实现的历史记录。
 
 ## 第三轮：结构复用与并行依赖读取

@@ -2,7 +2,7 @@
 
 ## 目录职责
 
-根目录保留解决方案、统一配置以及常用构建和启动入口。生产代码按模块划分，每个模块内部再按业务职责组织；同一功能的头文件和实现文件放在一起。
+根目录保留解决方案、统一配置以及启动和发布命令；构建实现统一放在 `scripts`。生产代码按模块划分，每个模块内部再按业务职责组织；同一功能的头文件和实现文件放在一起。
 
 ```text
 HS2-mangement/
@@ -56,9 +56,10 @@ HS2-mangement/
     native/                            独立 FBX 与 PhysX 适配层
     scripts/
         assets/                        品牌资源生成
-        build/                         原生适配层构建
+        build/                         C++ 应用与原生适配层构建
         development/                   源码启动与格式化
         package/                       运行库复制、发布与包检查
+        release/                       版本提交、标签推送与 GitHub Release 发布
     tests/
         HS2Manager.Cpp*Checks/         按模块划分的 C++ 回归检查
         NativeFbxCompare/              独立 FBX 文件对照
@@ -117,14 +118,14 @@ Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser
 
 ## 构建与验证
 
-常用入口仍为根目录 `build-cpp.ps1`、`build.ps1`、`build-desktop.ps1` 和 `start.cmd`。
+根目录提供 `start.cmd`（构建并启动）和 `push-releases.cmd <版本号>`（提交全部未忽略改动并推送正式版标签）。本地构建和打包使用下面的脚本；不再提供桌面部署功能。
 
 ```powershell
 # 并行编译原生模块、运行 CTest、构建 WinUI 和审计运行库，不启动 GUI 测试
-.\build-cpp.ps1 -Jobs 4
+.\scripts\build\Build-Cpp.ps1 -Jobs 4
 
 # 仅构建和验证底层模块
-.\build-cpp.ps1 -SkipUi
+.\scripts\build\Build-Cpp.ps1 -SkipUi
 
 # 检查并行发布的文件内容、清单和失败处理
 .\tests\package\Test-ParallelPackage.ps1

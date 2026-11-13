@@ -40,7 +40,7 @@ jobs:
       - name: Build, test and package
         shell: pwsh
         run: |
-          ./build.ps1 -FbxSdkRoot "$pwd/.tools/ci/fbx-2020.3.7" -PhysXSource "$pwd/.tools/ci/physx-3.4" -Jobs 4
+          ./scripts/package/Publish-Cpp.ps1 -FbxSdkRoot "$pwd/.tools/ci/fbx-2020.3.7" -PhysXSource "$pwd/.tools/ci/physx-3.4" -Jobs 4
           ./tests/package/Test-ParallelPackage.ps1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

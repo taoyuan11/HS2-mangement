@@ -1,5 +1,7 @@
 # 临时预览验证
 
+> 本文保留历史验证记录，其中根目录 `build*.ps1` 命令及参数为当时入口。当前构建使用 `scripts/build/Build-Cpp.ps1`，打包使用 `scripts/package/Publish-Cpp.ps1`；现行用法见 [开发说明](../DEVELOPMENT.md)。
+
 验证日期：2026-11-11，Windows x64，Release。
 
 ## 自动检查

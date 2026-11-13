@@ -4,12 +4,21 @@
 
 版本号以根目录 `VERSION` 为准，格式为 `主.次.修订`，每段不超过 65535。CMake 配置时生成程序资源和应用清单；界面、EXE 属性与 ZIP 文件名保持一致。不要手动修改生成目录中的版本文件。
 
-将版本修改和代码一起提交到 `main`，确认构建通过后推送对应标签：
+在 `main` 分支运行根目录发布命令，版本号为必填参数：
 
 ```powershell
-git tag v1.5.0
-git push origin v1.5.0
+.\push-releases.cmd 1.5.1
+# 也接受 v 前缀，VERSION 中仍写入 1.5.1。
+.\push-releases.cmd v1.5.1
 ```
+
+两个示例为同一版本的两种写法，只运行其中一个。命令兼容 Windows PowerShell 5.1 / PowerShell 7，依赖已安装的 Git 和现有 Git 推送凭据；不需要本机编译工具或 GitHub CLI。也可从其他工作目录使用命令的完整路径调用。
+
+命令先校验正式版格式、`main` 分支、唯一的 `origin` 推送地址、提交身份和 Git 操作状态，并确认本地已包含远端 `main` 的最新提交、目标标签在本地及远端均不存在。检查失败不会修改版本文件或暂存改动；远端查询或取回对象失败也会立即停止，不会自动合并或强制推送。
+
+校验通过后更新 `VERSION`，使用 `git add -A` 提交全部未忽略的新文件、修改和删除，提交说明为 `chore(release): v版本号`；若没有差异，直接使用当前提交。随后创建附注标签，将 `main` 和指定标签原子推送到 `origin`，其他分支和标签不随之推送。只有两者一起成功，命令才报告推送完成，并提供标签、Actions 和 Releases 链接；此时云端构建和正式发布仍可能尚未完成。
+
+提交失败会保留待发布改动并终止，不创建标签。推送失败会保留本地提交和标签，输出具体恢复命令；先解决 Git 报告的问题并检查远端状态，再在仓库中执行该命令。重复运行 `push-releases.cmd` 不会覆盖已有标签。若远端分支已经前进，先人工整理分支与未发布的标签；不要强制覆盖已公开版本。构建失败则在 GitHub Actions 中查看日志并重试工作流；代码需要修正时使用新版本号。
 
 GitHub Actions 在 Windows 2022 托管 runner 中还原固定版本 SDK，执行完整 Release 构建、CTest、包依赖审计和发布脚本测试。PR、普通 main 提交及手动工作流只产生构建附件；只有版本标签触发正式发布。无需游戏目录或个人电脑在线；真实游戏画面与 GUI 冒烟仍在本机验证。
 
@@ -49,7 +58,7 @@ FBX 2020.3.7 安装包从 Autodesk 官方地址下载并检查 SHA-256，使用 
 
 ```powershell
 python -m unittest discover -s tests/release -p 'test_*.py'
-.\build-cpp.ps1 -Jobs 4
+.\scripts\build\Build-Cpp.ps1 -Jobs 4
 .\tests\package\Test-ParallelPackage.ps1
 # 真实更新助手、进程交接、启动确认和数据保留，均在隔离安装副本中执行。
 .\tests\package\Test-UpdaterProcess.ps1 -Package '.\artifacts\release\HS2Manager-1.5.0-cpp-win-x64' -Checker '<构建目录>\modules\src\HS2Manager.NativeUpdate\Release\hs2_update_checks.exe'
@@ -58,3 +67,5 @@ python -m unittest discover -s tests/release -p 'test_*.py'
 ```
 
 CTest 的 `application_update` 覆盖版本、发布信息、包完整性、路径、安装锁、冲突、文件占用、故障回滚及数据保留，并在多个替换步骤强制结束测试子进程后验证中断恢复。发布脚本使用模拟 GitHub API 验证草稿、上传失败、重复运行与 Latest 策略，不会创建测试 Release。
+
+同一 Python 测试入口还会在 Windows PowerShell 5.1 和 PowerShell 7 下运行发布命令测试，使用包含中文及空格路径的临时仓库和本地裸远端，验证全部改动提交、版本与标签一致、原子推送、失败恢复及启动链。测试隔离用户 Git 配置，只允许本地文件协议，不推送真实仓库；GitHub 构建的现有测试步骤会自动收集这些用例。

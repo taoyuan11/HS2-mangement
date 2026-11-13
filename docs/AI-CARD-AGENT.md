@@ -6,11 +6,11 @@
 
 便携包根目录附带 [AI-INSTALL.md](../AI-INSTALL.md)。将它的完整路径交给能读写本机文件、执行 Windows 命令的 AI，发送“请按这份文档安装 HS2 MCP 和 hs2-card-agent 技能”。AI 按实际解压位置发现游戏和基准卡，在包外保存本机配置，注册当前客户端的 stdio MCP，复制完整技能目录并验证连接。已有配置先备份再合并；需要客户端重载或缺少有效基准卡时会明确说明。
 
-`build-cpp.ps1`、`build.ps1` 和 `build-desktop.ps1` 的输出均携带该文档，发布审计会检查它存在且非空。
+`scripts/build/Build-Cpp.ps1` 和 `scripts/package/Publish-Cpp.ps1` 的输出均携带该文档，发布审计会检查它存在且非空。
 
 ## 手动配置（可选）
 
-完整构建 `build-cpp.ps1` 后，Agent 与管理器一起位于构建目录的 `bin/Release`。也可手动复制 `agent.example.json` 为本机 `agent.local.json`，填写游戏目录、独立本地数据目录、男女基准卡、输出目录。建议将配置保存在包外的本机目录，避免升级替换程序时丢失。数据目录和输出目录必须在游戏之外。基准卡保留原件，生成卡另存。
+完整构建 `scripts/build/Build-Cpp.ps1` 后，Agent 与管理器一起位于构建目录的 `bin/Release`。也可手动复制 `agent.example.json` 为本机 `agent.local.json`，填写游戏目录、独立本地数据目录、男女基准卡、输出目录。建议将配置保存在包外的本机目录，避免升级替换程序时丢失。数据目录和输出目录必须在游戏之外。基准卡保留原件，生成卡另存。
 
 ```powershell
 & 'D:\Apps\HS2Manager\HS2Agent.exe' --config 'C:\Users\YOUR_NAME\AppData\Local\HS2Manager\Agent\codex\agent.local.json' --check

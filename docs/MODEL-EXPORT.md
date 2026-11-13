@@ -61,7 +61,7 @@ Unreal 打开项目后默认进入 `/Game/HS2Character/Preview`。角色资产�
 C++ 版本已使用同一张真实人物卡执行通用 FBX、Blender 5.3.0 Release Candidate 和 Unreal 5.8.4 的完整服务导出，原生结果由独立进程重新打开，包内文件逐项核对 SHA-256。该卡缺少一项原始配饰资源，报告正确标记为“不完整”。本次样本数量、几何和资产统计见 [C++ 验证结果](CPP-VALIDATION.md) 及 [导出模块记录](../src/HS2Manager.NativeExport/MIGRATION.md)。旧版四组样本、489 张贴图及搬移检查保留在历史验收中，不扩展为本次重写的通过结论；结构验证也不表示跨引擎画面逐像素相同。
 
 ```powershell
-.\build-cpp.ps1 -BuildDirectory C:\Build\HS2Manager
+.\scripts\build\Build-Cpp.ps1 -BuildDirectory C:\Build\HS2Manager
 # 不带参数运行合成 GPU、图像及导出选项检查；完整构建也通过 CTest 运行该检查。
 C:\Build\HS2Manager\modules\src\HS2Manager.NativeExport\Release\hs2_model_export_checks.exe
 # 可选实际服务导出：使用完整运行目录、本机独立测试资料及游戏目录之外的新输出位置。

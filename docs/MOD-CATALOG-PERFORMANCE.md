@@ -1,5 +1,7 @@
 # MOD 素材清单读取优化
 
+> 本文保留历史验证记录，其中根目录 `build*.ps1` 命令及参数为当时入口。当前构建使用 `scripts/build/Build-Cpp.ps1`，打包使用 `scripts/package/Publish-Cpp.ps1`；现行用法见 [开发说明](DEVELOPMENT.md)。
+
 2026-11-11，本机 Release 构建对比优化前后的 `CharacterCatalog::Load`。游戏资源位于 Z: 网络盘，测试缓存位于 C: 本地磁盘；使用独立测试数据目录，不修改游戏文件或用户资料库。
 
 ## 实测
