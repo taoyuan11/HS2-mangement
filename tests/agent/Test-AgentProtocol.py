@@ -92,7 +92,7 @@ def main():
             )["protocolVersion"]
             == "2025-11-25"
         )
-        assert len(rpc("tools/list")["tools"]) == 15
+        assert len(rpc("tools/list")["tools"]) == 17
         rpc("ping")
         report["capabilities"] = call("hs2_capabilities", {})
         for sex in ("male", "female"):
@@ -230,10 +230,7 @@ def main():
                             },
                         ),
                     )
-                    assert final["status"] == "complete", final.get("validation", final.get("status"))
-                    for folder in final["folders"]:
-                        assert (pathlib.Path(folder) / "agent-report.json").is_file()
-                        assert list((pathlib.Path(folder) / ("UserData/chara/" + sex)).glob("*.png"))
+                    assert final["status"] == "needs_work" and final["reason"] == "VISUAL_REVIEW_REQUIRED", final
         report["passed"] = True
         if args.render:
             pending = call("hs2_render", dict(values, sample_time=5))

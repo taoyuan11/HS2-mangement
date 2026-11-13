@@ -1,4 +1,5 @@
 #include "Agent.h"
+#include "VisualReview.h"
 #include "AssetGeometry.h"
 #include "Export/CardExport.h"
 #include <windows.h>
@@ -126,6 +127,8 @@ namespace hs2::agent
         session["revision"] = revision;
         session["phase"] = "draft";
         session["validation"] = nullptr;
+        session.erase("visual_review");
+        session.erase("best_candidate_revision");
         session.erase("result");
         session["render_revision"] = -1;
         session["updated_utc"] = UtcNow();
@@ -252,7 +255,7 @@ namespace hs2::agent
                         {"game_available", fs::is_directory(game_ / "abdata")},
                         {"data_directory", Utf8(data_)},
                         {"runtime", Utf8(runtime_)},
-                        {"max_iterations", config_.value("max_iterations", 12)},
+                        {"max_iterations", config_.value("max_iterations", 24)},
                         {"base_cards", Json::object()}};
             for (auto sex : {"male", "female"})
             {
@@ -272,6 +275,7 @@ namespace hs2::agent
                 {"fbx_import_available", fs::is_regular_file(runtime_ / "native/win-x64/HS2Manager.FbxBridge.dll")}};
             result["resource_database_available"] = fs::is_regular_file(runtime_ / "classdata.tpk");
             result["content_generation"] = "caller_ai";
+            result["visual_review"] = ReviewRequirements(Json::object());
             return result;
         }
         if (name == "hs2_begin_card")
@@ -293,7 +297,9 @@ namespace hs2::agent
                          {"base_hash", document.SourceHash()},
                          {"analysis", args.value("analysis", Json::object())},
                          {"render_revision", -1},
-                         {"best_revision", 0},
+                         {"reference_version", 0},
+                         {"reference_regions", Json::array()},
+                         {"best_revision", nullptr},
                          {"assets", Json::array()}};
             auto path = SessionPath(session.at("session_id"));
             fs::create_directories(path);
@@ -320,6 +326,44 @@ namespace hs2::agent
         auto session = Session(args);
         if (name == "hs2_get_session")
             return session;
+        if (name == "hs2_set_reference_regions")
+        {
+            CheckRevision(session, args);
+            auto path = SessionPath(session.at("session_id"));
+            session["reference_regions"] = ReferenceRegions(Path(session.at("reference_image")), args.at("regions"),
+                                                            path / "ReferenceImages" / Path(NewId()));
+            session["reference_version"] = session.value("reference_version", 0) + 1;
+            session.erase("visual_review");
+            session["validation"] = nullptr;
+            session["render_revision"] = -1;
+            session["phase"] = "draft";
+            session.erase("result");
+            WriteJson(path / "session.json", session);
+            return {{"session_id", session.at("session_id")},
+                    {"revision", session.at("revision")},
+                    {"reference_version", session.at("reference_version")},
+                    {"images", session.at("reference_regions")}};
+        }
+        if (name == "hs2_review_render")
+        {
+            CheckRevision(session, args);
+            auto review = AssessRender(session, args);
+            session["visual_review"] = review;
+            if (!session.contains("reviews"))
+                session["reviews"] = Json::array();
+            session["reviews"].push_back(review);
+            if (args.value("mark_best", false) ||
+                session.value("best_candidate_revision", -1) == session.at("revision").get<int>())
+            {
+                session["best_revision"] = session.at("revision");
+                session["best_review"] = review;
+            }
+            session["phase"] = "draft";
+            session["validation"] = nullptr;
+            session.erase("result");
+            WriteJson(SessionPath(session.at("session_id")) / "session.json", session);
+            return review;
+        }
         auto document = Document(session);
         if (name == "hs2_get_schema")
         {
@@ -363,7 +407,7 @@ namespace hs2::agent
             CheckRevision(session, args);
             if (!args.at("changes").is_array() || args.at("changes").empty() || args.at("changes").size() > 512)
                 throw std::invalid_argument("changes 必须包含 1 到 512 项修改");
-            if (session.at("iterations").get<int>() >= config_.value("max_iterations", 12))
+            if (session.at("iterations").get<int>() >= config_.value("max_iterations", 24))
                 throw std::runtime_error("ITERATION_LIMIT：已达修正上限，草稿保留");
             auto schema = CharacterEditSchema::Build(document, CharacterSliderLimits::Read(game_));
             std::unique_ptr<CharacterCatalog> catalog;
@@ -425,7 +469,8 @@ namespace hs2::agent
             SaveRevision(session, document, args);
             if (args.value("mark_best", false))
             {
-                session["best_revision"] = session["revision"];
+                // 先标记候选；查看实际渲染后才确认最佳版本。
+                session["best_candidate_revision"] = session["revision"];
                 WriteJson(SessionPath(session.at("session_id")) / "session.json", session);
             }
             return session;
@@ -512,8 +557,11 @@ namespace hs2::agent
         {
             Json outputs = Json::array();
             auto schema = CharacterEditSchema::Build(document, CharacterSliderLimits::Read(game_));
-            if (args.at("paths").size() > 6)
-                throw std::invalid_argument("每次最多探测六个滑条");
+            if (!args.at("paths").is_array() || args.at("paths").empty() || args.at("paths").size() > 6)
+                throw std::invalid_argument("每次探测一到六个滑条");
+            double fraction = args.value("delta", .05);
+            if (!std::isfinite(fraction) || fraction < .01 || fraction > .25)
+                throw std::invalid_argument("delta 必须为滑条范围的 0.01 到 0.25");
             for (auto &pathValue : args.at("paths"))
             {
                 auto path = pathValue.get<std::string>();
@@ -527,14 +575,22 @@ namespace hs2::agent
                 double value = ScalarJson(document.Node(path).ScalarValue).get<double>();
                 for (int sign : {-1, 0, 1})
                 {
-                    double next = std::clamp(value + sign * (field->Maximum - field->Minimum) * .1, field->Minimum,
-                                             field->Maximum);
+                    double next = std::clamp(value + sign * (field->Maximum - field->Minimum) * fraction,
+                                             field->Minimum, field->Maximum);
                     auto draft = CharacterEditRules::SetValue(document, path, next);
-                    auto render = Render(session, draft, {{"views", {"face"}}, {"probe", true}}, token);
-                    outputs.push_back({{"path", path}, {"value", next}, {"render", render}});
+                    auto views = args.value("views", field->Category == "face" ? Json::array({"face", "face_side"})
+                                                                               : Json::array({"front", "side"}));
+                    if (!views.is_array() || views.empty() || views.size() > 2)
+                        throw std::invalid_argument("探测视图必须为一到两个");
+                    auto renderArgs = args;
+                    renderArgs["views"] = views;
+                    renderArgs["probe"] = true;
+                    auto render = Render(session, draft, renderArgs, token);
+                    outputs.push_back({{"path", path}, {"value", next}, {"sign", sign}, {"render", render}});
                 }
             }
-            return {{"probes", outputs}};
+            auto images = ProbeImages(outputs, SessionPath(session.at("session_id")) / "Probes" / Path(NewId()));
+            return {{"probes", outputs}, {"images", images}};
         }
         if (name == "hs2_prepare_asset")
             return PrepareAsset(session, args, token);

@@ -49,7 +49,8 @@ namespace hs2
         std::vector<AssetSelection> environmentSelections_;
         std::shared_ptr<const CharacterExtensionState> extensions_;
         std::shared_ptr<const CharacterDefinition> extensionDefinition_;
-        Bytes extensionBytes_, bodyParameterBytes_;
+        std::optional<CharacterDocument> extensionDocument_;
+        Bytes bodyParameterBytes_;
         Parameter bodySelection_;
         std::vector<BodyCatalogEntry> bodyParts_;
         bool bodySelectionCached_ = false, overlayLoaded_ = false;

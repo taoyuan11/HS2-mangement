@@ -55,15 +55,6 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="AllowDrop" Value="False"/>
         </Style>
-        <DataTemplate x:Key="FolderTemplate">
-            <TreeViewItem ItemsSource="{Binding Children}" IsExpanded="{Binding Expanded, Mode=TwoWay}">
-                <TextBlock
-                    Text="{Binding Name}"
-                    ToolTipService.ToolTip="{Binding Path}"
-                    TextTrimming="CharacterEllipsis"
-                    FontSize="12"/>
-            </TreeViewItem>
-        </DataTemplate>
     </Grid.Resources>
     <Grid
         x:Name="LibraryShell"

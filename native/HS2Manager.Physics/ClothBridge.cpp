@@ -338,41 +338,6 @@ API int hs2_cloth_update(void *p, int index, const float *positions, const float
         });
 }
 
-API int hs2_cloth_collision(void *p, int index, int sphereCount, const float *spheres, int capsuleCount,
-                            const unsigned *capsules)
-{
-    return call(
-        [&]
-        {
-            auto &c = cloth(context(p), index);
-            if (sphereCount < 0 || sphereCount > 32 || capsuleCount < 0 || capsuleCount > 32)
-                throw std::invalid_argument("Cloth collider capacity");
-            std::vector<PxClothCollisionSphere> data;
-            if (sphereCount)
-            {
-                finite(spheres, sphereCount * 4);
-                for (int i = 0; i < sphereCount; i++)
-                {
-                    if (spheres[i * 4 + 3] < 0)
-                        throw std::invalid_argument("Negative collision sphere radius");
-                    data.emplace_back(PxVec3(spheres[i * 4], spheres[i * 4 + 1], spheres[i * 4 + 2]),
-                                      spheres[i * 4 + 3]);
-                }
-            }
-            c.actor->setCollisionSpheres(data.empty() ? nullptr : data.data(), sphereCount);
-            while (c.actor->getNbCollisionCapsules())
-                c.actor->removeCollisionCapsule(c.actor->getNbCollisionCapsules() - 1);
-            for (int i = 0; i < capsuleCount; i++)
-            {
-                if (capsules[i * 2] >= static_cast<unsigned>(sphereCount) ||
-                    capsules[i * 2 + 1] >= static_cast<unsigned>(sphereCount))
-                    throw std::out_of_range("Cloth capsule sphere index");
-                c.actor->addCollisionCapsule(capsules[i * 2], capsules[i * 2 + 1]);
-            }
-            return 0;
-        });
-}
-
 API int hs2_cloth_particles(void *p, int index, int selfCount, const unsigned *self, int virtualCount,
                             const unsigned *indices, int weightCount, const float *weights)
 {

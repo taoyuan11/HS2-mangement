@@ -179,6 +179,8 @@ namespace hs2::ui
             return;
         resourcesReleased_ = true;
         closing_ = true;
+        if (searchTimer_)
+            searchTimer_.Stop();
         temporaryCancellation_.request_stop();
         work_.request_stop();
         if (editor_)
@@ -274,6 +276,22 @@ namespace hs2::ui
                            : settings_.Sort == "文件大小" ? 2
                                                           : 0);
         std::weak_ptr<NativeWindow> weak = shared_from_this();
+        searchTimer_ = dispatcher_.CreateTimer();
+        searchTimer_.Interval(std::chrono::milliseconds(120));
+        searchTimer_.IsRepeating(false);
+        searchTimer_.Tick(
+            [weak](auto &&, auto &&)
+            {
+                if (auto self = weak.lock(); self && !self->closing_)
+                    try
+                    {
+                        self->Filter();
+                    }
+                    catch (std::exception const &error)
+                    {
+                        self->Report(error.what());
+                    }
+            });
         model_->Changed = [weak](hstring const &property)
         {
             if (auto self = weak.lock())
@@ -296,7 +314,14 @@ namespace hs2::ui
                             self->settings_.Sort = to_string(self->model_->String(property));
                             self->settings_.Save(self->dataDirectory_);
                         }
-                        self->Filter();
+                        if (property == L"SearchText")
+                        {
+                            // 连续输入只重建最后一次结果，其他筛选和导航仍立即生效。
+                            self->searchTimer_.Stop();
+                            self->searchTimer_.Start();
+                        }
+                        else
+                            self->Filter();
                     }
                     catch (std::exception const &e)
                     {
@@ -653,7 +678,10 @@ namespace hs2::ui
     {
         if (updating_)
             return;
+        if (searchTimer_)
+            searchTimer_.Stop();
         visible_.clear();
+        visibleIndex_.clear();
         auto search = to_string(model_->String(L"SearchText")), gender = to_string(model_->String(L"GenderFilter")),
              tag = to_string(model_->String(L"TagFilter")), sort = to_string(model_->String(L"SortOrder"));
         for (auto const &card : cards_)
@@ -691,9 +719,12 @@ namespace hs2::ui
                                  return a.Path < b.Path;
                              return LessText(a.Name, b.Name);
                          });
-        auto items = single_threaded_observable_vector<Object>();
+        std::vector<Object> values;
+        values.reserve(visible_.size());
+        visibleIndex_.reserve(visible_.size());
         for (auto const &card : visible_)
         {
+            visibleIndex_.emplace(card.Id, values.size());
             auto item = make_self<Observable>();
             item->Text(L"Name", card.Name);
             item->Text(L"Id", card.Id);
@@ -713,8 +744,9 @@ namespace hs2::ui
             record->Text(L"Path", card.Path);
             record->Text(L"Error", card.Error);
             item->Set(L"Record", record.as<Object>(), false);
-            items.Append(item.as<Object>());
+            values.push_back(item.as<Object>());
         }
+        auto items = single_threaded_observable_vector<Object>(std::move(values));
         model_->Set(L"VisibleCards", items, false);
         if (!model_->Bool(L"IsTemporaryPreview"))
             model_->Set(L"PreviewCards", items, false);
@@ -744,13 +776,8 @@ namespace hs2::ui
             if (!property)
                 continue;
             auto id = to_string(get_self<Observable>(property)->String(L"Id"));
-            auto it = std::find_if(visible_.begin(), visible_.end(),
-                                   [&](auto const &c)
-                                   {
-                                       return c.Id == id;
-                                   });
-            if (it != visible_.end())
-                result.push_back(*it);
+            if (auto it = visibleIndex_.find(id); it != visibleIndex_.end())
+                result.push_back(visible_[it->second]);
         }
         auto current = std::find_if(result.begin(), result.end(),
                                     [&](auto const &card)
@@ -987,13 +1014,8 @@ namespace hs2::ui
                         return;
                     object->Put(L"CoverLoading", true);
                     auto id = to_string(object->String(L"Id"));
-                    auto it = std::find_if(self->visible_.begin(), self->visible_.end(),
-                                           [&](auto const &card)
-                                           {
-                                               return card.Id == id;
-                                           });
-                    if (it != self->visible_.end())
-                        self->LoadCover(object->get_strong(), *it);
+                    if (auto it = self->visibleIndex_.find(id); it != self->visibleIndex_.end())
+                        self->LoadCover(object->get_strong(), self->visible_[it->second]);
                 }
             });
         Control<ListView>(L"PreviewRail")
@@ -1024,13 +1046,8 @@ namespace hs2::ui
                                 self->LoadCover(object->get_strong(), found->Card, self->temporaryPreview_->Storage);
                             return;
                         }
-                        auto it = std::find_if(self->visible_.begin(), self->visible_.end(),
-                                               [&](auto const &card)
-                                               {
-                                                   return card.Id == id;
-                                               });
-                        if (it != self->visible_.end())
-                            self->LoadCover(object->get_strong(), *it);
+                        if (auto it = self->visibleIndex_.find(id); it != self->visibleIndex_.end())
+                            self->LoadCover(object->get_strong(), self->visible_[it->second]);
                     }
                 });
         list.RightTapped(

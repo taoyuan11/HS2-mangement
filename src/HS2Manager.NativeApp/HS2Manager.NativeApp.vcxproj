@@ -42,6 +42,18 @@
         <OutDir Condition="'$(NativeBuildRoot)'!=''">$(NativeBuildRoot)\bin\$(Configuration)\</OutDir>
         <IntDir Condition="'$(NativeBuildRoot)'!=''">$(NativeBuildRoot)\obj\$(Configuration)\</IntDir>
     </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)'=='Release'">
+        <LinkIncremental>false</LinkIncremental>
+    </PropertyGroup>
+    <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+        <ClCompile>
+            <FunctionLevelLinking>true</FunctionLevelLinking>
+        </ClCompile>
+        <Link>
+            <OptimizeReferences>true</OptimizeReferences>
+            <EnableCOMDATFolding>true</EnableCOMDATFolding>
+        </Link>
+    </ItemDefinitionGroup>
     <ItemDefinitionGroup>
         <ClCompile>
             <LanguageStandard>stdcpp20</LanguageStandard>

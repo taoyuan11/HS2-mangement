@@ -1,0 +1,141 @@
+{
+  "game_validation": "not_run",
+  "pid": 16552,
+  "session_id": "34F831D30958499DB96650F57AF048E5",
+  "review": {
+    "areas": [
+      {
+        "area": "face",
+        "correction": "先探测眼高、眼距、下颌与鼻翼字段，用正侧脸对照小幅修正",
+        "observed": "眼睛偏圆大，眼妆偏浓，脸部比例与原图不一致",
+        "reference": "自然杏眼、柔和下颌和较窄鼻翼",
+        "status": "needs_work"
+      },
+      {
+        "area": "hair",
+        "correction": "优先试用相近的轻薄刘海和高马尾素材，再局部补发片与透明发丝",
+        "observed": "刘海和鬓发呈硬板，后发成少数宽片，侧脸被厚发片挡住",
+        "reference": "轻薄碎刘海、自然鬓发、顺滑分层的高束长发",
+        "status": "needs_work"
+      },
+      {
+        "area": "body",
+        "correction": "先调整全身对照取景，再探测肩宽、腰胯与腿粗字段",
+        "observed": "腿部偏细、身体轮廓偏窄，需在一致取景下校准肩腰胯比例",
+        "reference": "自然肩腰比例和长腿",
+        "status": "needs_work"
+      },
+      {
+        "area": "outfit",
+        "correction": "先更换剪裁接近的服装与透明头纱，调整裙摆外扩、垂坠及前后分层",
+        "observed": "胸衣轮廓和领口不同，后摆为过直的几片长条，缺少头纱",
+        "reference": "短前裙、层叠长后摆、垂坠透明披袖",
+        "status": "needs_work"
+      },
+      {
+        "area": "accessories",
+        "correction": "减少冠饰尺度和金属管径，校准挂点，选择细带鞋和细花形臂饰",
+        "observed": "粗大金环和蓝宝石替代细花饰，冠饰相对头宽偏大，鞋带过粗",
+        "reference": "细小金色花冠、花形臂环、细带高跟鞋",
+        "status": "needs_work"
+      },
+      {
+        "area": "materials",
+        "correction": "用兼容透明模板和 alpha 贴图恢复薄纱及发丝，轮廓确认后重做纹样",
+        "observed": "披袖接近不透明，发片边缘很硬，后摆纹样稀疏且分层不同",
+        "reference": "薄纱、细发丝、绸缎与细密刺绣",
+        "status": "needs_work"
+      }
+    ],
+    "created_utc": "2026-11-13T03:51:30.207Z",
+    "reference_version": 2,
+    "render_id": "BCC8DB166B8C45029624EBB55FBD3516",
+    "reviewer": "caller_ai",
+    "revision": 0,
+    "status": "needs_work",
+    "unseen_regions": "参考未展示鞋底和内层结构；脸部原图像素较少，只比较可辨识的大比例。"
+  },
+  "inline_images": {
+    "hs2_finalize_card": 0
+  },
+  "finalization": {
+    "reason": "VISUAL_REVIEW_REQUIRED",
+    "review_requirements": {
+      "areas": [
+        "accessories",
+        "body",
+        "face",
+        "hair",
+        "materials",
+        "outfit"
+      ],
+      "automatic_similarity": false,
+      "reference_regions_required": true,
+      "reference_version": 2,
+      "required_views": [
+        "front",
+        "side",
+        "back",
+        "face",
+        "face_side"
+      ],
+      "review_tool": "hs2_review_render"
+    },
+    "status": "needs_work",
+    "visual_review": {
+      "areas": [
+        {
+          "area": "face",
+          "correction": "先探测眼高、眼距、下颌与鼻翼字段，用正侧脸对照小幅修正",
+          "observed": "眼睛偏圆大，眼妆偏浓，脸部比例与原图不一致",
+          "reference": "自然杏眼、柔和下颌和较窄鼻翼",
+          "status": "needs_work"
+        },
+        {
+          "area": "hair",
+          "correction": "优先试用相近的轻薄刘海和高马尾素材，再局部补发片与透明发丝",
+          "observed": "刘海和鬓发呈硬板，后发成少数宽片，侧脸被厚发片挡住",
+          "reference": "轻薄碎刘海、自然鬓发、顺滑分层的高束长发",
+          "status": "needs_work"
+        },
+        {
+          "area": "body",
+          "correction": "先调整全身对照取景，再探测肩宽、腰胯与腿粗字段",
+          "observed": "腿部偏细、身体轮廓偏窄，需在一致取景下校准肩腰胯比例",
+          "reference": "自然肩腰比例和长腿",
+          "status": "needs_work"
+        },
+        {
+          "area": "outfit",
+          "correction": "先更换剪裁接近的服装与透明头纱，调整裙摆外扩、垂坠及前后分层",
+          "observed": "胸衣轮廓和领口不同，后摆为过直的几片长条，缺少头纱",
+          "reference": "短前裙、层叠长后摆、垂坠透明披袖",
+          "status": "needs_work"
+        },
+        {
+          "area": "accessories",
+          "correction": "减少冠饰尺度和金属管径，校准挂点，选择细带鞋和细花形臂饰",
+          "observed": "粗大金环和蓝宝石替代细花饰，冠饰相对头宽偏大，鞋带过粗",
+          "reference": "细小金色花冠、花形臂环、细带高跟鞋",
+          "status": "needs_work"
+        },
+        {
+          "area": "materials",
+          "correction": "用兼容透明模板和 alpha 贴图恢复薄纱及发丝，轮廓确认后重做纹样",
+          "observed": "披袖接近不透明，发片边缘很硬，后摆纹样稀疏且分层不同",
+          "reference": "薄纱、细发丝、绸缎与细密刺绣",
+          "status": "needs_work"
+        }
+      ],
+      "created_utc": "2026-11-13T03:51:30.207Z",
+      "reference_version": 2,
+      "render_id": "BCC8DB166B8C45029624EBB55FBD3516",
+      "reviewer": "caller_ai",
+      "revision": 0,
+      "status": "needs_work",
+      "unseen_regions": "参考未展示鞋底和内层结构；脸部原图像素较少，只比较可辨识的大比例。"
+    }
+  },
+  "passed": true,
+  "exit_code": 0
+}

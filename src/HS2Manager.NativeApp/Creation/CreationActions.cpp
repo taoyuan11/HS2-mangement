@@ -708,7 +708,6 @@ namespace hs2::ui
                         {
                             if (result.Status != "installed")
                                 throw std::runtime_error(result.Status + "：" + Json(result.Messages).dump());
-                            lifetime->lastInstall_ = result.Id;
                             if (auto o = lifetime->owner_.lock())
                             {
                                 for (auto &p : result.Cards)

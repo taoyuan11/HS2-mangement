@@ -68,6 +68,8 @@
 
 ## 材质、遮罩与交付
 
+粗模通过几何检查后仍需对照参考修改：发型宜采用有弯曲、宽度渐变和透明发丝贴图的分层发片；薄纱需兼容透明材质及 alpha 纹理；长裙和飘带需要垂坠、外扩、前后层次。增加三角面数量不会自动改善轮廓，金属管束也不能替代绣纹或柔软布料。先在正侧背面比较比例和贴合，再制作纹样。保留参考中细小首饰的相对尺度，避免用粗圆环和大宝石填满空白。
+
 模板材质与 Shader 从本机兼容资源克隆，依赖一并复制并重映射引用；Unity 内置资源保留游戏原有的外部引用。`textures: [{"property":"_MainTex","path":"C:/Work/hair.png","material_slot":0}]` 替换实际存在的 Shader 贴图属性；省略 `material_slot` 应用到所有槽。支持 PNG／JPEG，可用 `srgb` 指定颜色空间。
 
 服装 `masks: [{"field":"OverBodyMask","path":"C:/Work/body-mask.png"}]` 支持 `OverBodyMask`、`OverBraMask`、`OverBodyBMask`、`OverInnerTBMask`、`OverInnerBMask`、`OverPanstMask`。半脱默认复用完整服装几何，视觉评估中说明此限制。

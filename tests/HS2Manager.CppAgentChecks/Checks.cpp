@@ -5,6 +5,8 @@
 using namespace hs2;
 #include "Fixtures.h"
 
+void QualityChecks(const fs::path &root, const fs::path &image, const fs::path &base);
+
 namespace
 {
     void Check(bool value, const char *message)
@@ -69,6 +71,7 @@ int wmain(int argc, wchar_t **argv)
         Check(roundtrip.Extensions()->ContentEquals(*clothes.Extensions()), "overlay binary roundtrip");
         WriteAtomic(root / "created.png", result.ToBytes());
         Check(CardParser().Parse(root / "created.png").Name == "新建姓名", "name roundtrip");
+        QualityChecks(root / "Quality", fs::path(argv[1]), fixture);
         Check(ReadFile(fixture) == Fixture(), "source unchanged");
         Throws(
             [&]
@@ -82,6 +85,7 @@ int wmain(int argc, wchar_t **argv)
             });
         Json config{{"data_directory", Utf8(root / "Agent")},
                     {"game_path", Utf8(root / "Game")},
+                    {"max_iterations", 12},
                     {"base_cards", {{"female", Utf8(fixture)}}}};
         std::string sessionId;
         {
@@ -93,7 +97,7 @@ int wmain(int argc, wchar_t **argv)
                 });
             auto capabilities = service.Call("hs2_capabilities", Json::object());
             Check(capabilities["base_cards"]["female"]["valid"] == true, "base validation");
-            Check(agent::Service::Tools().size() == 15, "tool discovery");
+            Check(agent::Service::Tools().size() == 17, "tool discovery");
             auto session = service.Call("hs2_begin_card",
                                         {{"sex", "female"}, {"reference_image", {{"path", Utf8(fs::path(argv[1]))}}}});
             sessionId = session["session_id"];

@@ -147,7 +147,7 @@ try {
     [IO.Directory]::Move($staging, $destination)
     if (!$SkipArchive) {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [IO.Compression.ZipFile]::CreateFromDirectory($destination, $archiveStaging, [IO.Compression.CompressionLevel]::Fastest, $true)
+        [IO.Compression.ZipFile]::CreateFromDirectory($destination, $archiveStaging, [IO.Compression.CompressionLevel]::Optimal, $true)
         [IO.File]::Move($archiveStaging, $archive)
         Write-Output "便携压缩包：$archive"
     }

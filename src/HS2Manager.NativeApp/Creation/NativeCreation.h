@@ -66,7 +66,7 @@ namespace hs2::ui
         controls::SwapChainPanel panel_{nullptr};
         winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer autosave_{nullptr};
         ComPtr<IDXGISwapChain2> chain_;
-        std::string asset_, object_, texture_, lastInstall_;
+        std::string asset_, object_, texture_;
         std::string preferredTarget_;
         std::vector<std::string> assetIds_, objectIds_, textureIds_;
         creation::MeshSelection selection_;

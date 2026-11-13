@@ -45,13 +45,16 @@ $crt = Get-ChildItem -LiteralPath (Join-Path $installation 'VC/Redist/MSVC') -Di
 if (!$crt) {
     throw 'Visual Studio VC143 redistributable files are missing.'
 }
-Get-ChildItem -LiteralPath $crt -Filter '*.dll' -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $packagePath }
-foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+# 仅复制应用和适配层实际导入的 VC++ 运行库；atomic_wait 由 C++20 线程同步使用。
+foreach ($name in @('msvcp140.dll', 'msvcp140_atomic_wait.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
     $source = Join-Path $crt $name
     if (!(Test-Path -LiteralPath $source -PathType Leaf)) {
         throw "Redistributable runtime file is missing: $source"
     }
-    Copy-Item -LiteralPath $source -Destination (Join-Path $native $name)
+    Copy-Item -LiteralPath $source -Destination (Join-Path $packagePath $name)
+    if ($name -ne 'msvcp140_atomic_wait.dll') {
+        Copy-Item -LiteralPath $source -Destination (Join-Path $native $name)
+    }
 }
 Get-ChildItem -LiteralPath $native -File -Filter '*.dll' | Sort-Object Name | ForEach-Object {
     [ordered]@{File = $_.Name
@@ -69,8 +72,13 @@ foreach ($name in @('BlenderImport.py', 'BlenderNative.py', 'UnrealImport.py', '
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../../src/HS2Manager.NativeExport/Resources/ModelExport/' + $name)) -Destination (Join-Path $converter $name)
 }
 $licenses = Join-Path $packagePath 'licenses'
-# Remove retired Agent build resources from an existing development output.
-foreach ($relative in @('Resources/Agent/BlenderAsset.py', 'Resources/Agent/HS2AgentBuilder.cs')) {
+# 清理旧开发输出中已退出当前运行依赖集合的文件，避免后续发布重新带入。
+foreach ($relative in @(
+        'Resources/Agent/BlenderAsset.py', 'Resources/Agent/HS2AgentBuilder.cs',
+        'Assets/Brand/hs2-manager-64.png',
+        'concrt140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll', 'msvcp140_codecvt_ids.dll',
+        'vccorlib140.dll', 'vcruntime140_threads.dll'
+    )) {
     $retired = Join-Path $packagePath $relative
     if (Test-Path -LiteralPath $retired -PathType Leaf) {
         Remove-Item -LiteralPath $retired
@@ -79,6 +87,7 @@ foreach ($relative in @('Resources/Agent/BlenderAsset.py', 'Resources/Agent/HS2A
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../skills') -Destination $packagePath -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../agent.example.json') -Destination $packagePath
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../agent.mcp.example.toml') -Destination $packagePath
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../AI-INSTALL.md') -Destination $packagePath -Force
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
 foreach ($name in @('7zip-LICENSE.txt', '7zip-LGPL.txt', '7zip-unRAR.txt', 'AssetRipper-Tpk.txt', 'Autodesk-FBX-SDK-2020.3.7.rtf', 'CppWinRT-LICENSE.txt', 'LZMA-PUBLIC-DOMAIN.txt', 'LZ4-LICENSE.txt', 'cgltf-LICENSE.txt', 'miniz-LICENSE.txt', 'nlohmann-json-LICENSE.txt', 'NVIDIA-PhysX-3.4.txt', 'sqlite-LICENSE.txt', 'Unity-PostProcessing.md', 'WindowsAppSDK-LICENSE.txt', 'WindowsAppSDK-NOTICE.txt')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('../../licenses/' + $name)) -Destination (Join-Path $licenses $name)

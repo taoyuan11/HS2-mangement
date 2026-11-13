@@ -559,6 +559,31 @@ namespace
         Check(document.ToBytes() == fixture && document.IsOriginal(), "character exact byte roundtrip");
         auto edited = document.WithValue("face.shapeValueFace[0]", 0.9f);
         Check(!edited.IsOriginal() && document.IsOriginal(), "immutable edit draft");
+        auto originalExtensions = document.Extensions()->ToBytes();
+        auto changedExtensions =
+            document.Extensions()->Set(std::string("unknown.plugin"), MessagePack::Binary(Bytes{4, 3, 2, 1}));
+        auto extended = edited.WithExtensions(changedExtensions);
+        auto withoutExtensions = extended.WithExtensions({});
+        Check(document.Extensions()->ToBytes() == originalExtensions &&
+                  edited.Extensions()->ToBytes() == originalExtensions && !withoutExtensions.Extensions(),
+              "extension changes leave older snapshots intact");
+        Check(extended.WithExtensions(document.Extensions()).ContentEquals(edited),
+              "restoring extensions compares by content");
+        Check(edited.WithValue("face.shapeValueFace[0]", document.Node("face.shapeValueFace[0]").ScalarValue)
+                  .IsOriginal(),
+              "restoring a shared section returns to original content");
+        auto covered = document.WithCover(Png());
+        auto coveredEdit = covered.WithValue("body.height", 0.75f);
+        Check(covered.ContentEquals(document.WithCover(Png())) &&
+                  std::equal(covered.Cover().begin(), covered.Cover().end(), coveredEdit.Cover().begin(),
+                             coveredEdit.Cover().end()) &&
+                  covered.Node("body.height").ScalarValue == document.Node("body.height").ScalarValue,
+              "cover snapshots compare by bytes and survive independent edits");
+        auto extendedRoundtrip = CharacterDocument::FromBytes(extended.ToBytes(), source);
+        auto removedRoundtrip = CharacterDocument::FromBytes(withoutExtensions.ToBytes(), source);
+        Check(extendedRoundtrip.Extensions()->ContentEquals(changedExtensions) &&
+                  removedRoundtrip.Extensions()->Count() == 0,
+              "replaced and removed extensions survive serialization");
         auto saved = CharacterDocument::FromBytes(edited.ToBytes(), source);
         Check(saved.Node("face.shapeValueFace[0]").ScalarValue == MessagePack::Value(0.9f),
               "edited value survives serialize");

@@ -126,6 +126,7 @@ namespace hs2
             environmentSelections_.clear();
             extensions_.reset();
             extensionDefinition_.reset();
+            extensionDocument_.reset();
             bodySelectionCached_ = false;
             overlayLoaded_ = false;
             overlaySelections_.clear();
@@ -145,13 +146,18 @@ namespace hs2
         definition->Hair = ParameterOf(document.Node("hair"));
         definition->Clothes = ParameterOf(document.Node("clothes"));
         definition->Diagnostics = catalog_.Warnings();
-        auto extensionBytes = document.Extensions() ? document.Extensions()->ToBytes() : Bytes{};
-        if (!extensions_ || extensionBytes != extensionBytes_)
+        auto const &extension = document.Extensions();
+        // 参数编辑共享不可变扩展；不再为每帧比较重新分配和序列化插件二进制数据。
+        bool sameExtensions =
+            extensionDocument_ && (&extension == &extensionDocument_->Extensions() ||
+                                   (extension.has_value() == extensionDocument_->Extensions().has_value() &&
+                                    (!extension || extension->ContentEquals(*extensionDocument_->Extensions()))));
+        if (!extensions_ || !sameExtensions)
         {
             extensions_ = std::make_shared<CharacterExtensionState>(
                 ReadCharacterExtensions(document, *definition, data_, game_, cancellation, resources_));
             extensionDefinition_ = std::make_shared<CharacterDefinition>(*definition);
-            extensionBytes_ = std::move(extensionBytes);
+            extensionDocument_ = document;
         }
         else
         {

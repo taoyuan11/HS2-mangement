@@ -8,7 +8,6 @@
 | --- | --- |
 | 可编辑矢量源稿 | `src/HS2Manager.NativeApp/Assets/Brand/hs2-manager.svg` |
 | 1024 × 1024 透明 PNG | `src/HS2Manager.NativeApp/Assets/Brand/hs2-manager.png` |
-| 64 × 64 PNG | `src/HS2Manager.NativeApp/Assets/Brand/hs2-manager-64.png` |
 | Windows 图标 | `src/HS2Manager.NativeApp/Assets/Brand/hs2-manager.ico` |
 
 ICO 包含 16、20、24、32、40、48、64、128、256 px 九个尺寸，均保留透明通道。程序左上角使用 PNG；可执行文件、窗口标题栏与任务栏使用 ICO。构建与发布自动携带所需资产。

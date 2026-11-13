@@ -74,7 +74,6 @@ foreach ($size in $sizes + @(1024)) {
     $images[$size] = Get-BrandPng $size
 }
 [IO.File]::WriteAllBytes((Join-Path $assetDirectory 'hs2-manager.png'), $images[1024])
-[IO.File]::WriteAllBytes((Join-Path $assetDirectory 'hs2-manager-64.png'), $images[64])
 
 # 使用 PNG 压缩的 ICO 图像，确保各个 Windows 缩放比例下均保留透明度。
 $icon = [IO.File]::Create((Join-Path $assetDirectory 'hs2-manager.ico'))

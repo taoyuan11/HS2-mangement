@@ -12,12 +12,12 @@ if (!(Test-Path -LiteralPath $root -PathType Container)) {
 $failures = New-Object System.Collections.Generic.List[string]
 $required = @(
     'HS2Manager.exe', 'HS2Agent.exe', 'resources.pri', 'MainWindow.xaml', 'CharacterEditorView.xaml', 'CreationView.xaml', 'SettingsView.xaml', 'Styles.xaml',
-    'agent.example.json', 'agent.mcp.example.toml',
+    'agent.example.json', 'agent.mcp.example.toml', 'AI-INSTALL.md',
     'skills/hs2-card-agent/SKILL.md', 'skills/hs2-card-agent/references/assets.md',
     'Microsoft.UI.Xaml.dll', 'Microsoft.UI.Xaml.Controls.dll', 'Microsoft.UI.Xaml.Controls.pri', 'Microsoft.WindowsAppRuntime.dll',
     'zh-CN/Microsoft.ui.xaml.dll.mui', 'zh-CN/Microsoft.UI.Xaml.Phone.dll.mui',
     'en-US/Microsoft.ui.xaml.dll.mui', 'en-US/Microsoft.UI.Xaml.Phone.dll.mui',
-    'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'classdata.tpk', 'native-runtime.json',
+    'msvcp140.dll', 'msvcp140_atomic_wait.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'classdata.tpk', 'native-runtime.json',
     'Assets/Brand/hs2-manager.ico', 'Assets/Brand/hs2-manager.png', 'README.md', 'THIRD-PARTY-NOTICES.md',
     'native/win-x64/HS2Manager.Physics.dll', 'native/win-x64/PhysX3_x64.dll', 'native/win-x64/PhysX3Common_x64.dll',
     'native/win-x64/PxFoundation_x64.dll', 'native/win-x64/PxPvdSDK_x64.dll',
@@ -194,6 +194,10 @@ foreach ($file in Get-PackageFiles $root) {
     }
     if (!$DevelopmentOutput -and (Test-UnusedRuntimeLanguageFile $relative)) {
         $failures.Add("Unused runtime language resource: $relative")
+    }
+    if ($file.Name -in @('concrt140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll', 'msvcp140_codecvt_ids.dll',
+            'vccorlib140.dll', 'vcruntime140_threads.dll', 'hs2-manager-64.png')) {
+        $failures.Add("Unused runtime/resource: $relative")
     }
     if (!$DevelopmentOutput -and (($dataFile -and $relative -ne 'Data\README.txt') -or
             $file.Extension -in '.db', '.sqlite', '.sqlite3', '.pdb', '.ilk', '.lib', '.exp', '.iobj', '.ipdb', '.log' -or

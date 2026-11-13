@@ -20,9 +20,24 @@ namespace
                                        {"mimeType", "image/png"},
                                        {"data", agent::Base64(ReadFile(Path(path), 32 * 1024 * 1024))}});
             }
+            // 优先展示本次结果和对照图，避免历史素材缩略图占满图片额度。
+            if (value.contains("result"))
+                Images(value.at("result"), content, seen);
+            bool comparisons = value.contains("comparison_images") && !value.at("comparison_images").empty();
+            if (comparisons)
+                Images(value.at("comparison_images"), content, seen);
+            else if (value.contains("images"))
+                Images(value.at("images"), content, seen);
             for (auto &[key, child] : value.items())
+            {
+                if (key == "result" || key == "images" || key == "comparison_images" || key == "session" ||
+                    key == "assets" || key == "reviews" || key == "last_render" || key == "reference_assets")
+                    continue;
+                if (key == "probes" && value.contains("images"))
+                    continue;
                 if (child.is_structured())
                     Images(child, content, seen);
+            }
         }
         else if (value.is_array())
             for (auto &child : value)
@@ -80,10 +95,11 @@ int wmain(int argc, wchar_t **argv)
                         response["result"] = {
                             {"protocolVersion", "2025-11-25"},
                             {"capabilities", {{"tools", Json::object()}}},
-                            {"serverInfo", {{"name", "hs2-card-agent"}, {"version", "1.0.0"}}},
+                            {"serverInfo", {{"name", "hs2-card-agent"}, {"version", "1.1.0"}}},
                             {"instructions",
                              "按 skills/hs2-card-agent/SKILL.md 完成图片创建人物卡。模型推理由客户端负责。耗时工具返回 "
-                             "job_id，需查询直到完成或失败。"}};
+                             "job_id，需查询直到完成或失败。先用 hs2_set_reference_regions 标注参考视图，"
+                             "用渲染对照图和 hs2_review_render 逐项修正；打包成功不代表外观还原。"}};
                     else if (method == "ping")
                         response["result"] = Json::object();
                     else if (method == "tools/list")

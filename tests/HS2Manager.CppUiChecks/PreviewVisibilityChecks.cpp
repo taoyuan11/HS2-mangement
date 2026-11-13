@@ -174,6 +174,21 @@ int wmain(int argc, wchar_t **argv)
                     throw std::runtime_error("A color edit did not redraw the material.");
             }
         auto edited = draft;
+        auto eyeOpen = result->Definition->EyeOpenMax;
+        auto extensions = draft.Extensions().value_or(MessagePack::Map());
+        extensions = extensions.Set(
+            std::string("com.deathweasel.bepinex.eyecontrol"),
+            MessagePack::Array({MessagePack::Scalar(int64_t(0)),
+                                MessagePack::Map({{std::string("EyeOpenMax"), MessagePack::Scalar(.25f)},
+                                                  {std::string("DisableBlinking"), MessagePack::Scalar(true)}})}),
+            true);
+        update(draft.WithExtensions(extensions), "extension eye control");
+        if (std::abs(result->Definition->EyeOpenMax - .25f) > 1e-6 ||
+            result->Definition->Face.Get("disableBlinking").Number != 1)
+            throw std::runtime_error("Changed extensions reused stale cached parameters.");
+        update(draft, "restore extensions");
+        if (std::abs(result->Definition->EyeOpenMax - eyeOpen) > 1e-6)
+            throw std::runtime_error("Restored extensions did not invalidate the cache.");
         update(original, "undo all");
         update(edited, "redo all");
         if (draft.Contains("accessory.parts[0].type") && draft.Node("accessory.parts[0].type").Integer() > 350)

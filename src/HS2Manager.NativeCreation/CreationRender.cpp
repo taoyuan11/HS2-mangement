@@ -32,6 +32,17 @@ namespace hs2::creation
         PoseCharacterFace(*prepared.Scene, 1);
         NativeFrameOptions options;
         options.StaticReference = true;
+        auto background = args.value("background", "game");
+        if (background != "game" && background != "neutral")
+            throw std::invalid_argument("background 必须为 game/neutral");
+        if (background == "neutral")
+        {
+            options.UseGameBackground = false;
+            options.Background = Vector4{.72f, .72f, .72f, 1};
+        }
+        auto side = args.value("side", "right");
+        if (side != "left" && side != "right")
+            throw std::invalid_argument("side 必须为 left/right");
         NativeFramePipeline pipeline(graphics, *prepared.Scene, *prepared.Assets, options);
         Vector3 lo{INFINITY, INFINITY, INFINITY}, hi{-INFINITY, -INFINITY, -INFINITY};
         Vector3 faceLo = lo, faceHi = hi;
@@ -65,32 +76,35 @@ namespace hs2::creation
         fs::create_directories(directory);
         Json images = Json::array();
         auto views = args.value("views", Json::array({"front", "side", "back", "face"}));
-        if (views.empty() || views.size() > 5)
-            throw std::invalid_argument("视图数量必须为 1 到 5");
+        if (!views.is_array() || views.empty() || views.size() > 6)
+            throw std::invalid_argument("视图数量必须为 1 到 6");
+        std::set<std::string> seenViews;
         for (auto &v : views)
         {
             CheckCancelled(token);
             auto view = v.get<std::string>();
-            float angle = view == "front" || view == "face" ? 0.f
-                          : view == "side"                  ? 1.5707963f
-                          : view == "back"                  ? 3.1415926f
-                          : view == "three_quarter"         ? .7853982f
-                                                            : INFINITY;
+            float angle = view == "front" || view == "face"       ? 0.f
+                          : view == "side" || view == "face_side" ? (side == "left" ? -1.5707963f : 1.5707963f)
+                          : view == "back"                        ? 3.1415926f
+                          : view == "three_quarter"               ? .7853982f
+                                                                  : INFINITY;
             if (!std::isfinite(angle))
                 throw std::invalid_argument("未知视图");
+            if (!seenViews.insert(view).second)
+                throw std::invalid_argument("视图不能重复");
             NativeRenderCamera camera;
             camera.Target = {(lo.x + hi.x) * .5f, (lo.y + hi.y) * .5f, (lo.z + hi.z) * .5f};
             float size = hi.y - lo.y;
             float span = (std::max)(hi.x - lo.x, hi.z - lo.z);
             float depth = hi.z - lo.z;
-            if (view == "face")
+            if (view == "face" || view == "face_side")
             {
                 if (!std::isfinite(faceLo.y))
                     throw std::runtime_error("无法定位头部几何");
                 camera.Target = {(faceLo.x + faceHi.x) * .5f, (faceLo.y + faceHi.y) * .5f, (faceLo.z + faceHi.z) * .5f};
                 size = (faceHi.y - faceLo.y) * 1.25f;
-                span = (faceHi.x - faceLo.x) * 1.25f;
-                depth = faceHi.z - faceLo.z;
+                span = (view == "face_side" ? faceHi.z - faceLo.z : faceHi.x - faceLo.x) * 1.25f;
+                depth = view == "face_side" ? faceHi.x - faceLo.x : faceHi.z - faceLo.z;
             }
             camera.FieldOfView = args.value("field_of_view", 35.f);
             if (!std::isfinite(camera.FieldOfView) || camera.FieldOfView < 10 || camera.FieldOfView > 90)
@@ -101,6 +115,16 @@ namespace hs2::creation
             float zoom = args.value("zoom", 1.f), offset = args.value("vertical_offset", 0.f);
             if (!std::isfinite(zoom) || zoom < .2f || zoom > 5 || !std::isfinite(offset) || std::abs(offset) > 10)
                 throw std::invalid_argument("封面取景参数超出范围");
+            if (view == "face" || view == "face_side")
+            {
+                float faceZoom = args.value("face_zoom", 1.f), faceOffset = args.value("face_vertical_offset", 0.f);
+                if (!std::isfinite(faceZoom) || faceZoom < .5f || faceZoom > 2.5f || !std::isfinite(faceOffset) ||
+                    std::abs(faceOffset) > .5f)
+                    throw std::invalid_argument("face_zoom 需介于 0.5 到 2.5，face_vertical_offset 需介于 -0.5 到 0.5");
+                // 头部网格还包含后脑和颈部；允许将五官对照中心移至眉眼到下颌区域。
+                zoom *= faceZoom;
+                offset += faceOffset * (faceHi.y - faceLo.y);
+            }
             distance /= zoom;
             camera.Target.y += offset;
             camera.Position = {camera.Target.x + std::sin(angle) * distance, camera.Target.y,
@@ -118,9 +142,20 @@ namespace hs2::creation
                 throw std::runtime_error("渲染结果为空或缺少有效颜色");
             auto imagePath = directory / Path(view + ".png");
             SavePng(imagePath, width, height, pixels);
-            images.push_back({{"path", Utf8(imagePath)}, {"mime_type", "image/png"}, {"view", view}});
+            images.push_back({{"path", Utf8(imagePath)},
+                              {"mime_type", "image/png"},
+                              {"view", view},
+                              {"camera",
+                               {{"field_of_view", camera.FieldOfView},
+                                {"side", side},
+                                {"target", {camera.Target.x, camera.Target.y, camera.Target.z}},
+                                {"distance", distance}}}});
         }
-        Json result{{"images", images}, {"diagnostics", prepared.Scene->Diagnostics}};
+        Json result{{"images", images},
+                    {"diagnostics", prepared.Scene->Diagnostics},
+                    {"background", background},
+                    {"clothing_state", visibility.Clothing},
+                    {"sample_time", sampleTime}};
         return result;
     }
 }

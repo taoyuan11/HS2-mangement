@@ -144,6 +144,8 @@ GUI 启动和退出检查通过 `tests/ui/Invoke-CppWinUiSmoke.ps1 -Executable <
 
 `packages.lock.json` 只锁定当前构建导入及其传递依赖。WebView2 仍由 WinUI 的元数据和构建目标引用；独立的 `Microsoft.WindowsAppSDK.DWrite` 开发包未被导入，已移除。界面所需的 `DWriteCore.dll` 仍由 Windows App SDK 自包含运行库提供，不应从发布目录删除。
 
+VC++ 运行库按应用、适配层及 Windows App SDK 的普通／延迟导入核对，程序目录只复制 `msvcp140.dll`、`msvcp140_atomic_wait.dll`、`vcruntime140.dll` 和 `vcruntime140_1.dll`；适配层目录保留所需的三个非 `atomic_wait` 文件。更新编译器或 SDK 后需重新核对导入。运行库复制同时清理旧输出中的六个无引用 VC++ DLL 和独立的 64 像素 PNG，包检查拒绝这些文件回流。64 像素图像仍保留在多尺寸 ICO 内。
+
 旧 C# / Unity 工具链、参考工程的编译缓存及对应许可文本已退出当前依赖集合，可在 Git 历史中查看原实现和许可。清理本机旧输出时保留其中的 `Data`、备份和操作日志。`tests/fixtures` 的冻结样本、`tests/unity` 的画面对比脚本及历史验证记录仍用于回归对照；PhysX、原生 FBX SDK、RenderDoc 和 Python 格式化／图像比较工具也继续保留。
 
 原生素材构建也不再依赖旧 Agent 的 Unity 2018.4 编辑器及安装包。`.tools/agent-tools` 中的旧编辑器可清理；素材工程、已生成素材、游戏验收数据与本机配置需分别核对用途，不能随工具链一并删除。

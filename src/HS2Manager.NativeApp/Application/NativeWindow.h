@@ -8,6 +8,7 @@
 #include "Infrastructure/Observable.h"
 #include <set>
 #include <thread>
+#include <unordered_map>
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
@@ -98,10 +99,12 @@ namespace hs2::ui
         std::unique_ptr<CardFileService> files_;
         std::unique_ptr<ModDependencyService> mods_;
         std::vector<CardRecord> cards_, visible_;
+        std::unordered_map<std::string, std::size_t> visibleIndex_;
         winrt::com_ptr<Observable> model_;
         xaml::Window window_{nullptr};
         xaml::FrameworkElement root_{nullptr};
         winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher_{nullptr};
+        winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer searchTimer_{nullptr};
         std::string mode_ = "all", folder_, collection_, selectedCardId_;
         std::set<std::string> duplicates_;
         std::jthread work_;

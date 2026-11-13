@@ -1,0 +1,39 @@
+{
+  "name": "霁月·银澜",
+  "stage": "preview_for_review_not_final",
+  "session_id": "A133449EFA124C8F94DF17E2EFF03A28",
+  "revision": 23,
+  "iterations": 11,
+  "validation": {
+    "dependencies": false,
+    "dependency_issues": [
+      "缺少插件或无法映射扩展标识：orange.spork.earwiggle",
+      "资源组件依赖库缺失：MoreMakeup（abdata/chara/sakuraba/sakuraba_jiangli.unity3d）"
+    ],
+    "game_validation": "not_run",
+    "native_render": true,
+    "revision": 23,
+    "structure": true,
+    "visual_assessment": "not_run",
+    "warnings": []
+  },
+  "visual_review": {
+    "status": "draft_needs_refinement",
+    "observed": "银白高束长发、蓝白金衣装、白扇、蓝宝石金链及短前裙长拖尾已形成；正侧背与面部均由 HS2 Agent 原生渲染。",
+    "remaining": [
+      "发片边缘偏硬，刘海和鬓发尚缺少参考的轻薄层次。",
+      "胸衣镶件在侧面仍有离衣间隙，花纹为简化重制。",
+      "裙摆较直，金色鞋带与鞋跟比参考粗。",
+      "头纱已选用原版素材，但最终视图中表现不明显，尚未还原参考的后脑刺绣头纱。",
+      "自制长发以头骨绑定、拖尾以腰部绑定，未制作独立动态链。服装半脱复用完整几何。"
+    ],
+    "completed_unseen": "裙内层、鞋底、长发遮挡处按协调外观补全；不计入图像相似度。"
+  },
+  "export": {
+    "complete_package": false,
+    "reason": "用户要求先确认预览；依赖及视觉问题尚待解决"
+  },
+  "config": "C:/Users/sky/AppData/Local/HS2Manager/Agent/silver_azure_20261112/agent.local.json",
+  "draft_directory": "C:/Users/sky/AppData/Local/HS2Manager/Agent/silver_azure_20261112/Data/Sessions/A133449EFA124C8F94DF17E2EFF03A28",
+  "preview_directory": "Z:/project/HS2-mangement/outputs/silver_azure_hs2_preview_20261112"
+}

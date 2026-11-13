@@ -318,7 +318,7 @@ namespace hs2
         {
             std::string Block;
             std::size_t Index;
-            MessagePack Node;
+            std::shared_ptr<const MessagePack> Node;
         };
 
         std::shared_ptr<const Bytes> Original;
@@ -326,11 +326,14 @@ namespace hs2
         std::string SourceHash;
         int Sex{};
         std::size_t PngLength{}, PrefixLength{}, DataStart{}, DataLength{};
-        MessagePack Table;
+        std::shared_ptr<const MessagePack> Table;
         std::vector<Block> Blocks;
         std::map<std::string, Section> Sections, SourceSections;
-        std::optional<MessagePack> Extensions, SourceExtensions;
-        std::optional<Bytes> Cover;
+        // 草稿和撤销历史只复制修改的分类，共享其余不可变参数、扩展和封面。
+        std::shared_ptr<const std::optional<MessagePack>> Extensions =
+            std::make_shared<const std::optional<MessagePack>>();
+        std::shared_ptr<const std::optional<MessagePack>> SourceExtensions;
+        std::shared_ptr<const Bytes> Cover;
     };
 
     CharacterDocument CharacterDocument::Open(const fs::path &path, std::stop_token token)
@@ -360,13 +363,13 @@ namespace hs2
         auto tableSize = reader.Int();
         if (tableSize < 1 || tableSize > 1024 * 1024)
             throw std::runtime_error("人物块目录越界");
-        data->Table = MessagePack::Parse(reader.Take(tableSize));
+        data->Table = std::make_shared<const MessagePack>(MessagePack::Parse(reader.Take(tableSize)));
         auto length = reader.Number(8);
         data->DataStart = reader.Position;
         if (length > reader.Data.size() - reader.Position)
             throw std::runtime_error("人物数据长度越界");
         data->DataLength = static_cast<std::size_t>(length);
-        auto &entries = data->Table.Require(std::string("lstInfo"));
+        auto &entries = data->Table->Require(std::string("lstInfo"));
         if (entries.Type != MessagePack::Kind::Array || entries.Count() > 4096)
             throw std::runtime_error("人物块目录格式无效");
         for (std::size_t i = 0; i < entries.Children.size(); i++)
@@ -420,12 +423,14 @@ namespace hs2
                 auto node = MessagePack::Parse(sections.Take(size));
                 if (node.Type != MessagePack::Kind::Map)
                     throw std::runtime_error("人物外观参数不是字典");
-                data->Sections.emplace(names[i], Data::Section{block, i, std::move(node)});
+                data->Sections.emplace(names[i],
+                                       Data::Section{block, i, std::make_shared<const MessagePack>(std::move(node))});
             }
         };
         addSections("Custom", {"face", "body", "hair"});
         addSections("Coordinate", {"clothes", "accessory"});
-        data->Sections.emplace("parameter", Data::Section{"Parameter", 0, std::move(parameter)});
+        data->Sections.emplace(
+            "parameter", Data::Section{"Parameter", 0, std::make_shared<const MessagePack>(std::move(parameter))});
         for (auto [block, name] :
              {std::pair{"Parameter2", "parameter2"}, {"GameInfo", "gameinfo"}, {"GameInfo2", "gameinfo2"}})
             if (known.contains(block))
@@ -435,7 +440,8 @@ namespace hs2
                 {
                     auto node = MessagePack::Parse(blockBytes(block));
                     if (node.Type == MessagePack::Kind::Map)
-                        data->Sections.emplace(name, Data::Section{block, 0, std::move(node)});
+                        data->Sections.emplace(
+                            name, Data::Section{block, 0, std::make_shared<const MessagePack>(std::move(node))});
                 }
                 catch (const std::exception &)
                 {
@@ -443,9 +449,10 @@ namespace hs2
             }
         if (known.contains("KKEx"))
         {
-            data->Extensions = MessagePack::Parse(blockBytes("KKEx"));
-            if (data->Extensions->Type != MessagePack::Kind::Map)
+            auto extensions = MessagePack::Parse(blockBytes("KKEx"));
+            if (extensions.Type != MessagePack::Kind::Map)
                 throw std::runtime_error("扩展数据格式无效");
+            data->Extensions = std::make_shared<const std::optional<MessagePack>>(std::move(extensions));
         }
         data->SourceSections = data->Sections;
         data->SourceExtensions = data->Extensions;
@@ -500,7 +507,7 @@ namespace hs2
         auto found = data_->Sections.find(std::get<std::string>(tokens[0]));
         if (found == data_->Sections.end())
             throw std::invalid_argument("未知外观分类");
-        auto node = &found->second.Node;
+        auto node = found->second.Node.get();
         for (std::size_t i = 1; i < tokens.size(); i++)
             node = &node->Require(tokens[i]);
         return *node;
@@ -508,7 +515,7 @@ namespace hs2
 
     const std::optional<MessagePack> &CharacterDocument::Extensions() const
     {
-        return data_->Extensions;
+        return *data_->Extensions;
     }
 
     bool CharacterDocument::Contains(std::string_view path) const
@@ -533,10 +540,12 @@ namespace hs2
         if (data_->Cover)
             return false;
         for (auto &[name, section] : data_->Sections)
-            if (!section.Node.ContentEquals(data_->SourceSections.at(name).Node))
+            if (section.Node != data_->SourceSections.at(name).Node &&
+                !section.Node->ContentEquals(*data_->SourceSections.at(name).Node))
                 return false;
-        return data_->Extensions.has_value() == data_->SourceExtensions.has_value() &&
-               (!data_->Extensions || data_->Extensions->ContentEquals(*data_->SourceExtensions));
+        auto const &source = *data_->SourceExtensions;
+        return data_->Extensions == data_->SourceExtensions ||
+               (Extensions().has_value() == source.has_value() && (!source || Extensions()->ContentEquals(*source)));
     }
 
     bool CharacterDocument::ContentEquals(const CharacterDocument &other) const
@@ -545,13 +554,16 @@ namespace hs2
             return true;
         if (SourceHash() != other.SourceHash())
             return false;
-        if (data_->Cover != other.data_->Cover)
+        if (data_->Cover != other.data_->Cover &&
+            (!data_->Cover || !other.data_->Cover || *data_->Cover != *other.data_->Cover))
             return false;
         for (auto &[name, section] : data_->Sections)
-            if (!section.Node.ContentEquals(other.data_->Sections.at(name).Node))
+            if (section.Node != other.data_->Sections.at(name).Node &&
+                !section.Node->ContentEquals(*other.data_->Sections.at(name).Node))
                 return false;
-        return data_->Extensions.has_value() == other.data_->Extensions.has_value() &&
-               (!data_->Extensions || data_->Extensions->ContentEquals(*other.data_->Extensions));
+        return data_->Extensions == other.data_->Extensions ||
+               (Extensions().has_value() == other.Extensions().has_value() &&
+                (!Extensions() || Extensions()->ContentEquals(*other.Extensions())));
     }
 
     CharacterDocument CharacterDocument::WithValue(std::string_view path, MessagePack::Value value) const
@@ -563,7 +575,7 @@ namespace hs2
     {
         auto tokens = Tokens(path);
         auto name = std::get<std::string>(tokens[0]);
-        auto &root = data_->Sections.at(name).Node;
+        auto &root = *data_->Sections.at(name).Node;
         std::function<MessagePack(const MessagePack &, std::size_t)> replace =
             [&](const MessagePack &current, std::size_t depth)
         {
@@ -577,7 +589,7 @@ namespace hs2
         if (updated.ContentEquals(root))
             return *this;
         auto next = std::make_shared<Data>(*data_);
-        next->Sections.at(name).Node = std::move(updated);
+        next->Sections.at(name).Node = std::make_shared<const MessagePack>(std::move(updated));
         return CharacterDocument(next);
     }
 
@@ -585,8 +597,10 @@ namespace hs2
     {
         if (value && value->Type != MessagePack::Kind::Map)
             throw std::invalid_argument("扩展数据必须是字典");
+        if (value.has_value() == Extensions().has_value() && (!value || value->ContentEquals(*Extensions())))
+            return *this;
         auto next = std::make_shared<Data>(*data_);
-        next->Extensions = std::move(value);
+        next->Extensions = std::make_shared<const std::optional<MessagePack>>(std::move(value));
         return CharacterDocument(next);
     }
 
@@ -603,7 +617,7 @@ namespace hs2
         if (png.size() > 32ull * 1024 * 1024 || CardParser::FindPngEnd(png) != png.size())
             throw std::invalid_argument("新封面必须是完整且不含尾部数据的 PNG");
         auto next = std::make_shared<Data>(*data_);
-        next->Cover = std::move(png);
+        next->Cover = std::make_shared<const Bytes>(std::move(png));
         return CharacterDocument(next);
     }
 
@@ -612,7 +626,7 @@ namespace hs2
         if (IsOriginal())
             return *data_->Original;
         auto original = std::span(*data_->Original);
-        auto entries = data_->Table.Require(std::string("lstInfo"));
+        auto entries = data_->Table->Require(std::string("lstInfo"));
         Bytes payload;
         std::size_t originalOffset = 0;
         for (auto &block : data_->Blocks)
@@ -629,7 +643,8 @@ namespace hs2
                     if (part.Block == block.Name)
                     {
                         sections.push_back(part);
-                        if (!part.Node.ContentEquals(data_->SourceSections.at(name).Node))
+                        if (part.Node != data_->SourceSections.at(name).Node &&
+                            !part.Node->ContentEquals(*data_->SourceSections.at(name).Node))
                             changed = true;
                     }
                 if (changed)
@@ -643,7 +658,7 @@ namespace hs2
                     Reader old(raw);
                     for (auto &section : sections)
                     {
-                        auto encoded = section.Node.ToBytes();
+                        auto encoded = section.Node->ToBytes();
                         WriteNumber(replacement, encoded.size(), 4);
                         Append(replacement, encoded);
                         auto length = old.Int();
@@ -654,13 +669,15 @@ namespace hs2
                     Append(replacement, raw.subspan(old.Position));
                 }
             }
-            else if (block.Name == "KKEx" && (!data_->Extensions || !data_->SourceExtensions ||
-                                              !data_->Extensions->ContentEquals(*data_->SourceExtensions)))
-                replacement = data_->Extensions ? data_->Extensions->ToBytes() : MessagePack::Map().ToBytes();
+            else if (block.Name == "KKEx" && data_->Extensions != data_->SourceExtensions &&
+                     (!Extensions() || !*data_->SourceExtensions ||
+                      !Extensions()->ContentEquals(**data_->SourceExtensions)))
+                replacement = Extensions() ? Extensions()->ToBytes() : MessagePack::Map().ToBytes();
             else
                 for (auto &[name, section] : data_->Sections)
-                    if (section.Block == block.Name && !section.Node.ContentEquals(data_->SourceSections.at(name).Node))
-                        replacement = section.Node.ToBytes();
+                    if (section.Block == block.Name && section.Node != data_->SourceSections.at(name).Node &&
+                        !section.Node->ContentEquals(*data_->SourceSections.at(name).Node))
+                        replacement = section.Node->ToBytes();
             auto row = entries.Require(static_cast<std::int64_t>(block.TableIndex));
             row = row.Set(std::string("pos"),
                           row.Require(std::string("pos")).WithScalar(static_cast<std::int64_t>(offset)));
@@ -671,9 +688,9 @@ namespace hs2
             originalOffset = block.Offset + block.Length;
         }
         Append(payload, original.subspan(data_->DataStart + originalOffset, data_->DataLength - originalOffset));
-        if (!data_->SourceExtensions && data_->Extensions)
+        if (!*data_->SourceExtensions && Extensions())
         {
-            auto extension = data_->Extensions->ToBytes();
+            auto extension = Extensions()->ToBytes();
             auto row = MessagePack::Map(
                 {{std::string("name"), MessagePack::Scalar(std::string("KKEx"))},
                  {std::string("version"), MessagePack::Scalar(std::string("3"))},
@@ -684,7 +701,7 @@ namespace hs2
             entries = MessagePack::Array(std::move(children));
             Append(payload, extension);
         }
-        auto table = data_->Table.Set(std::string("lstInfo"), entries).ToBytes();
+        auto table = data_->Table->Set(std::string("lstInfo"), entries).ToBytes();
         Bytes output;
         Append(output, Cover());
         Append(output, original.subspan(data_->PngLength, data_->PrefixLength - data_->PngLength));

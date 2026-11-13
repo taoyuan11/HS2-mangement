@@ -1,0 +1,9 @@
+{
+  "Date": "2026-11-13",
+  "Scope": "Same compiled objects; Release link with and without OPT:REF/ICF; incremental linking disabled in both",
+  "BeforeBytes": 8297984,
+  "AfterBytes": 6636032,
+  "ReductionPercent": 20.02838279755661,
+  "BeforeSHA256": "76EC08DA49369E2E30F7A6DB7FEB44BEEC2CFD57A77AF44483373843330F2B4D",
+  "AfterSHA256": "EF4E4737412B63ECFF289AE26141511477C1DEAEDAF1B8D65CCA794BB18AAD16"
+}

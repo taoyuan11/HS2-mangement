@@ -1,0 +1,244 @@
+{
+  "Configuration": "Release x64",
+  "Scope": "Document open and 100 retained face parameter revisions; excludes UI, GPU and serialization time",
+  "ExecutableSHA256": {
+    "before": "3caf2df2bd2b6f081774fcb7a64716a1f139ebcecec64340fe24bb303321958e",
+    "after": "e904a1b57fa9c83687432b1b5f40ee5cc008ccbc1eda96ed1baf6bc2ec435468"
+  },
+  "RunsPerVersion": 5,
+  "Samples": [
+    {
+      "Card": "Z:\\games\\hs2\\HS two DX - TSYMQ\\UserData\\chara\\navi\\navi.png",
+      "Runs": {
+        "before": [
+          {
+            "Edit100Ms": 29.5874,
+            "HistoryGrowthBytes": 99061760,
+            "OpenMs": 4.5028,
+            "PrivateAfterBytes": 101494784,
+            "PrivateBeforeBytes": 2433024,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          },
+          {
+            "Edit100Ms": 29.5107,
+            "HistoryGrowthBytes": 99024896,
+            "OpenMs": 0.9429,
+            "PrivateAfterBytes": 101433344,
+            "PrivateBeforeBytes": 2408448,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          },
+          {
+            "Edit100Ms": 29.0098,
+            "HistoryGrowthBytes": 99053568,
+            "OpenMs": 0.9315,
+            "PrivateAfterBytes": 101462016,
+            "PrivateBeforeBytes": 2408448,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          },
+          {
+            "Edit100Ms": 29.2559,
+            "HistoryGrowthBytes": 99053568,
+            "OpenMs": 1.0793,
+            "PrivateAfterBytes": 101457920,
+            "PrivateBeforeBytes": 2404352,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          },
+          {
+            "Edit100Ms": 30.3473,
+            "HistoryGrowthBytes": 99053568,
+            "OpenMs": 1.0389,
+            "PrivateAfterBytes": 101462016,
+            "PrivateBeforeBytes": 2408448,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          }
+        ],
+        "after": [
+          {
+            "Edit100Ms": 2.0524,
+            "HistoryGrowthBytes": 4444160,
+            "OpenMs": 0.7273,
+            "PrivateAfterBytes": 6369280,
+            "PrivateBeforeBytes": 1925120,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          },
+          {
+            "Edit100Ms": 1.8014,
+            "HistoryGrowthBytes": 4419584,
+            "OpenMs": 0.7199,
+            "PrivateAfterBytes": 6303744,
+            "PrivateBeforeBytes": 1884160,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          },
+          {
+            "Edit100Ms": 2.4255,
+            "HistoryGrowthBytes": 4427776,
+            "OpenMs": 0.7356,
+            "PrivateAfterBytes": 6295552,
+            "PrivateBeforeBytes": 1867776,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          },
+          {
+            "Edit100Ms": 1.9311,
+            "HistoryGrowthBytes": 4419584,
+            "OpenMs": 0.7252,
+            "PrivateAfterBytes": 6295552,
+            "PrivateBeforeBytes": 1875968,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          },
+          {
+            "Edit100Ms": 1.8553,
+            "HistoryGrowthBytes": 4423680,
+            "OpenMs": 0.7628,
+            "PrivateAfterBytes": 6303744,
+            "PrivateBeforeBytes": 1880064,
+            "ResultSHA256": "7FB1A6F14ABE01B3C46D5B766850679A8DBD74F54A06E827A3B6AAADECE2F081",
+            "SourceSHA256": "FE9A9A9EA3B2EA7D15C7DA4705C91C86CB87DC2CF8F700F2FFCF8B2EFBC01922"
+          }
+        ]
+      },
+      "Median": {
+        "before": {
+          "OpenMs": 1.0389,
+          "Edit100Ms": 29.5107,
+          "PrivateBeforeBytes": 2408448,
+          "PrivateAfterBytes": 101462016,
+          "HistoryGrowthBytes": 99053568
+        },
+        "after": {
+          "OpenMs": 0.7273,
+          "Edit100Ms": 1.9311,
+          "PrivateBeforeBytes": 1880064,
+          "PrivateAfterBytes": 6303744,
+          "HistoryGrowthBytes": 4423680
+        }
+      }
+    },
+    {
+      "Card": "Z:\\games\\hs2\\HS two DX - TSYMQ\\UserData\\chara\\male\\HS2_ill_M_000.png",
+      "Runs": {
+        "before": [
+          {
+            "Edit100Ms": 30.551,
+            "HistoryGrowthBytes": 99311616,
+            "OpenMs": 4.0649,
+            "PrivateAfterBytes": 101699584,
+            "PrivateBeforeBytes": 2387968,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          },
+          {
+            "Edit100Ms": 30.4341,
+            "HistoryGrowthBytes": 99299328,
+            "OpenMs": 0.8717,
+            "PrivateAfterBytes": 101675008,
+            "PrivateBeforeBytes": 2375680,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          },
+          {
+            "Edit100Ms": 29.2096,
+            "HistoryGrowthBytes": 99307520,
+            "OpenMs": 0.8709,
+            "PrivateAfterBytes": 101687296,
+            "PrivateBeforeBytes": 2379776,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          },
+          {
+            "Edit100Ms": 29.5573,
+            "HistoryGrowthBytes": 99291136,
+            "OpenMs": 0.8405,
+            "PrivateAfterBytes": 101679104,
+            "PrivateBeforeBytes": 2387968,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          },
+          {
+            "Edit100Ms": 28.8318,
+            "HistoryGrowthBytes": 99303424,
+            "OpenMs": 0.9547,
+            "PrivateAfterBytes": 101683200,
+            "PrivateBeforeBytes": 2379776,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          }
+        ],
+        "after": [
+          {
+            "Edit100Ms": 2.007,
+            "HistoryGrowthBytes": 4440064,
+            "OpenMs": 0.8574,
+            "PrivateAfterBytes": 6299648,
+            "PrivateBeforeBytes": 1859584,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          },
+          {
+            "Edit100Ms": 2.0559,
+            "HistoryGrowthBytes": 4448256,
+            "OpenMs": 0.7103,
+            "PrivateAfterBytes": 6307840,
+            "PrivateBeforeBytes": 1859584,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          },
+          {
+            "Edit100Ms": 1.9003,
+            "HistoryGrowthBytes": 4448256,
+            "OpenMs": 0.7871,
+            "PrivateAfterBytes": 6291456,
+            "PrivateBeforeBytes": 1843200,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          },
+          {
+            "Edit100Ms": 1.8713,
+            "HistoryGrowthBytes": 4444160,
+            "OpenMs": 0.7112,
+            "PrivateAfterBytes": 6299648,
+            "PrivateBeforeBytes": 1855488,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          },
+          {
+            "Edit100Ms": 1.9951,
+            "HistoryGrowthBytes": 4448256,
+            "OpenMs": 0.8484,
+            "PrivateAfterBytes": 6299648,
+            "PrivateBeforeBytes": 1851392,
+            "ResultSHA256": "0F11DFACF7231385B2E350E71AFE63B23CF86969F1B0D507DAF4292BA17808C0",
+            "SourceSHA256": "D3B6B8C10D8E095507469CEB809A667E6208956C2F367C439DDD3DB62133A9CA"
+          }
+        ]
+      },
+      "Median": {
+        "before": {
+          "OpenMs": 0.8717,
+          "Edit100Ms": 29.5573,
+          "PrivateBeforeBytes": 2379776,
+          "PrivateAfterBytes": 101683200,
+          "HistoryGrowthBytes": 99303424
+        },
+        "after": {
+          "OpenMs": 0.7871,
+          "Edit100Ms": 1.9951,
+          "PrivateBeforeBytes": 1855488,
+          "PrivateAfterBytes": 6299648,
+          "HistoryGrowthBytes": 4448256
+        }
+      }
+    }
+  ],
+  "Date": "2026-11-13",
+  "OSAndNASFileCachesCleared": false,
+  "Baseline": "Unmodified core sources from the current working tree, before this task; includes earlier unrelated uncommitted work"
+}
