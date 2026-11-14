@@ -127,6 +127,9 @@ Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser
 # 仅构建和验证底层模块
 .\scripts\build\Build-Cpp.ps1 -SkipUi
 
+# 检查 SDK 下载失败清理、校验和显式路径处理（无需联网）
+.\tests\build\Test-NativeDependencyRestore.ps1
+
 # 检查并行发布的文件内容、清单和失败处理
 .\tests\package\Test-ParallelPackage.ps1
 ```

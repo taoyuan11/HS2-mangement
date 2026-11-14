@@ -5,6 +5,7 @@
 #include "Preview/NativePreview.h"
 #include "Infrastructure/UiEvents.h"
 #include "Infrastructure/ProcessLifetime.h"
+#include "Infrastructure/GameDiscovery.h"
 #include <Shobjidl.h>
 #include <dwmapi.h>
 #include <fstream>
@@ -283,6 +284,19 @@ namespace hs2::ui
                            : settings_.Sort == "文件大小" ? 2
                                                           : 0);
         std::weak_ptr<NativeWindow> weak = shared_from_this();
+        Control<GridView>(L"CardList")
+            .SizeChanged(
+                [](Object const &sender, SizeChangedEventArgs const &)
+                {
+                    auto list = sender.as<GridView>();
+                    if (auto panel = list.ItemsPanelRoot().try_as<ItemsWrapGrid>())
+                    {
+                        // 均分完整列，预留滚动条空间，避免固定卡宽在右侧留下大块空白。
+                        auto width = std::max(1.0, list.ActualWidth() - 16.0);
+                        auto columns = std::max(1, static_cast<int>(width / 190.0));
+                        panel.ItemWidth(width / columns);
+                    }
+                });
         searchTimer_ = dispatcher_.CreateTimer();
         searchTimer_.Interval(std::chrono::milliseconds(120));
         searchTimer_.IsRepeating(false);
@@ -419,27 +433,20 @@ namespace hs2::ui
             [weak](auto &&, auto &&)
             {
                 if (auto self = weak.lock())
+                {
                     self->root_.XamlRoot().Changed(
                         [weak](auto &&, auto &&)
                         {
                             if (auto current = weak.lock())
                                 MinimumWindowSize(current->window_, current->Handle());
                         });
+                    self->DiscoverGame();
+                }
             });
         ApplyTheme();
         Reload();
         window_.Activate();
         InitializeUpdates();
-        Work("检查未完成操作",
-             [this](auto stop, auto progress)
-             {
-                 TemporaryPreviewStorage::CleanAbandoned(dataDirectory_);
-                 auto recovered = files_->Recover(stop);
-                 auto scan = library_->Scan(settings_.ScanRoots(), progress, stop, settings_.RecursiveCardSearch);
-                 return "扫描完成：" + std::to_string(scan.Valid) + " 张人物卡，" +
-                        std::to_string(scan.Warnings.size()) + " 项目录/文件警告" +
-                        (recovered.empty() ? "" : "；" + Join(recovered, "；"));
-             });
     }
 
     void NativeWindow::ApplyTheme()
@@ -492,7 +499,8 @@ namespace hs2::ui
             projects_->SyncControls();
     }
 
-    void NativeWindow::Work(std::string label, std::function<std::string(std::stop_token, Progress)> operation)
+    void NativeWindow::Work(std::string label, std::function<std::string(std::stop_token, Progress)> operation,
+                             std::function<void()> completed)
     {
         if (busy_ || closing_)
             return;
@@ -505,7 +513,7 @@ namespace hs2::ui
         std::weak_ptr<NativeWindow> weak = shared_from_this();
         auto queue = dispatcher_;
         work_ = std::jthread(
-            [weak, queue, operation = std::move(operation)](std::stop_token stop)
+            [weak, queue, operation = std::move(operation), completed = std::move(completed)](std::stop_token stop)
             {
                 std::string result;
                 Progress progress = [weak, queue](WorkProgress const &p)
@@ -538,7 +546,7 @@ namespace hs2::ui
                     result = "操作未完成：" + to_string(e.message());
                 }
                 queue.TryEnqueue(
-                    [weak, result]
+                    [weak, result, completed]
                     {
                         if (auto self = weak.lock(); self && !self->resourcesReleased_)
                         {
@@ -558,6 +566,8 @@ namespace hs2::ui
                                 return;
                             }
                             self->Report(result);
+                            if (completed)
+                                completed();
                         }
                     });
             });
@@ -619,7 +629,9 @@ namespace hs2::ui
         model_->Put(L"IssueCount", issues);
         model_->Put(L"DuplicateCount", static_cast<int>(duplicates_.size()));
         model_->Text(L"LibrarySummary", std::to_string(total) + " 张人物卡 · 你的本地角色资源库");
-        bool connected = fs::is_directory(Path(settings_.GamePath));
+        get_self<Observable>(model_->Get(L"Settings").as<data::ICustomPropertyProvider>())
+            ->Text(L"GamePath", settings_.GamePath);
+        bool connected = IsGameDirectory(Path(settings_.GamePath));
         model_->Put(L"GameConnection", connected ? L"游戏目录已连接" : L"游戏目录离线");
         model_->Text(L"GameFolderName", Utf8(Path(settings_.GamePath).filename()));
         model_->Set(L"GameConnectionBrush", Brush(connected ? L"SuccessBrush" : L"WarningBrush"), false);

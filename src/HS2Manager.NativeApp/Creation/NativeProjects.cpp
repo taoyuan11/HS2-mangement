@@ -81,8 +81,8 @@ namespace hs2::ui
             model_->Set(L"Projects", single_threaded_observable_vector<Object>());
         }
         kind_ = std::move(kind);
-        model_->Put(L"Title", kind_ == "mod" ? L"mod工程" : L"角色工程");
-        model_->Put(L"NewLabel", kind_ == "mod" ? L"新建mod工程" : L"新建角色工程");
+        model_->Put(L"Title", kind_ == "mod" ? L"MOD 工程" : L"角色工程");
+        model_->Put(L"NewLabel", kind_ == "mod" ? L"新建 MOD 工程" : L"新建角色工程");
         Refresh();
     }
 

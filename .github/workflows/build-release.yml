@@ -24,12 +24,15 @@ jobs:
           }
           python -m unittest discover -s tests/release -p 'test_*.py'
           if ($LASTEXITCODE -ne 0) { throw 'Release tests failed.' }
+      - name: Validate native dependency recovery
+        shell: powershell
+        run: ./tests/build/Test-NativeDependencyRestore.ps1
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             .tools/ci
             ~/.nuget/packages
-          key: windows-2022-sdk-${{ hashFiles('scripts/build/Restore-CiDependencies.ps1', 'src/HS2Manager.NativeApp/packages.lock.json') }}
+          key: windows-2022-sdk-${{ hashFiles('scripts/build/Restore-*Dependencies.ps1', 'src/HS2Manager.NativeApp/packages.lock.json') }}
       - name: Restore native SDKs
         shell: pwsh
         run: ./scripts/build/Restore-CiDependencies.ps1

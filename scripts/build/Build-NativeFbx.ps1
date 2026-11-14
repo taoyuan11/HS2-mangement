@@ -2,6 +2,15 @@
     [ValidateRange(1, 32)][int]$Jobs = [Math]::Min(4, [Environment]::ProcessorCount))
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+# 保留手动配置的 SDK；首次构建时与 CI 共用固定版本恢复逻辑。
+if (!$PSBoundParameters.ContainsKey('SdkRoot') -and !(Test-Path -LiteralPath $SdkRoot)) {
+    $SdkRoot = (& (Join-Path $PSScriptRoot 'Restore-NativeDependencies.ps1') -Dependency Fbx).FbxSdkRoot
+}
+foreach ($relative in @('include/fbxsdk.h', 'lib/x64/release/libfbxsdk.lib', 'lib/x64/release/libfbxsdk.dll')) {
+    if (!(Test-Path -LiteralPath (Join-Path $SdkRoot $relative) -PathType Leaf)) {
+        throw "FBX SDK 2020.3.7 is missing or incomplete: $SdkRoot. Use -SdkRoot to specify the SDK directory."
+    }
+}
 if (!$BuildDirectory) {
     $BuildDirectory = Join-Path $env:LOCALAPPDATA 'HS2Manager/NativeBuild/Fbx-2020.3.7'
 }

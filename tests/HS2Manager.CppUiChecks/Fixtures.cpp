@@ -114,6 +114,9 @@ int wmain(int argc, wchar_t **argv)
         png.resize(CardParser::FindPngEnd(png));
         auto game = root / L"Game", cards = game / L"UserData" / L"chara" / L"female";
         fs::create_directories(cards);
+        fs::create_directories(game / L"HoneySelect2_Data");
+        fs::create_directories(game / L"abdata");
+        WriteAtomic(game / L"HoneySelect2.exe", Bytes{0});
         for (int i = 0; i < 80; ++i)
             WriteAtomic(cards / Path("sample-" + std::to_string(i) + ".png"), Card(png, i));
         WriteAtomic(cards / L"image-only.png", png);
@@ -121,6 +124,7 @@ int wmain(int argc, wchar_t **argv)
         AppSettings settings;
         settings.GamePath = Utf8(game);
         settings.Theme = "Light";
+        settings.AutoCheckUpdates = false;
         settings.Save(directory);
         CardRepository repository(directory);
         CardLibraryService library(repository);

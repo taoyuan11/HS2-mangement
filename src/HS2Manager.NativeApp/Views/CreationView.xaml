@@ -1,62 +1,264 @@
-<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="{ThemeResource PageBrush}">
- <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
- <StackPanel Spacing="6" Margin="12,8">
-  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <TextBlock x:Name="Title" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"><Button x:Name="Rename" Content="重命名"/><Button x:Name="Close" Content="返回工程列表"/></StackPanel>
-  </Grid>
-  <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-   <StackPanel Orientation="Horizontal" Spacing="6">
-    <Button x:Name="CharacterTab" Content="角色外观"/><Button x:Name="ModelTab" Content="建模与贴图"/>
-    <Button x:Name="Save" Content="保存工程  Ctrl+S"/><Button x:Name="Undo" Content="撤销"/><Button x:Name="Redo" Content="重做"/>
-    <Button x:Name="Cover" Content="封面取景"/><Button x:Name="Build" Content="构建 Mod"/>
-    <Button x:Name="ExportCard" Content="导出角色卡"/><Button x:Name="ExportMod" Content="导出 zipmod"/><Button x:Name="ExportPackage" Content="导出角色包"/>
-    <Button x:Name="Install" Content="安装到游戏"/><Button x:Name="Rollback" Content="回退安装"/><Button x:Name="Cancel" Content="取消任务" IsEnabled="False"/>
-   </StackPanel>
-  </ScrollViewer>
- </StackPanel>
- <ContentControl x:Name="CharacterHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
- <Grid x:Name="ModelHost" Grid.Row="1" Visibility="Collapsed" ColumnSpacing="8" Margin="8">
-  <Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="*"/><ColumnDefinition Width="280"/></Grid.ColumnDefinitions>
-  <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-   <StackPanel Spacing="5"><TextBlock Text="素材与对象" FontWeight="SemiBold"/><ComboBox x:Name="Assets" HorizontalAlignment="Stretch"/><Button x:Name="AddAsset" Content="添加素材／当前槽位" HorizontalAlignment="Stretch"/></StackPanel>
-   <ListView x:Name="Objects" Grid.Row="1" SelectionMode="Extended"/>
-   <StackPanel Grid.Row="2" Spacing="5"><StackPanel Orientation="Horizontal" Spacing="4"><Button x:Name="Hide" Content="显隐"/><Button x:Name="Lock" Content="锁定"/><Button x:Name="ObjectRename" Content="命名"/></StackPanel><TextBlock Text="右键旋转 · 中键平移 · 滚轮缩放&#xA;左键选择／操作 · Shift 多选" TextWrapping="Wrap" FontSize="12"/></StackPanel>
-  </Grid>
-  <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-   <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel Orientation="Horizontal" Spacing="4">
-    <DropDownButton x:Name="CreateMenu" Content="添加网格"/><DropDownButton x:Name="TopologyMenu" Content="网格操作"/><DropDownButton x:Name="UvMenu" Content="UV"/>
-    <ComboBox x:Name="Selection" SelectedIndex="0"><ComboBoxItem Content="对象"/><ComboBoxItem Content="顶点"/><ComboBoxItem Content="边"/><ComboBoxItem Content="面"/><ComboBoxItem Content="UV 岛"/></ComboBox>
-    <ComboBox x:Name="Tool" SelectedIndex="0"><ComboBoxItem Content="选择"/><ComboBoxItem Content="框选"/><ComboBoxItem Content="移动"/><ComboBoxItem Content="旋转"/><ComboBoxItem Content="缩放"/><ComboBoxItem Content="雕刻：移动"/><ComboBoxItem Content="雕刻：隆起"/><ComboBoxItem Content="雕刻：凹陷"/><ComboBoxItem Content="雕刻：平滑"/><ComboBoxItem Content="雕刻：压平"/><ComboBoxItem Content="雕刻：收紧"/><ComboBoxItem Content="雕刻：遮罩"/><ComboBoxItem Content="权重绘制"/><ComboBoxItem Content="贴图画笔"/><ComboBoxItem Content="橡皮"/><ComboBoxItem Content="填充"/><ComboBoxItem Content="取色"/></ComboBox>
-    <Button x:Name="Frame" Content="聚焦"/><ToggleButton x:Name="UvVisible" Content="UV／贴图"/><ToggleButton x:Name="Checker" Content="棋盘格"/><ToggleButton x:Name="Weights" Content="权重"/>
-   </StackPanel></ScrollViewer>
-   <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="UvColumn" Width="0"/></Grid.ColumnDefinitions>
-    <Grid x:Name="ViewportHost" Background="Transparent"><SwapChainPanel x:Name="Viewport"/><Canvas x:Name="SelectionCanvas" IsHitTestVisible="False"/></Grid>
-    <Grid x:Name="UvArea" Grid.Column="1" Background="#242932"><Grid x:Name="UvHost" HorizontalAlignment="Center" VerticalAlignment="Center" Background="Transparent"><Image x:Name="TextureImage" Stretch="Fill"/><Canvas x:Name="UvCanvas" IsHitTestVisible="False"/><Canvas x:Name="UvSelectionCanvas" IsHitTestVisible="False"/></Grid></Grid>
-   </Grid>
-  </Grid>
-  <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto"><StackPanel Spacing="8" Margin="4">
-   <TextBlock Text="变换与笔刷" FontWeight="SemiBold"/>
-   <ComboBox x:Name="Axis" Header="轴向约束" SelectedIndex="0" HorizontalAlignment="Stretch"><ComboBoxItem Content="自由"/><ComboBoxItem Content="X"/><ComboBoxItem Content="Y"/><ComboBoxItem Content="Z"/></ComboBox>
-   <StackPanel Orientation="Horizontal" Spacing="4"><NumberBox x:Name="X" Header="X" Value="0" Width="80"/><NumberBox x:Name="Y" Header="Y" Value="0" Width="80"/><NumberBox x:Name="Z" Header="Z" Value="0" Width="80"/></StackPanel>
-   <Button x:Name="Transform" Content="应用数值变换" HorizontalAlignment="Stretch"/>
-   <NumberBox x:Name="Snap" Header="网格吸附步长（0 关闭）" Value="0" Minimum="0" Maximum="10"/>
-   <CheckBox x:Name="VertexSnap" Content="吸附到最近顶点"/><CheckBox x:Name="Symmetry" Content="X 轴笔刷对称"/>
-   <NumberBox x:Name="Radius" Header="笔刷半径（世界单位）" Value="0.05" Minimum="0.001" Maximum="5"/>
-   <Slider x:Name="Strength" Header="强度" Value="0.3" Minimum="0.01" Maximum="1"/>
-   <Slider x:Name="Hardness" Header="衰减硬度" Value="0.5" Minimum="0" Maximum="1"/>
-   <TextBlock Text="人物适配" FontWeight="SemiBold"/><CheckBox x:Name="Reference" Content="显示当前体型参考" IsChecked="True"/>
-   <ComboBox x:Name="Clothing" Header="试穿状态" SelectedIndex="0" HorizontalAlignment="Stretch"><ComboBoxItem Content="完整穿着"/><ComboBoxItem Content="半脱"/><ComboBoxItem Content="脱下"/></ComboBox>
-   <TextBlock x:Name="HalfStatus" TextWrapping="Wrap"/><Button x:Name="Half" Content="建立独立半脱网格"/>
-   <Button x:Name="RefreshReference" Content="更新体型与姿态参考"/>
-   <Button x:Name="Fit" Content="姿态与体型适配检查"/><Button x:Name="ResetFit" Content="返回编辑姿态"/>
-   <Button x:Name="ChangeTemplate" Content="更换或重新确认游戏模板"/>
-   <TextBlock Text="骨骼与权重" FontWeight="SemiBold"/><ComboBox x:Name="Bones" Header="骨骼／挂点" HorizontalAlignment="Stretch"/>
-   <DropDownButton x:Name="BoneMenu" Content="骨骼工具"/>
-   <TextBlock Text="贴图与图层" FontWeight="SemiBold"/><ComboBox x:Name="Textures" HorizontalAlignment="Stretch"/><DropDownButton x:Name="TextureMenu" Content="贴图工具"/>
-   <ComboBox x:Name="Layers" Header="当前图层" HorizontalAlignment="Stretch"/><Slider x:Name="Opacity" Header="图层不透明度" Minimum="0" Maximum="1" Value="1"/>
-   <Button x:Name="Color" Content="画笔颜色"/><Button x:Name="Material" Content="材质参数"/>
-  </StackPanel></ScrollViewer>
- </Grid>
- <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource BorderBrush}" Padding="12,6"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock x:Name="State" Margin="0,0,18,0"/><TextBlock x:Name="Message" Grid.Column="1" TextWrapping="Wrap" Text="工程保存与成品导出分别操作。"/></Grid></Border>
+<?xml version="1.0" encoding="utf-8"?>
+<Grid
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{ThemeResource PageBrush}">
+    <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <StackPanel>
+        <Grid Margin="20,16,20,12" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel
+                x:Name="HeaderActions"
+                Grid.Column="2"
+                Orientation="Horizontal"
+                Spacing="8"
+                VerticalAlignment="Center">
+                <Button x:Name="Undo" Content="撤销" ToolTipService.ToolTip="Ctrl+Z"/>
+                <Button x:Name="Redo" Content="重做" ToolTipService.ToolTip="Ctrl+Y"/>
+                <Button
+                    x:Name="Save"
+                    Content="保存工程"
+                    Style="{StaticResource PrimaryButton}"
+                    ToolTipService.ToolTip="Ctrl+S"/>
+            </StackPanel>
+            <Button
+                x:Name="Close"
+                Content="返回"
+                Style="{StaticResource QuietButton}"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="返回工程列表"/>
+            <TextBlock
+                x:Name="Title"
+                FontSize="22"
+                FontWeight="SemiBold"
+                VerticalAlignment="Center"
+                TextTrimming="CharacterEllipsis"
+                ToolTipService.ToolTip="{Binding Text, ElementName=Title}"
+                Margin="0"
+                Grid.Column="1"/>
+        </Grid>
+        <Grid x:Name="CreationCommands" Margin="20,0,20,12">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <ToggleButton x:Name="CharacterTab" Content="角色外观" IsChecked="True"/>
+                <ToggleButton x:Name="ModelTab" Content="建模与贴图"/>
+            </StackPanel>
+            <Button x:Name="Cover" Content="封面取景"/>
+            <Button x:Name="Build" Content="构建 MOD"/>
+            <Button AutomationProperties.Name="导出" x:Name="ExportMenu">
+                <Button.Flyout>
+                    <MenuFlyout Placement="Bottom">
+                        <MenuFlyoutItem x:Name="ExportCard" Text="导出角色卡…"/>
+                        <MenuFlyoutItem x:Name="ExportMod" Text="导出 zipmod…"/>
+                        <MenuFlyoutItem x:Name="ExportPackage" Text="导出角色包…"/>
+                    </MenuFlyout>
+                </Button.Flyout>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="导出" VerticalAlignment="Center"/>
+                    <FontIcon Glyph="" FontSize="12"/>
+                </StackPanel>
+            </Button>
+            <Button AutomationProperties.Name="工程选项" x:Name="ProjectMenu">
+                <Button.Flyout>
+                    <MenuFlyout Placement="Bottom">
+                        <MenuFlyoutItem x:Name="Rename" Text="重命名…"/>
+                        <MenuFlyoutSeparator/>
+                        <MenuFlyoutItem x:Name="Install" Text="安装到游戏…"/>
+                        <MenuFlyoutItem x:Name="Rollback" Text="回退安装…"/>
+                    </MenuFlyout>
+                </Button.Flyout>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="工程选项" VerticalAlignment="Center"/>
+                    <FontIcon Glyph="" FontSize="12"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="Cancel" Content="取消任务" IsEnabled="False" Visibility="Collapsed"/>
+        </Grid>
+    </StackPanel>
+    <ContentControl
+        x:Name="CharacterHost"
+        Grid.Row="1"
+        HorizontalContentAlignment="Stretch"
+        VerticalContentAlignment="Stretch"/>
+    <Grid x:Name="ModelHost" Grid.Row="1" Visibility="Collapsed" ColumnSpacing="12" Margin="20,0,20,12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="212"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="300"/>
+        </Grid.ColumnDefinitions>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <StackPanel Spacing="5">
+                <TextBlock Text="素材与对象" FontWeight="SemiBold"/>
+                <ComboBox x:Name="Assets" HorizontalAlignment="Stretch" AutomationProperties.Name="当前素材"/>
+                <Button x:Name="AddAsset" Content="添加素材…" HorizontalAlignment="Stretch"/>
+            </StackPanel>
+            <ListView x:Name="Objects" Grid.Row="1" SelectionMode="Extended" AutomationProperties.Name="网格对象"/>
+            <StackPanel Grid.Row="2" Spacing="5">
+                <StackPanel Orientation="Vertical" Spacing="4">
+                    <Button x:Name="Hide" Content="显示/隐藏" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="Lock" Content="锁定" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="ObjectRename" Content="重命名" HorizontalAlignment="Stretch"/>
+                </StackPanel>
+                <TextBlock Text="右键旋转 · 中键平移 · 滚轮缩放&#10;左键选择／操作 · Shift 多选" TextWrapping="Wrap" FontSize="12"/>
+            </StackPanel>
+        </Grid>
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid x:Name="ModelCommands" Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <DropDownButton x:Name="CreateMenu" Content="添加网格"/>
+                    <DropDownButton x:Name="TopologyMenu" Content="网格操作"/>
+                    <DropDownButton x:Name="UvMenu" Content="UV"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ComboBox x:Name="Selection" SelectedIndex="0" AutomationProperties.Name="选择范围" Width="100">
+                        <ComboBoxItem Content="对象"/>
+                        <ComboBoxItem Content="顶点"/>
+                        <ComboBoxItem Content="边"/>
+                        <ComboBoxItem Content="面"/>
+                        <ComboBoxItem Content="UV 岛"/>
+                    </ComboBox>
+                    <ComboBox x:Name="Tool" SelectedIndex="0" AutomationProperties.Name="当前工具" Width="148">
+                        <ComboBoxItem Content="选择"/>
+                        <ComboBoxItem Content="框选"/>
+                        <ComboBoxItem Content="移动"/>
+                        <ComboBoxItem Content="旋转"/>
+                        <ComboBoxItem Content="缩放"/>
+                        <ComboBoxItem Content="雕刻：移动"/>
+                        <ComboBoxItem Content="雕刻：隆起"/>
+                        <ComboBoxItem Content="雕刻：凹陷"/>
+                        <ComboBoxItem Content="雕刻：平滑"/>
+                        <ComboBoxItem Content="雕刻：压平"/>
+                        <ComboBoxItem Content="雕刻：收紧"/>
+                        <ComboBoxItem Content="雕刻：遮罩"/>
+                        <ComboBoxItem Content="权重绘制"/>
+                        <ComboBoxItem Content="贴图画笔"/>
+                        <ComboBoxItem Content="橡皮"/>
+                        <ComboBoxItem Content="填充"/>
+                        <ComboBoxItem Content="取色"/>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="Frame" Content="聚焦"/>
+                    <ToggleButton x:Name="UvVisible" Content="UV／贴图"/>
+                    <ToggleButton x:Name="Checker" Content="棋盘格"/>
+                    <ToggleButton x:Name="Weights" Content="权重"/>
+                </StackPanel>
+            </Grid>
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition x:Name="UvColumn" Width="0"/>
+                </Grid.ColumnDefinitions>
+                <Grid x:Name="ViewportHost" Background="Transparent">
+                    <SwapChainPanel x:Name="Viewport"/>
+                    <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False"/>
+                </Grid>
+                <Grid x:Name="UvArea" Grid.Column="1" Background="#242932">
+                    <Grid
+                        x:Name="UvHost"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="Transparent">
+                        <Image x:Name="TextureImage" Stretch="Fill"/>
+                        <Canvas x:Name="UvCanvas" IsHitTestVisible="False"/>
+                        <Canvas x:Name="UvSelectionCanvas" IsHitTestVisible="False"/>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="8" Margin="0">
+                <Expander Header="变换与笔刷" Style="{StaticResource PanelSection}" IsExpanded="True">
+                    <StackPanel Spacing="12">
+                        <ComboBox x:Name="Axis" Header="轴向约束" SelectedIndex="0" HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="自由"/>
+                            <ComboBoxItem Content="X"/>
+                            <ComboBoxItem Content="Y"/>
+                            <ComboBoxItem Content="Z"/>
+                        </ComboBox>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <NumberBox x:Name="X" Header="X" Value="0" Width="80"/>
+                            <NumberBox x:Name="Y" Header="Y" Value="0" Width="80"/>
+                            <NumberBox x:Name="Z" Header="Z" Value="0" Width="80"/>
+                        </StackPanel>
+                        <Button x:Name="Transform" Content="应用数值变换" HorizontalAlignment="Stretch"/>
+                        <NumberBox x:Name="Snap" Header="网格吸附步长（0 关闭）" Value="0" Minimum="0" Maximum="10"/>
+                        <CheckBox x:Name="VertexSnap" Content="吸附到最近顶点"/>
+                        <CheckBox x:Name="Symmetry" Content="X 轴笔刷对称"/>
+                        <NumberBox x:Name="Radius" Header="笔刷半径（世界单位）" Value="0.05" Minimum="0.001" Maximum="5"/>
+                        <Slider x:Name="Strength" Header="强度" Value="0.3" Minimum="0.01" Maximum="1"/>
+                        <Slider x:Name="Hardness" Header="衰减硬度" Value="0.5" Minimum="0" Maximum="1"/>
+                    </StackPanel>
+                </Expander>
+                <Expander Header="人物适配" Style="{StaticResource PanelSection}" IsExpanded="True">
+                    <StackPanel Spacing="12">
+                        <CheckBox x:Name="Reference" Content="显示当前体型参考" IsChecked="True"/>
+                        <ComboBox x:Name="Clothing" Header="试穿状态" SelectedIndex="0" HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="完整穿着"/>
+                            <ComboBoxItem Content="半脱"/>
+                            <ComboBoxItem Content="脱下"/>
+                        </ComboBox>
+                        <TextBlock
+                            x:Name="HalfStatus"
+                            TextWrapping="Wrap"
+                            FontSize="12"
+                            Foreground="{ThemeResource MutedBrush}"/>
+                        <Button x:Name="Half" Content="建立独立半脱网格"/>
+                        <Button x:Name="RefreshReference" Content="更新体型与姿态参考"/>
+                        <Button x:Name="Fit" Content="姿态与体型适配检查"/>
+                        <Button x:Name="ResetFit" Content="返回编辑姿态"/>
+                        <Button x:Name="ChangeTemplate" Content="更换或重新确认游戏模板"/>
+                    </StackPanel>
+                </Expander>
+                <Expander Header="骨骼与权重" Style="{StaticResource PanelSection}" IsExpanded="True">
+                    <StackPanel Spacing="12">
+                        <ComboBox x:Name="Bones" Header="骨骼／挂点" HorizontalAlignment="Stretch"/>
+                        <DropDownButton x:Name="BoneMenu" Content="骨骼工具"/>
+                    </StackPanel>
+                </Expander>
+                <Expander Header="贴图与图层" Style="{StaticResource PanelSection}" IsExpanded="True">
+                    <StackPanel Spacing="12">
+                        <ComboBox x:Name="Textures" HorizontalAlignment="Stretch" AutomationProperties.Name="当前贴图"/>
+                        <DropDownButton x:Name="TextureMenu" Content="贴图工具"/>
+                        <ComboBox x:Name="Layers" Header="当前图层" HorizontalAlignment="Stretch"/>
+                        <Slider x:Name="Opacity" Header="图层不透明度" Minimum="0" Maximum="1" Value="1"/>
+                        <Button x:Name="Color" Content="画笔颜色"/>
+                        <Button x:Name="Material" Content="材质参数"/>
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+    <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource BorderBrush}" Padding="12,6">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="State" Margin="0,0,18,0"/>
+            <TextBlock
+                x:Name="Message"
+                Grid.Column="1"
+                TextWrapping="Wrap"
+                Text="工程保存与成品导出分别操作。"
+                FontSize="12"
+                Foreground="{ThemeResource MutedBrush}"/>
+        </Grid>
+    </Border>
 </Grid>

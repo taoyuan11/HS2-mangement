@@ -53,6 +53,9 @@ namespace hs2::ui
         friend class NativePreview;
         NativeWindow(fs::path dataDirectory, std::unique_ptr<CardRepository> repository);
         void Initialize();
+        void DiscoverGame();
+        winrt::fire_and_forget CompleteGameSetup(std::filesystem::path detected);
+        void StartLibraryScan(bool gameAvailable);
         void BindEvents(xaml::FrameworkElement const &root, std::wstring_view view);
         xaml::FrameworkElement LoadView(std::wstring_view view);
         void ApplyTheme();
@@ -61,7 +64,8 @@ namespace hs2::ui
         void Select();
         void Refresh();
         void Navigate(std::string mode);
-        void Work(std::string label, std::function<std::string(std::stop_token, Progress)> operation);
+        void Work(std::string label, std::function<std::string(std::stop_token, Progress)> operation,
+                  std::function<void()> completed = {});
         void SetBusy(bool value);
         void Report(std::string message);
         void ClosePreview();
@@ -135,6 +139,7 @@ namespace hs2::ui
         std::stop_source temporaryCancellation_;
         uint64_t temporaryGeneration_ = 0;
         bool temporaryOpening_ = false;
+        bool startupStarted_ = false, gameSetupPending_ = false;
         controls::ContentDialog temporaryPasswordDialog_{nullptr};
         bool closePrompt_ = false;
         bool closeReady_ = false;

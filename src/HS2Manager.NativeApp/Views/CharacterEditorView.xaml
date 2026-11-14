@@ -21,9 +21,15 @@
             Content="返回"
             VerticalAlignment="Center"
             AutomationProperties.Name="返回资源库"
-            x:Name="ActionCharacterEditorView1"/>
+            x:Name="ActionCharacterEditorView1"
+            Style="{StaticResource QuietButton}"/>
         <StackPanel Grid.Column="1">
-            <TextBlock x:Name="EditorTitle" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+            <TextBlock
+                x:Name="EditorTitle"
+                FontSize="22"
+                FontWeight="SemiBold"
+                TextTrimming="CharacterEllipsis"
+                ToolTipService.ToolTip="{Binding Text, ElementName=EditorTitle}"/>
             <TextBlock x:Name="SaveState" FontSize="12" Foreground="{ThemeResource MutedBrush}" Margin="0,4,0,0"/>
         </StackPanel>
         <StackPanel x:Name="Actions" Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -68,8 +74,21 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <ListView x:Name="Categories" DisplayMemberPath="Label"/>
-            <ListView Grid.Row="1" x:Name="Groups" Margin="0,12,0,0" FontSize="12"/>
+            <ListView
+                x:Name="Categories"
+                DisplayMemberPath="Label"
+                AutomationProperties.Name="编辑分类"
+                Background="{ThemeResource SurfaceBrush}"
+                CornerRadius="8"
+                FontSize="14"/>
+            <ListView
+                Grid.Row="1"
+                x:Name="Groups"
+                Margin="0,12,0,0"
+                FontSize="14"
+                AutomationProperties.Name="参数分组"
+                Background="{ThemeResource SurfaceBrush}"
+                CornerRadius="8"/>
         </Grid>
         <Grid Grid.Column="1" RowSpacing="10">
             <Grid.RowDefinitions>
@@ -102,12 +121,27 @@
             </Border>
             <StackPanel Grid.Row="1" Spacing="6">
                 <Grid x:Name="WrapCharacterEditorView9">
-                    <Button Content="正面" Tag="0" x:Name="ActionCharacterEditorView10"/>
-                    <Button Content="侧面" Tag="90" x:Name="ActionCharacterEditorView11"/>
-                    <Button Content="背面" Tag="180" x:Name="ActionCharacterEditorView12"/>
-                    <Button Content="面部" x:Name="ActionCharacterEditorView13"/>
-                    <Button Content="全身" x:Name="ActionCharacterEditorView14"/>
-                    <Button Content="{Binding PlaybackLabel}" x:Name="ActionCharacterEditorView15"/>
+                    <Button
+                        Content="正面"
+                        Tag="0"
+                        x:Name="ActionCharacterEditorView10"
+                        IsEnabled="{Binding CanControlPreview}"/>
+                    <Button
+                        Content="侧面"
+                        Tag="90"
+                        x:Name="ActionCharacterEditorView11"
+                        IsEnabled="{Binding CanControlPreview}"/>
+                    <Button
+                        Content="背面"
+                        Tag="180"
+                        x:Name="ActionCharacterEditorView12"
+                        IsEnabled="{Binding CanControlPreview}"/>
+                    <Button Content="面部" x:Name="ActionCharacterEditorView13" IsEnabled="{Binding CanControlPreview}"/>
+                    <Button Content="全身" x:Name="ActionCharacterEditorView14" IsEnabled="{Binding CanControlPreview}"/>
+                    <Button
+                        Content="{Binding PlaybackLabel}"
+                        x:Name="ActionCharacterEditorView15"
+                        IsEnabled="{Binding CanControlPreview}"/>
                     <ComboBox
                         x:Name="EditorMotionChoice"
                         Width="180"
@@ -118,7 +152,7 @@
                         IsEnabled="{Binding CanControlPreview}"
                         AutomationProperties.Name="预览动作"
                         ToolTipService.ToolTip="选择角色动作；暂停时显示动作的起始姿势"/>
-                    <Button Content="环境">
+                    <Button Content="环境" IsEnabled="{Binding CanControlPreview}">
                         <Button.Flyout>
                             <Flyout>
                                 <StackPanel Spacing="12" Width="220">
@@ -140,7 +174,7 @@
                             </Flyout>
                         </Button.Flyout>
                     </Button>
-                    <Button Content="显示" AutomationProperties.Name="编辑预览显示设置">
+                    <Button Content="显示" AutomationProperties.Name="编辑预览显示设置" IsEnabled="{Binding CanControlPreview}">
                         <Button.Flyout>
                             <Flyout>
                                 <StackPanel Spacing="12" Width="220">

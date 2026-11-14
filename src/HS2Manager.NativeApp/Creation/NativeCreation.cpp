@@ -55,35 +55,19 @@ namespace hs2::ui
             Get<NumberBox>(name).NumberFormatter(format);
         }
         std::weak_ptr<NativeCreation> weak = shared_from_this();
-        for (auto name : {L"Rename",
-                          L"Close",
-                          L"CharacterTab",
-                          L"ModelTab",
-                          L"Save",
-                          L"Undo",
-                          L"Redo",
-                          L"Cover",
-                          L"Build",
-                          L"ExportCard",
-                          L"ExportMod",
-                          L"ExportPackage",
-                          L"Install",
-                          L"Rollback",
-                          L"Cancel",
-                          L"AddAsset",
-                          L"Hide",
-                          L"Lock",
-                          L"ObjectRename",
-                          L"Frame",
-                          L"Transform",
-                          L"Half",
-                          L"RefreshReference",
-                          L"Fit",
-                          L"ResetFit",
-                          L"ChangeTemplate",
-                          L"Color",
-                          L"Material"})
-            Get<Button>(name).Click(
+        for (auto name :
+             {L"Close",     L"CharacterTab", L"ModelTab",         L"Save", L"Undo",     L"Redo",           L"Cover",
+              L"Build",     L"Cancel",       L"AddAsset",         L"Hide", L"Lock",     L"ObjectRename",   L"Frame",
+              L"Transform", L"Half",         L"RefreshReference", L"Fit",  L"ResetFit", L"ChangeTemplate", L"Color",
+              L"Material"})
+            Get<Primitives::ButtonBase>(name).Click(
+                [weak, action = to_string(hstring(name))](auto &&, auto &&)
+                {
+                    if (auto self = weak.lock())
+                        self->Action(action);
+                });
+        for (auto name : {L"Rename", L"ExportCard", L"ExportMod", L"ExportPackage", L"Install", L"Rollback"})
+            Get<MenuFlyoutItem>(name).Click(
                 [weak, action = to_string(hstring(name))](auto &&, auto &&)
                 {
                     if (auto self = weak.lock())
@@ -320,8 +304,7 @@ namespace hs2::ui
         Menus();
         BindPointers();
         Refresh();
-        if (project_->State().Kind == "mod")
-            Action("ModelTab");
+        Action(project_->State().Kind == "mod" ? "ModelTab" : "CharacterTab");
     }
 
     void NativeCreation::Menus()
@@ -733,6 +716,7 @@ namespace hs2::ui
         cancellation_ = std::stop_source{};
         auto token = cancellation_.get_token();
         Get<Button>(L"Cancel").IsEnabled(true);
+        Get<Button>(L"Cancel").Visibility(Visibility::Visible);
         Message(label);
         apartment_context ui;
         std::function<void()> finish;
@@ -759,6 +743,7 @@ namespace hs2::ui
         if (stopped_)
             co_return;
         Get<Button>(L"Cancel").IsEnabled(false);
+        Get<Button>(L"Cancel").Visibility(Visibility::Collapsed);
         if (error.empty())
         {
             try

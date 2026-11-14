@@ -56,8 +56,6 @@ namespace hs2::ui
         {L"MainWindow", L"ActionMainWindow22", L"Click", L"BatchTags_Click"},
         {L"MainWindow", L"ActionMainWindow23", L"Click", L"AssignCollection_Click"},
         {L"MainWindow", L"ActionMainWindow24", L"Click", L"Export_Click"},
-        {L"MainWindow", L"ActionMainWindow25", L"Click", L"ExportModel_Click"},
-        {L"MainWindow", L"DeleteCardsButton", L"Click", L"Delete_Click"},
         {L"MainWindow", L"ActionMainWindow26", L"Click", L"More_Click"},
         {L"MainWindow", L"ActionMainWindow27", L"Click", L"Restore_Click"},
         {L"MainWindow", L"ActionMainWindow28", L"Click", L"Preview_Click"},
@@ -140,9 +138,9 @@ namespace hs2::ui
     };
 
     inline constexpr UiWrap UiWraps[] = {
-        {L"MainWindow", L"WrapMainWindow7"},
-        {L"MainWindow", L"WrapMainWindow20"},
-        {L"MainWindow", L"PreviewControlsPanel"},
-        {L"CharacterEditorView", L"WrapCharacterEditorView9"},
+        {L"MainWindow", L"WrapMainWindow7"},      {L"MainWindow", L"WrapMainWindow20"},
+        {L"MainWindow", L"PreviewControlsPanel"}, {L"CharacterEditorView", L"WrapCharacterEditorView9"},
+        {L"CreationView", L"CreationCommands"},   {L"CreationView", L"ModelCommands"},
+        {L"ProjectsView", L"ProjectCommands"},
     };
 } // 命名空间 hs2::ui

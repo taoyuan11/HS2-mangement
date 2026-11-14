@@ -123,6 +123,11 @@ namespace hs2::ui
             if (action == "CharacterTab" || action == "ModelTab")
             {
                 bool model = action == "ModelTab";
+                for (auto name : {L"CharacterTab", L"ModelTab"})
+                {
+                    bool selected = (std::wstring_view(name) == L"ModelTab") == model;
+                    Get<Primitives::ToggleButton>(name).IsChecked(selected);
+                }
                 Get<Grid>(L"ModelHost").Visibility(model ? Visibility::Visible : Visibility::Collapsed);
                 Get<ContentControl>(L"CharacterHost").Visibility(model ? Visibility::Collapsed : Visibility::Visible);
                 viewport_->Visible(model);

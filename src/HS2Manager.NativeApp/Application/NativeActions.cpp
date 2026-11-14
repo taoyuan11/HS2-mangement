@@ -3,6 +3,7 @@
 #include "Creation/NativeProjects.h"
 #include "Preview/NativePreview.h"
 #include "Application/NativeWindow.h"
+#include "Infrastructure/GameDiscovery.h"
 #include "Infrastructure/UiEvents.h"
 #include <ShlObj.h>
 #include <Shobjidl.h>
@@ -79,6 +80,8 @@ namespace hs2::ui
         try
         {
             if (closing_ || closePrompt_)
+                co_return;
+            if (gameSetupPending_ && name != L"Cancel_Click")
                 co_return;
             if (name == L"CharacterProjects_Click" || name == L"ModProjects_Click")
             {
@@ -673,6 +676,9 @@ namespace hs2::ui
                 {
                     MenuFlyoutItem item;
                     item.Text(label);
+                    if (std::wstring_view(action) == L"Delete_Click")
+                        item.Foreground(
+                            Application::Current().Resources().Lookup(box_value(L"DangerBrush")).as<Media::Brush>());
                     std::weak_ptr<NativeWindow> weak = shared_from_this();
                     item.Click(
                         [weak, action](auto const &sender, auto &&)
@@ -694,6 +700,8 @@ namespace hs2::ui
                     add(L"移入可恢复隔离区…", L"Quarantine_Click");
                 }
                 add(L"在资源管理器中显示", L"Reveal_Click");
+                menu.Items().Append(MenuFlyoutSeparator{});
+                add(L"永久删除…", L"Delete_Click");
                 menu.ShowAt(sender.try_as<FrameworkElement>() ? sender.as<FrameworkElement>()
                                                               : Control<GridView>(L"CardList"));
                 co_return;
@@ -712,7 +720,7 @@ namespace hs2::ui
     fire_and_forget NativeWindow::Settings()
     {
         auto lifetime = shared_from_this();
-        if (dialogOpen_)
+        if (dialogOpen_ || gameSetupPending_)
             co_return;
         try
         {
@@ -918,6 +926,10 @@ namespace hs2::ui
                         if (path.empty())
                             throw std::runtime_error("请选择游戏目录。");
                         next.GamePath = Utf8(fs::absolute(Path(path)));
+                        if (!SamePath(Path(next.GamePath), Path(settings_.GamePath)) &&
+                            !IsGameDirectory(Path(next.GamePath)))
+                            throw std::runtime_error(
+                                "请选择包含 HoneySelect2.exe、HoneySelect2_Data 和 abdata 的 HS2 游戏根目录。");
                         next.ExtraRoots.clear();
                         for (auto const &value : roots)
                             next.ExtraRoots.push_back(Utf8(fs::absolute(Path(to_string(unbox_value<hstring>(value))))));

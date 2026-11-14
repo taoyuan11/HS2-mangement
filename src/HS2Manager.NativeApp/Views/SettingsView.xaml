@@ -164,7 +164,8 @@
                             <Grid>
                                 <ListView
                                     x:Name="RootsList"
-                                    Height="64"
+                                    MinHeight="64"
+                                    MaxHeight="144"
                                     HorizontalContentAlignment="Stretch"
                                     AutomationProperties.Name="额外人物卡目录">
                                     <ListView.ItemTemplate>

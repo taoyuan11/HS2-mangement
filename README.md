@@ -6,7 +6,7 @@
 
 1. 将 `HS2Manager-1.5.0-cpp-win-x64.zip` 解压到本机磁盘，例如 `D:\Apps\HS2Manager`。请完整解压，保持程序与其他文件相对位置。
 2. 双击 `HS2Manager.exe`。已包含 WinUI 与 VC++ 运行库，无需安装 .NET。
-3. 默认游戏目录为 `Z:\games\hs2\HS two DX - TSYMQ`。在左下角“设置与连接”可修改，也可添加其他人物卡目录。
+3. 首次启动自动检测 HS2 游戏目录，支持程序附近、系统登记的安装位置和各盘常见游戏目录（包括映射网络盘），找到后保存路径再扫描。未找到时提示手动选择包含 `HoneySelect2.exe`、`HoneySelect2_Data` 和 `abdata` 的游戏根目录；选择“稍后设置”可先进入资料库，之后在左下角“设置与连接”配置。后续启动优先使用已保存的有效目录，目录失效时重新检测。自动检测限于常见位置和浅层目录，深层、自定义或未映射的网络位置可手动选择；也可添加其他人物卡目录。
 4. 首次启动默认仅扫描女性人物卡目录 `UserData\chara\female` 的当前层，建立本地封面和元数据索引，再读取 MOD 清单。在“设置与连接”可开启“递归检索人物卡（包含子目录）”，该开关默认关闭，同时适用于默认目录和额外人物卡目录。关闭递归后，已索引的子目录内容仍会保留。NAS 首次扫描需要一些时间；底部显示进度并提供取消。
 
 本机磁盘运行时，`Data` 在程序旁边，保存 `library.db`、`settings.json`、`Covers`、`CardBackups`、`Operations` 和 `Logs`。便携包位于 NAS 时，自动将原有资料复制到 `%LOCALAPPDATA%\HS2Manager\Portable\<安装路径标识>\Data`，保留原件；之后使用本机资料库。数据库、封面与缓存均留在本机，游戏与人物卡可以位于 NAS。实际数据位置可在“设置与连接 → 数据与维护”查看，也可用 `--data "D:\HS2ManagerData"` 指定本机目录。NAS 上的程序文件和本机资料库需要分别备份；更换电脑不会自动同步收藏与备注。
@@ -62,7 +62,7 @@
 
 移动、重命名、隔离也保留原始文件。隔离目录是游戏根目录下的 `.HS2ManagerTrash`，始终排除在扫描之外。左侧“可恢复隔离区”可恢复到原位置；若原名称已有文件，恢复时同样保留两份。
 
-选中一张或多张卡片后，可点击底部“永久删除”、右键“永久删除…”或按 Shift+Delete。普通列表、“需要关注”和隔离区均支持。确认框列出数量、文件名与完整路径，默认取消；确认后永久删除选中的原始 PNG 及其收藏、标签、备注和封面缓存，**不经过回收站，无法恢复**。不会删除 MOD、插件、共享资源或其他同名卡。Delete 键仍为可恢复隔离。
+选中一张或多张卡片后，可点击底部“更多 → 永久删除…”、右键“永久删除…”或按 Shift+Delete。普通列表、“需要关注”和隔离区均支持。确认框列出数量、文件名与完整路径，默认取消；确认后永久删除选中的原始 PNG 及其收藏、标签、备注和封面缓存，**不经过回收站，无法恢复**。不会删除 MOD、插件、共享资源或其他同名卡。Delete 键仍为可恢复隔离。
 
 删除时会重新核对文件版本；已变化、被占用或所在目录不可访问的项目保留记录并报告原因，其他项目继续处理。文件已缺失且父目录可正常读取时会清理残留记录。取消仅停止后续项目，已删除项目仍完成清理，结果显示完成、失败和未处理数量。中断恢复只补齐已删除文件的记录与缓存清理，不自动重新删除仍存在的文件；“文件已删除，待清理”表示原文件已经永久删除，可通过操作日志重试清理。
 
@@ -152,7 +152,7 @@ C++ 版本已执行真实人物字段、无损读写、保存事务和界面流�
 
 根目录命令入口只有 `start.cmd` 和 `push-releases.cmd`。本地构建与打包实现位于 `scripts`；桌面部署功能已移除。目录职责、中文注释要求、4 空格缩进规则与统一格式化命令见 [项目结构与代码规范](docs/DEVELOPMENT.md)。
 
-正式构建需要 Windows x64、Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake，无需 .NET SDK。脚本通过 Visual Studio Installer 定位工具，还原固定版本的 C++/WinRT 与 Windows App SDK 1.8。独立布料适配层使用 PhysX 3.4.2 源码；FBX 适配层使用 Autodesk FBX SDK 2020.3.7。将按各自许可取得的 SDK 放入 `.tools/physx-3.4` 和 `.tools/fbx-native-2020.3.7`，或向 `scripts/package/Publish-Cpp.ps1` 传入 `-PhysXSource` / `-FbxSdkRoot` 指定外部目录。单独运行适配层构建脚本时，分别使用 `-Source` / `-SdkRoot`。
+正式构建需要 Windows x64、Visual Studio 2022 的桌面 C++ 工作负载、Windows SDK 和 CMake，无需 .NET SDK。脚本通过 Visual Studio Installer 定位工具，还原固定版本的 C++/WinRT 与 Windows App SDK 1.8。独立布料适配层使用 PhysX 3.4.2 源码；FBX 适配层使用 Autodesk FBX SDK 2020.3.7。首次构建缺少 SDK 时，通过 `scripts/build/Restore-NativeDependencies.ps1` 自动从 NVIDIA 和 Autodesk 官方地址恢复到 `.tools/ci`，校验固定的 PhysX 提交和 FBX 安装包 SHA-256；需要 Git for Windows、7-Zip 和网络连接，后续复用缓存。也可将按各自许可取得的 SDK 放入 `.tools/physx-3.4` 和 `.tools/fbx-native-2020.3.7`，或向 `scripts/package/Publish-Cpp.ps1` 传入 `-PhysXSource` / `-FbxSdkRoot` 指定外部目录。单独运行适配层构建脚本时，分别使用 `-Source` / `-SdkRoot`；显式路径错误会报出目录，不会自动替换。
 
 ```powershell
 .\scripts\package\Publish-Cpp.ps1 -GamePath 'Z:\games\hs2\HS two DX - TSYMQ'
@@ -170,7 +170,7 @@ C++ 版本已执行真实人物字段、无损读写、保存事务和界面流�
 
 PhysX 构建将编译器 PDB 放入各项目的中间目录，与链接器 PDB 分开，避免旧 SDK 共用调试数据库。遇到 LNK1318 等 PDB 缓存错误时，脚本会清理相关 Release 依赖并串行重建一次；其他错误或重试失败仍会终止发布。首次失败、清理和重建日志分别保存在 PhysX 构建目录的 `build-sdk.log`、`build-sdk-clean.log` 和 `build-sdk-rebuild.log` 中。
 
-日常可双击 `start.cmd`，以 Release 配置构建并运行；首次使用先运行一次完整 `scripts/package/Publish-Cpp.ps1` 准备原生适配层。源码在 NAS 时，编译产物放在 `%LOCALAPPDATA%/HS2Manager/CppBuild/<项目标识>`，资料库保留原来的 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
+日常可双击 `start.cmd`，以 Release 配置构建并运行；首次使用会自动恢复缺失的 SDK 并构建原生适配层，无需预先打包。源码在 NAS 时，编译产物放在 `%LOCALAPPDATA%/HS2Manager/CppBuild/<项目标识>`，资料库保留原来的 `%LOCALAPPDATA%/HS2Manager/Source/<项目与配置标识>`，游戏资源仍可位于网络盘；映射盘和 UNC 路径复用已有资料库。`start.cmd --data "D:\HS2ManagerData"` 可指定本机资料。原有数据库、设置、封面、编辑备份及操作日志继续保留。
 
 在 Visual Studio 打开 `HS2Manager.Native.sln` 或 `HS2Manager.slnx`。生产代码在 `src/HS2Manager.NativeApp`、`NativeCore`、`NativeScene`、`NativeRendering`、`NativeExport`、`NativeAssetBuild` 和 `NativeAgent`；底层库也可通过根目录 `CMakeLists.txt` 构建。旧 C#、Unity 与桥接源代码、参考解决方案及专用构建和测试脚本已移除，可通过 Git 历史查看。冻结数值基准保留在 `tests/fixtures`，供 C++ 回归检查及历史对照使用。
 

@@ -6,9 +6,13 @@ if (!$BuildDirectory) {
 }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $localSource = Join-Path $BuildDirectory 'source'
+# 显式传入的路径仍由调用者管理；默认 SDK 未准备时自动恢复固定版本。
+if (!$PSBoundParameters.ContainsKey('Source') -and !(Test-Path -LiteralPath $Source)) {
+    $Source = (& (Join-Path $PSScriptRoot 'Restore-NativeDependencies.ps1') -Dependency PhysX).PhysXSource
+}
 $header = Join-Path $Source 'PhysX_3.4/Include/PxPhysicsVersion.h'
 if (!(Test-Path -LiteralPath $header)) {
-    throw 'The NVIDIA PhysX 3.4 source checkout is missing.'
+    throw "The NVIDIA PhysX 3.4.2 source checkout is missing or incomplete: $Source. Use -Source to specify the SDK directory."
 }
 $version = [IO.File]::ReadAllText($header)
 if ($version -notmatch 'PX_PHYSICS_VERSION_MAJOR 3' -or $version -notmatch 'PX_PHYSICS_VERSION_MINOR 4' -or $version -notmatch 'PX_PHYSICS_VERSION_BUGFIX 2') {
@@ -58,6 +62,7 @@ $previousCl = $env:_CL_
 try {
     $env:_CL_ = '/WX- /Wv:18'
     $log = Join-Path $BuildDirectory 'build-sdk.log'
+    Write-Host "Building NVIDIA PhysX 3.4.2. Log: $log"
     # 由 MSVC 通过默认属性文件选择已安装的 Windows SDK。
     # 最后导入编译设置，覆盖 SDK 中编译器与链接器共用 PDB 的旧配置。
     $sdkArguments = @(
