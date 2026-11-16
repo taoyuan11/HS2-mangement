@@ -100,10 +100,12 @@ int wmain(int argc, wchar_t **argv)
                         response["result"] = {
                             {"protocolVersion", "2025-11-25"},
                             {"capabilities", {{"tools", Json::object()}}},
-                            {"serverInfo", {{"name", "hs2-card-agent"}, {"version", "1.1.0"}}},
+                            {"serverInfo", {{"name", "hs2-card-agent"}, {"version", "2.0.0"}}},
                             {"instructions",
                              "按 skills/hs2-card-agent/SKILL.md 完成图片创建人物卡。模型推理由客户端负责。耗时工具返回 "
-                             "job_id，需查询直到完成或失败。先用 hs2_set_reference_regions 标注参考视图，"
+                             "job_"
+                             "id，需查询直到完成或失败。所有外观素材直接新建，成品搜索已停用；修改和构建不限次数。先用 "
+                             "hs2_set_reference_regions 标注参考视图，"
                              "用渲染对照图和 hs2_review_render 逐项修正；打包成功不代表外观还原。"}};
                     else if (method == "ping")
                         response["result"] = Json::object();
@@ -113,6 +115,17 @@ int wmain(int argc, wchar_t **argv)
                     {
                         auto params = request.at("params");
                         auto name = params.at("name").get<std::string>();
+                        if (name == "hs2_search_assets")
+                        {
+                            response["result"] = {
+                                {"content",
+                                 {{{"type", "text"},
+                                   {"text", "ASSET_SEARCH_REMOVED：成品搜索已停用；使用 "
+                                            "hs2_get_schema、hs2_prepare_asset、hs2_build_asset 直接制作"}}}},
+                                {"isError", true}};
+                            std::cout << response.dump() << std::endl;
+                            continue;
+                        }
                         bool exists = false;
                         for (auto &tool : agent::Service::Tools())
                             exists |= tool["name"] == name;

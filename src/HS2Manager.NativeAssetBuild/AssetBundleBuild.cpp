@@ -1,4 +1,5 @@
 #include "AssetBundleBuild.h"
+#include "AssetTargets.h"
 #include "AssetParameters.h"
 #include "Assets/MonoSchema.h"
 #include "Archive/ZipArchive.h"
@@ -9,6 +10,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <cstring>
 
 namespace hs2::asset
 {
@@ -61,6 +63,7 @@ namespace hs2::asset
             std::unique_ptr<NativeMonoSchema> Schemas;
             std::string Version;
             std::stop_token Token;
+            bool CopyScene = false;
             std::int64_t Next = 10;
 
             Graph(const MaterialTemplate &source, const fs::path &game,
@@ -159,8 +162,8 @@ namespace hs2::asset
                 auto type = SourceType(pointer, p);
                 Require(WriteUnityValue(type.Nodes, p) == reader->RawObject(pointer.PathId),
                         "模板资源字段回写与原始对象不一致");
-                Require(type.ClassId == 21 || type.ClassId == 28 || type.ClassId == 48 || type.ClassId == 89 ||
-                            type.ClassId == 115,
+                Require((CopyScene && type.ClassId != 142) || type.ClassId == 21 || type.ClassId == 28 ||
+                            type.ClassId == 48 || type.ClassId == 89 || type.ClassId == 115,
                         "材质依赖包含不支持复制的对象类型");
                 auto id = Add(type, p);
                 Copies.emplace(key, id);
@@ -345,6 +348,44 @@ namespace hs2::asset
     MaterialTemplate ResolveTemplate(CharacterCatalog &catalog, const CharacterDocument &document, const Json &spec,
                                      const fs::path &game, std::stop_token token)
     {
+        // 自动选择仅获取技术组件/材质；不把候选的成品几何选入人物卡。
+        if (!spec.contains("template_asset_id"))
+        {
+            auto binding = CharacterAssetReferences::Describe(document, spec.at("target_path"));
+            Require(binding.has_value(), "素材目标槽位无效");
+            std::vector<NativeAssetEntry> candidates;
+            if (spec.at("kind") == "head")
+                if (auto current = catalog.Selected(document, spec.at("target_path")))
+                    candidates.push_back(*current);
+            // 优先原版技术组件，避免旧 MOD 的悬空依赖阻断新几何制作。
+            for (int source : {1, 2})
+            {
+                auto others = catalog.Query(binding->Category, {}, source);
+                candidates.insert(candidates.end(), others.begin(), others.end());
+            }
+            std::set<std::string> tried;
+            for (const auto &candidate : candidates)
+            {
+                CheckCancelled(token);
+                if (candidate.Asset.empty() || candidate.Asset == "p_dummy" || !tried.insert(AssetId(candidate)).second)
+                    continue;
+                auto explicitSpec = spec;
+                explicitSpec["template_asset_id"] = AssetId(candidate);
+                try
+                {
+                    return ResolveTemplate(catalog, document, explicitSpec, game, token);
+                }
+                catch (const Cancelled &)
+                {
+                    throw;
+                }
+                catch (const std::exception &)
+                {
+                    CheckCancelled(token);
+                }
+            }
+            throw std::runtime_error("ASSET_TEMPLATE_REQUIRED：本机没有可用的同类别技术模板");
+        }
         auto target = spec.at("target_path").get<std::string>();
         auto binding = CharacterAssetReferences::Describe(document, target);
         Require(binding.has_value(), "素材目标槽位无效");
@@ -392,7 +433,10 @@ namespace hs2::asset
             });
         result.Data = result.Assets->Prefab(result.Prefab.Bundle, name);
         auto kind = spec.at("kind").get<std::string>();
-        result.ComponentName = kind == "hair" ? "CmpHair" : kind == "clothes" ? "CmpClothes" : "CmpAccessory";
+        result.ComponentName = kind == "head"      ? "FaceBlendShape"
+                               : kind == "hair"    ? "CmpHair"
+                               : kind == "clothes" ? "CmpClothes"
+                                                   : "CmpAccessory";
         for (const auto &component : result.Data->Components)
             if (component.ClassId == 114 &&
                 ComponentName(*result.Assets, result.Prefab.Bundle, component.Data) == result.ComponentName)
@@ -678,6 +722,234 @@ namespace hs2::asset
             }
             throw std::runtime_error("DYNAMIC_TEMPLATE_MISSING：本机资源中缺少兼容的 DynamicBone 类型模板");
         }
+    }
+
+    namespace
+    {
+        Json FinishBundle(Graph &graph, const Json &spec, const fs::path &output,
+                          const std::map<std::string, std::int64_t> &exports)
+        {
+            auto fingerprint = WriteUnitySerializedFile(graph.Document());
+            auto text = spec.dump() + std::string(BuilderVersion);
+            for (const auto &dependency : graph.Dependencies)
+                text += HashFile(Path(dependency), graph.Token);
+            fingerprint.insert(fingerprint.end(), text.begin(), text.end());
+            auto hash = Sha256(fingerprint), guid = "hs2agent." + hash;
+            auto bundleName = "hs2agent/" + guid + ".unity3d";
+            std::transform(bundleName.begin(), bundleName.end(), bundleName.begin(),
+                           [](unsigned char c)
+                           {
+                               return static_cast<char>(std::tolower(c));
+                           });
+            auto bundle = graph.New(142);
+            auto &header = graph.Get(bundle);
+            Text(header, "m_Name", bundleName);
+            Text(header, "m_AssetBundleName", bundleName);
+            Set(header, "m_RuntimeCompatibility", 1);
+            Set(header, "m_PathFlags", 7);
+            std::vector<std::int64_t> preload;
+            for (const auto &[id, _] : graph.Objects)
+                if (id != bundle)
+                    preload.push_back(id);
+            Pointers(header, "m_PreloadTable", preload);
+            for (const auto &[name, id] : exports)
+            {
+                auto entry = graph.Element(bundle, {"m_Container"});
+                Text(entry, "first", "assets/hs2agentgenerated/" + name);
+                auto &info = At(entry, "second");
+                Point(info, "asset", id);
+                Set(info, "preloadIndex", 0);
+                Set(info, "preloadSize", preload.size());
+                Array(At(header, "m_Container")).Children.push_back(std::move(entry));
+            }
+            auto serialized = WriteUnitySerializedFile(graph.Document());
+            UnitySerializedFile check(serialized, graph.Database.get());
+            for (const auto &[id, object] : graph.Objects)
+            {
+                CheckCancelled(graph.Token);
+                auto value = check.Read(id);
+                Require(WriteUnityValue(graph.Info(id).Nodes, value) ==
+                            WriteUnityValue(graph.Info(id).Nodes, object.Value),
+                        "新素材字段回读不一致");
+                VisitUnityPointers(value,
+                                   [&](std::int32_t &file, std::int64_t &path)
+                                   {
+                                       Require(file ? file > 0 &&
+                                                          static_cast<std::size_t>(file) <= graph.Externals.size()
+                                                    : !path || graph.Objects.contains(path),
+                                               "新素材包含悬空引用");
+                                   });
+            }
+            std::vector<UnityBundleOutput> files{{"CAB-" + hash.substr(0, 32), std::move(serialized), 4}};
+            WriteAtomic(output / "abdata" / Path(bundleName), WriteUnityBundle(graph.Version, files, graph.Token));
+            return {{"hash", hash},
+                    {"guid", guid},
+                    {"slot_id", 100000 + static_cast<int>(std::stoul(hash.substr(0, 6), nullptr, 16))},
+                    {"bundle", bundleName},
+                    {"builder_version", BuilderVersion},
+                    {"additional_bones", Json::array()},
+                    {"game_validation", "not_run"}};
+        }
+    }
+
+    Json BuildTextureBundle(CharacterCatalog &catalog, const Json &spec, const fs::path &game, const fs::path &output,
+                            std::stop_token token)
+    {
+        MaterialTemplate seed;
+        seed.Database = catalog.Database();
+        seed.Prefab = catalog.Asset("chara/mm_base.unity3d", "create_skin_face");
+        seed.Assets = std::make_shared<NativeGpuAssetStore>(std::vector<fs::path>{seed.Prefab.Bundle}, game,
+                                                            seed.Database, token);
+        Graph graph(seed, game, seed.Database, token);
+        std::map<std::string, std::int64_t> exports;
+        Json names = Json::object();
+        for (const auto &texture : spec.at("textures"))
+        {
+            auto field = texture.at("field").get<std::string>();
+            static const std::set<std::string> allowed{"MainTex", "AddTex", "GlossTex", "NormalMapTex",
+                                                       "OcclusionMapTex"};
+            Require(allowed.contains(field) && !names.contains(field), "贴图通道无效或重复");
+            auto name = "generated_" + field;
+            // Unity 的 LoadAsset 按小写资源路径查找，原生回读不会暴露大小写不兼容。
+            std::transform(name.begin(), name.end(), name.begin(),
+                           [](unsigned char c)
+                           {
+                               return static_cast<char>(std::tolower(c));
+                           });
+            auto id = TextureObject(graph, Path(texture.at("path")), name,
+                                    texture.value("srgb", field == "MainTex" || field == "AddTex"));
+            exports[name + ".png"] = id;
+            names[field] = name;
+        }
+        Require(!exports.empty(), "至少提供一个新贴图通道");
+        auto result = FinishBundle(graph, spec, output, exports);
+        result["textures"] = names;
+        NativeGpuAssetReader check(output / "abdata" / Path(result.at("bundle")), seed.Database.get());
+        for (const auto &[field, name] : names.items())
+        {
+            auto texture = check.Texture(check.Find(name.get<std::string>(), 28).PathId);
+            Require(texture.Width > 0 && texture.Height > 0, "新贴图回读失败");
+        }
+        return result;
+    }
+
+    Json HeadReference(const MaterialTemplate &source, std::stop_token token)
+    {
+        Json result{{"schema_version", 3},
+                    {"template_asset_id", AssetId(source.Entry)},
+                    {"template_hash", HashFile(source.Prefab.Bundle, token)},
+                    {"coordinates", "mesh_local_bind_pose"},
+                    {"meshes", Json::array()}};
+        std::set<std::int64_t> seen;
+        for (const auto &renderer : source.Data->Renderers)
+        {
+            auto pointer = source.Assets->Resolve(renderer.Mesh);
+            if (!seen.insert(pointer.PathId).second)
+                continue;
+            auto mesh = source.Assets->Mesh(pointer);
+            Json item{{"mesh_id", std::to_string(pointer.PathId)},
+                      {"name", mesh->Name},
+                      {"source_hash", Sha256(source.Assets->Reader(pointer.Bundle)->RawObject(pointer.PathId))},
+                      {"positions", Json::array()},
+                      {"normals", Json::array()},
+                      {"uv", Json::array()},
+                      {"indices", Json::array()},
+                      {"expressions", Json::array()}};
+            for (int i = 0; i < mesh->VertexCount; ++i)
+            {
+                item["positions"].push_back({mesh->Read(0, i, 0), mesh->Read(0, i, 1), mesh->Read(0, i, 2)});
+                item["normals"].push_back({mesh->Read(1, i, 0), mesh->Read(1, i, 1), mesh->Read(1, i, 2)});
+                item["uv"].push_back({mesh->Read(4, i, 0), mesh->Read(4, i, 1)});
+            }
+            for (const auto &sub : mesh->Submeshes)
+                for (int i = 0; i < sub.IndexCount; ++i)
+                    item["indices"].push_back(mesh->Index(sub.FirstIndex + i) + sub.BaseVertex);
+            for (const auto &shape : mesh->BlendShapes)
+                item["expressions"].push_back(shape.Name);
+            result["meshes"].push_back(std::move(item));
+        }
+        return result;
+    }
+
+    Json BuildHeadBundle(const MaterialTemplate &source, const Json &spec, const fs::path &game, const fs::path &output,
+                         std::stop_token token)
+    {
+        auto input = Json::parse(ReadFile(Path(spec.at("source_head")), 256ull * 1024 * 1024, token));
+        auto reference = HeadReference(source, token);
+        Require(input.at("template_hash") == reference.at("template_hash") &&
+                    input.at("template_asset_id") == reference.at("template_asset_id") &&
+                    input.at("coordinates") == reference.at("coordinates") &&
+                    input.at("meshes").size() == reference.at("meshes").size(),
+                "HEAD_REFERENCE_STALE：请重新准备头部绑定姿态参考");
+        Graph graph(source, game, source.Database, token);
+        graph.CopyScene = true;
+        auto root = graph.Copy(source.Assets->Find(source.Prefab.Bundle, source.Prefab.Asset, 1));
+        bool changed = false;
+        for (std::size_t m = 0; m < reference.at("meshes").size(); ++m)
+        {
+            const auto &expected = reference.at("meshes")[m], &edit = input.at("meshes")[m];
+            for (auto key : {"mesh_id", "source_hash", "indices", "uv", "expressions"})
+                Require(edit.at(key) == expected.at(key), "HEAD_TOPOLOGY：头部必须保留索引、UV、表情和源标识");
+            auto pointer =
+                GpuAssetPointer{source.Prefab.Bundle, 0, std::stoll(expected.at("mesh_id").get<std::string>())};
+            auto mesh = source.Assets->Mesh(pointer);
+            auto id = graph.Copy(pointer);
+            auto &value = graph.Get(id);
+            auto &bytes = At(At(value, "m_VertexData"), "m_DataSize").Bytes;
+            Require(!bytes.empty(), "头部网格需要内嵌顶点缓冲区");
+            Mesh bounds;
+            for (auto [key, semantic] : {std::pair{"positions", 0}, {"normals", 1}})
+            {
+                Require(edit.at(key).size() == static_cast<std::size_t>(mesh->VertexCount),
+                        "HEAD_TOPOLOGY：顶点数量发生变化");
+                auto channel = std::find_if(mesh->Channels.begin(), mesh->Channels.end(),
+                                            [&](const auto &c)
+                                            {
+                                                return c.Semantic == semantic;
+                                            });
+                Require(channel != mesh->Channels.end() && channel->Format == 0 && channel->Dimension >= 3,
+                        "头部参考需要 float32 位置/法线通道");
+                for (int v = 0; v < mesh->VertexCount; ++v)
+                {
+                    auto p = Vector3Of(edit.at(key)[v]);
+                    Require(std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z), "头部顶点包含非有限值");
+                    auto offset = mesh->StreamOffsets.at(channel->Stream) +
+                                  v * mesh->StreamStrides.at(channel->Stream) + channel->Offset;
+                    Require(offset >= 0 && static_cast<std::size_t>(offset) + sizeof(p) <= bytes.size(),
+                            "头部顶点缓冲区越界");
+                    std::memcpy(bytes.data() + offset, &p, sizeof(p));
+                    if (semantic == 0)
+                    {
+                        bounds.Vertices.push_back(Vertex{p});
+                        changed |= edit.at(key)[v] != expected.at(key)[v];
+                    }
+                }
+            }
+            Bounds(At(value, "m_LocalAABB"), bounds);
+            for (auto &sub : Array(At(value, "m_SubMeshes")).Children)
+                Bounds(At(sub, "localAABB"), bounds);
+            GpuMeshData::FromMetadata(value, bytes).Validate();
+        }
+        Require(changed, "头部模型没有新制作的几何修改");
+        auto animation = graph.Copy(source.Assets->Find(source.Prefab.Bundle, source.Entry.Get("ShapeAnime"), 49));
+        auto material = graph.Copy(source.Assets->Find(source.Prefab.Bundle, source.Entry.Get("MatData"), 21));
+        Text(graph.Get(root), "m_Name", "generated_head");
+        Text(graph.Get(animation), "m_Name", "generated_shape");
+        Text(graph.Get(material), "m_Name", "generated_skin_material");
+        auto result = FinishBundle(graph, spec, output,
+                                   {{"generated_head.prefab", root},
+                                    {"generated_shape.txt", animation},
+                                    {"generated_skin_material.mat", material}});
+        result["prefab"] = "generated_head";
+        result["shape_anime"] = "generated_shape";
+        result["mat_data"] = "generated_skin_material";
+        result["template_asset_id"] = AssetId(source.Entry);
+        NativeGpuAssetReader check(output / "abdata" / Path(result.at("bundle")), source.Database.get());
+        auto prefab = check.Prefab("generated_head");
+        Require(prefab.Renderers.size() == source.Data->Renderers.size(), "头部渲染器回读不一致");
+        for (const auto &renderer : prefab.Renderers)
+            check.Mesh(renderer.Mesh.PathId).Validate();
+        return result;
     }
 
     Json BuildGameBundle(const Geometry &geometry, const MaterialTemplate &source, const Json &spec,

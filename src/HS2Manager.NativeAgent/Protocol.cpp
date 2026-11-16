@@ -63,13 +63,8 @@ namespace hs2::agent
         add("hs2_get_schema",
             "读取实际可编辑字段、类型、范围和当前值；kind 0 数值、1 颜色、2 开关、3 素材、4 选项、5 预设。", session,
             {"session_id"}, true);
-        auto search = session;
-        search.update(Json{
-            {"category", integer}, {"query", string}, {"source", integer}, {"offset", integer}, {"limit", integer}});
-        add("hs2_search_assets", "异步检索本机素材及生成素材；返回 asset_id 和缩略图。source：0 全部、1 原版、2 MOD。",
-            search, {"session_id", "category"}, true);
         add("hs2_apply_changes",
-            "原子修改草稿；素材值使用 asset_id，颜色使用 RGB/RGBA 数组。每次调用消耗一次修正。mark_best "
+            "原子修改草稿；素材值使用本会话生成的 asset_id，颜色使用 RGB/RGBA 数组。修正次数不限。mark_best "
             "仅标记候选，需渲染评估后确认。",
             fields({{"changes",
                      {{"type", "array"},
@@ -132,14 +127,18 @@ namespace hs2::agent
                      {"required", {"area", "status", "reference", "observed"}},
                      {"additionalProperties", false}}}}}}),
             {"session_id", "expected_revision", "render_id", "areas", "unseen_regions"}, false);
-        add("hs2_prepare_asset", "原生导出当前人物的参考 FBX、结构化网格、骨架、UV PNG 和兼容素材模板。",
-            fields({{"kind", string}}), {"session_id", "expected_revision"}, false);
+        add("hs2_prepare_asset",
+            "准备新素材输入；target_path 指定制作字段。返回 UV、骨架和通道要求；头部返回保留拓扑与表情的绑定姿态 "
+            "JSON。技术模板自动选择。",
+            fields({{"kind", string}, {"target_path", string}}), {"session_id", "expected_revision"}, false);
         add("hs2_build_asset",
-            "原生异步制作 texture/accessory/hair/clothes；建模 spec 使用 schema_version:2。格式见随包 "
-            "skills/hs2-card-agent/references/assets.md。三次尝试后保留草稿。",
+            "原生异步制作 texture/accessory/hair/clothes/catalog_texture/head/layout；新类型 spec 使用 "
+            "schema_version:3。格式见随包 "
+            "skills/hs2-card-agent/references/assets.md。同一 asset_key 可持续修正，无尝试次数上限。",
             fields({{"spec", object}}), {"session_id", "expected_revision", "spec"}, false);
-        add("hs2_validate", "检查结构、依赖与当前版本渲染状态；真实游戏验证独立标记。", revision,
-            {"session_id", "expected_revision"}, true);
+        add("hs2_validate",
+            "检查结构、依赖、当前版本渲染及启用素材的新建记录；creation_issues 列出待制作目标。真实游戏验证独立标记。",
+            revision, {"session_id", "expected_revision"}, true);
         add("hs2_finalize_card",
             "hs2_review_render 的当前渲染逐项评估与技术检查通过后导出独立角色包；仅 passed:true 不能替代逐项评估。",
             fields({{"output_directory", string},

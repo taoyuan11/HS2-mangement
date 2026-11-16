@@ -5,8 +5,8 @@
 
 namespace hs2::asset
 {
-    inline constexpr int SchemaVersion = 2;
-    inline constexpr std::string_view BuilderVersion = "native-assets-2.0.1";
+    inline constexpr int SchemaVersion = 3;
+    inline constexpr std::string_view BuilderVersion = "native-assets-3.0.0";
 
     struct Influence
     {

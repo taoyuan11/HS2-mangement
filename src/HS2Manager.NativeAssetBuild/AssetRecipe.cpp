@@ -262,8 +262,9 @@ namespace hs2::asset
 
     Geometry BuildRecipe(const Json &recipe, const Geometry &reference, std::stop_token token)
     {
-        Require(recipe.value("schema_version", SchemaVersion) == SchemaVersion,
-                "建模配方版本不支持；需要 schema_version: 2");
+        Require(recipe.value("schema_version", SchemaVersion) == SchemaVersion ||
+                    recipe.value("schema_version", SchemaVersion) == 2,
+                "建模配方版本不支持；需要 schema_version: 2 或 3");
         Geometry result = GeometryOf({{"meshes", recipe.value("meshes", Json::array())}});
         auto find = [&](const std::string &name) -> Mesh &
         {

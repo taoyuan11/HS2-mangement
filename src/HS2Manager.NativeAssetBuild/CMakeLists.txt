@@ -1,5 +1,6 @@
 add_library(
     hs2_asset_build STATIC AssetBuild.cpp AssetGeometry.cpp AssetRecipe.cpp AssetBundleBuild.cpp AssetImport.cpp
+                           AssetTargets.cpp
 )
 target_compile_features(hs2_asset_build PUBLIC cxx_std_20)
 target_include_directories(hs2_asset_build PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")

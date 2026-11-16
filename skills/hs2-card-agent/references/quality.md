@@ -23,7 +23,7 @@
 
 脸部默认 `face_zoom: 1.4`、`face_vertical_offset: -0.12`，减少头冠、后脑和颈部占据画面。特殊头型可调整：zoom 为放大倍数，offset 为头部高度的比例，负值向下移动取景中心。先确认五官和下颌完整且在参考中占比相近，再比较滑条效果。灰色背景仍经过游戏光照和后处理，不保证与原图背景亮度相同。
 
-`hs2_probe_fields` 可以用 `delta: 0.03` 做细调，数值是字段范围的比例。脸部默认同时看正脸和侧脸；其他字段默认看全身正侧面。每个字段返回一张对照板，行从上到下为负向、当前、正向，列对应 `columns`；`rows` 记录实际数值。最多六个字段，不消耗修改轮数。存在骨骼／插件修正时必须以实际画面为准。
+`hs2_probe_fields` 可以用 `delta: 0.03` 做细调，数值是字段范围的比例。脸部默认同时看正脸和侧脸；其他字段默认看全身正侧面。每个字段返回一张对照板，行从上到下为负向、当前、正向，列对应 `columns`；`rows` 记录实际数值。最多六个字段，不修改草稿计数。存在骨骼／插件修正时必须以实际画面为准。
 
 看图优先比较：
 
@@ -47,7 +47,7 @@
   "unseen_regions": "鞋底为补全；其余所述特征在参考中可见",
   "areas": [
     {"area": "face", "status": "needs_work", "reference": "细长杏眼，柔和下颌", "observed": "眼高偏大、下颌过尖", "correction": "先探测眼高和下颌宽度，再小幅调整"},
-    {"area": "hair", "status": "needs_work", "reference": "轻薄刘海和分层长发", "observed": "刘海边缘成整块直线", "correction": "更换轻薄刘海候选并比较正侧面"},
+    {"area": "hair", "status": "needs_work", "reference": "轻薄刘海和分层长发", "observed": "刘海边缘成整块直线", "correction": "重新制作轻薄刘海发片并比较正侧面"},
     {"area": "body", "status": "matched", "reference": "肩腰比例匀称", "observed": "同类取景下肩腰和腿长接近参考"},
     {"area": "outfit", "status": "needs_work", "reference": "短前裙、飘散长后摆", "observed": "后摆过直", "correction": "调整裙摆宽度、层次和垂坠曲线"},
     {"area": "accessories", "status": "needs_work", "reference": "细小花冠", "observed": "冠宽超过参考相对头宽", "correction": "缩小冠饰并调整挂点"},

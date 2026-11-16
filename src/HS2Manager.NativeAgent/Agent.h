@@ -3,6 +3,7 @@
 #include "Character/CharacterPreparation.h"
 #include <map>
 #include <thread>
+#include <atomic>
 
 namespace hs2::agent
 {
@@ -28,6 +29,7 @@ namespace hs2::agent
         {
             Json State;
             std::jthread Thread;
+            std::atomic<bool> Finished{false};
         };
 
         Json config_;
@@ -45,6 +47,7 @@ namespace hs2::agent
         PreviewResources Resources(const Json &session, std::stop_token token);
         Json Execute(const std::string &name, const Json &args, std::stop_token token);
         Json Start(const std::string &name, const Json &args);
+        void ReapJobs();
         Json Render(Json &session, const CharacterDocument &document, const Json &args, std::stop_token token);
         Json PrepareAsset(Json &session, const Json &args, std::stop_token token);
         Json BuildAsset(Json &session, const Json &args, std::stop_token token);

@@ -58,4 +58,9 @@ $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
 if (!$result.passed) {
     throw "游戏验收未通过：$report"
 }
-$result.items | Select-Object kind, card_loaded, character_loaded, generated_part_loaded, vertices, deformation_checked, clothing_states
+if ($result.PSObject.Properties.Name -contains 'graphics_device') {
+    $result.items | Select-Object kind, target, textures, vertices, expressions, error
+}
+else {
+    $result.items | Select-Object kind, card_loaded, character_loaded, generated_part_loaded, vertices, deformation_checked, clothing_states
+}

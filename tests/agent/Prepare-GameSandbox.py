@@ -77,6 +77,7 @@ def main():
                 copy(source)
     plugins = output / "BepInEx/plugins"
     plugins.mkdir(parents=True, exist_ok=True)
+    (output / "BepInEx/patchers").mkdir(parents=True, exist_ok=True)
     if args.plugin and pathlib.Path(args.plugin).resolve() != (plugins / "GameAssetChecks.dll").resolve():
         shutil.copy2(args.plugin, plugins / "GameAssetChecks.dll")
     mods = output / "mods"
@@ -85,6 +86,7 @@ def main():
             raise ValueError("验收 MOD 目录越界")
         shutil.rmtree(mods)
     items = []
+    creation_items = []
     for report in args.reports:
         state = json.loads(pathlib.Path(report).read_text(encoding="utf-8"))
         built = state.get("hs2_build_asset", {}).get("result", {})
@@ -105,7 +107,19 @@ def main():
                     ):
                         shutil.copy2(path, dest)
             card = next((folder / "UserData/chara").rglob("*.png"))
-            items.append({"path": str(card), "kind": kind, "slot": 0, "target": target})
+            if "session" in state and "targets" in state:
+                targets = {entry["target_path"]: entry for entry in state["targets"]}
+                recorded = set()
+                for record in reversed(state["session"]["assets"]):
+                    path = record.get("target_path")
+                    if not path or path in recorded or path not in targets:
+                        continue
+                    recorded.add(path)
+                    spec = record["spec"]
+                    details = ",".join(texture["field"] for texture in spec.get("textures", []) if "field" in texture)
+                    creation_items.append([str(card), record["kind"], path, str(targets[path]["category"]), details])
+            else:
+                items.append({"path": str(card), "kind": kind, "slot": 0, "target": target})
     if any(item["kind"] == "texture" for item in items):
         for name in ("HS2API.dll", "HS2_OverlayMods.dll"):
             copy(game / "BepInEx/plugins" / name)
@@ -113,7 +127,7 @@ def main():
     config.mkdir(parents=True, exist_ok=True)
     (config / "BepInEx.cfg").write_text(
         "[Caching]\nEnableAssemblyCache = false\n\n"
-        "[Preloader.Entrypoint]\nAssembly = Assembly-CSharp.dll\nType = TitleScene\nMethod = Start\n\n"
+        "[Preloader.Entrypoint]\nAssembly = UnityEngine.CoreModule.dll\nType = Application\nMethod = .cctor\n\n"
         "[Logging.Disk]\nWriteUnityLog = true\n",
         encoding="utf-8",
     )
@@ -126,7 +140,13 @@ def main():
         ),
         encoding="utf-8",
     )
-    print("Prepared independent game sandbox with " + str(len(items)) + " cards", flush=True)
+    (output / "agent-creation-input.tsv").write_text(
+        "\n".join("\t".join(row) for row in creation_items), encoding="utf-8"
+    )
+    print(
+        f"Prepared independent game sandbox with {len(items)} legacy cards and {len(creation_items)} creation checks",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

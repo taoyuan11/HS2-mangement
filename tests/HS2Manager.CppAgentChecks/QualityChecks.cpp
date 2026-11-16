@@ -32,7 +32,8 @@ void QualityChecks(const fs::path &root, const fs::path &image, const fs::path &
     agent::Service service(
         {{"data_directory", Utf8(root)}, {"game_path", Utf8(root / "Game")}, {"base_cards", {{"female", Utf8(base)}}}},
         root);
-    Check(service.Call("hs2_capabilities", Json::object()).at("max_iterations") == 24, "quality iteration default");
+    Check(service.Call("hs2_capabilities", Json::object()).at("max_iterations").is_null(),
+          "unlimited quality iterations");
     auto session = service.Call("hs2_begin_card", {{"sex", "female"}, {"reference_image", {{"path", Utf8(image)}}}});
     Check(session.at("best_revision").is_null(), "unreviewed template is not best");
     auto id = session.at("session_id");

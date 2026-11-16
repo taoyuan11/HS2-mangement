@@ -38,7 +38,7 @@
 | `data_directory` | 默认配置文件旁的 `Data`，必须是本机磁盘目录，位于游戏之外，不能复用管理器的 Data |
 | `output_directory` | 默认配置文件旁的 `Output`，位于游戏之外；保留用户原有的有效输出目录 |
 | `base_cards.male` / `female` | 已发现的对应性别基准卡绝对路径，缺失性别用空字符串 |
-| `max_iterations` | 新安装默认 `24`，更新保留用户设置 |
+| `max_iterations` | 已废弃；新配置不填写，旧值忽略，修正与素材构建均无限次数 |
 
 所有路径写成解析后的绝对路径，不能留下 `%LOCALAPPDATA%`、`~`、`<client>` 等变量或占位符。路径含空格、中文、反斜杠或 UNC 时，用 JSON 序列化器编码，不手拼字符串。默认不设置 `runtime_directory`，程序会从 EXE 所在目录加载资源；更新已有配置时检查旧的该字段，避免继续指向已移走的旧包。
 
@@ -55,7 +55,6 @@ $config = [ordered]@{
     data_directory = $agentData
     output_directory = $agentOutput
     base_cards = @{ male = $maleCard; female = $femaleCard }
-    max_iterations = 24
 }
 New-Item -ItemType Directory -Path (Split-Path -Parent $agentConfigPath), $agentData, $agentOutput -Force | Out-Null
 [IO.File]::WriteAllText($agentConfigPath, ($config | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))

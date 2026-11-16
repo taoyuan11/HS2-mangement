@@ -83,7 +83,7 @@ def main():
 
     try:
         rpc("initialize")
-        assert len(rpc("tools/list")["tools"]) == 17
+        assert len(rpc("tools/list")["tools"]) == 16
         if args.session:
             session = call("hs2_get_session", {"session_id": args.session})
         else:

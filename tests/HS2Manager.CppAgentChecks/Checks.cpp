@@ -97,7 +97,7 @@ int wmain(int argc, wchar_t **argv)
                 });
             auto capabilities = service.Call("hs2_capabilities", Json::object());
             Check(capabilities["base_cards"]["female"]["valid"] == true, "base validation");
-            Check(agent::Service::Tools().size() == 17, "tool discovery");
+            Check(agent::Service::Tools().size() == 16, "tool discovery");
             auto session = service.Call("hs2_begin_card",
                                         {{"sex", "female"}, {"reference_image", {{"path", Utf8(fs::path(argv[1]))}}}});
             sessionId = session["session_id"];
@@ -154,27 +154,26 @@ int wmain(int argc, wchar_t **argv)
             fs::remove(blockedDraft);
             auto budget = service.Call("hs2_begin_card",
                                        {{"sex", "female"}, {"reference_image", {{"path", Utf8(fs::path(argv[1]))}}}});
-            for (int iteration = 0; iteration < 12; ++iteration)
+            for (int iteration = 0; iteration < 32; ++iteration)
                 budget = service.Call(
                     "hs2_apply_changes",
                     {{"session_id", budget["session_id"]},
                      {"expected_revision", iteration},
                      {"changes", {{{"path", "face.shapeValueFace[0]"}, {"value", iteration % 2 ? .4 : .6}}}}});
+            Check(service.Call("hs2_get_session", {{"session_id", budget["session_id"]}})["revision"] == 32,
+                  "legacy finite configuration does not stop continued correction");
+            Check(capabilities.at("max_iterations").is_null() && capabilities.at("max_asset_attempts").is_null(),
+                  "unlimited capabilities");
             Throws(
                 [&]
                 {
-                    service.Call("hs2_apply_changes",
-                                 {{"session_id", budget["session_id"]},
-                                  {"expected_revision", 12},
-                                  {"changes", {{{"path", "face.shapeValueFace[0]"}, {"value", .7}}}}});
+                    service.Call("hs2_search_assets", {{"session_id", sessionId}, {"category", 300}});
                 });
-            Check(service.Call("hs2_get_session", {{"session_id", budget["session_id"]}})["revision"] == 12,
-                  "twelve iteration budget retained best draft");
             Json buildArgs{
                 {"session_id", sessionId},
                 {"expected_revision", 2},
                 {"spec", {{"kind", "hair"}, {"asset_key", "legacy-spec-fixture"}, {"source_script", "never-run.py"}}}};
-            for (int attempt = 0; attempt < 4; ++attempt)
+            for (int attempt = 0; attempt < 6; ++attempt)
             {
                 auto job = service.Call("hs2_build_asset", buildArgs);
                 for (int wait = 0; wait < 100 && (job["status"] == "queued" || job["status"] == "running"); ++wait)
@@ -183,12 +182,8 @@ int wmain(int argc, wchar_t **argv)
                     job = service.Call("hs2_get_job", {{"job_id", job["job_id"]}});
                 }
                 Check(job["status"] == "failed", "legacy spec failed without changing draft");
-                if (attempt < 3)
-                    Check(job.at("error").get<std::string>().starts_with("ASSET_SPEC_MIGRATION"),
-                          "legacy script migration diagnostic");
-                if (attempt == 3)
-                    Check(job.at("error").get<std::string>().starts_with("ASSET_BUILD_LIMIT"),
-                          "three asset attempt limit");
+                Check(job.at("error").get<std::string>().starts_with("ASSET_SPEC_MIGRATION"),
+                      "unlimited attempts retain the actual build diagnostic");
             }
             Check(service.Call("hs2_get_session", {{"session_id", sessionId}})["revision"] == 2,
                   "failed build retained revision");

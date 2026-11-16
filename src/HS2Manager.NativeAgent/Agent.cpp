@@ -1,11 +1,13 @@
 #include "Agent.h"
 #include "VisualReview.h"
 #include "AssetGeometry.h"
+#include "AssetTargets.h"
 #include "Export/CardExport.h"
 #include <windows.h>
 #include <objbase.h>
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include "PostProcessing/NativeFullscreenPass.h"
 #include "Images/ImageFiles.h"
 
@@ -20,9 +22,8 @@ namespace hs2::agent
 
         bool Async(std::string_view name)
         {
-            return name == "hs2_render" || name == "hs2_probe_fields" || name == "hs2_search_assets" ||
-                   name == "hs2_prepare_asset" || name == "hs2_build_asset" || name == "hs2_validate" ||
-                   name == "hs2_finalize_card";
+            return name == "hs2_render" || name == "hs2_probe_fields" || name == "hs2_prepare_asset" ||
+                   name == "hs2_build_asset" || name == "hs2_validate" || name == "hs2_finalize_card";
         }
     }
 
@@ -153,15 +154,23 @@ namespace hs2::agent
         }
         context->Index = *baseIndex_;
         context->Index.Files = NativeModSelection::Select(context->Index.Files);
-        for (auto &entry : fs::directory_iterator(data_ / "Assets"))
-            if (entry.path().extension() == ".zipmod")
+        std::set<std::string> required;
+        for (const auto &ref : CharacterAssetReferences::All(Document(session)))
+            required.insert(ref.Guid);
+        for (const auto &guid : session.value("resource_guids", Json::array()))
+            required.insert(guid.get<std::string>());
+        std::set<fs::path> loaded;
+        for (const auto &record : session.value("assets", Json::array()))
+            if (record.contains("guid") && required.contains(record.at("guid").get<std::string>()) &&
+                record.contains("path") && loaded.insert(Path(record.at("path"))).second)
             {
                 CheckCancelled(token);
-                auto mod = ModDependencyService::ReadManifest(entry.path());
+                auto path = Path(record.at("path"));
+                auto mod = ModDependencyService::ReadManifest(path);
                 if (!mod.Error.empty())
                     throw std::runtime_error(mod.Error);
                 context->Index.Files.push_back(mod);
-                context->Priorities[entry.path()] = 1;
+                context->Priorities[path] = 1;
             }
         if (session.contains("candidate_mod"))
         {
@@ -217,12 +226,36 @@ namespace hs2::agent
                 }
                 if (SUCCEEDED(com))
                     CoUninitialize();
+                job->Finished.store(true);
             });
         return job->State;
     }
 
+    void Service::ReapJobs()
+    {
+        std::vector<std::shared_ptr<Job>> finished;
+        {
+            std::lock_guard guard(jobsGate_);
+            for (auto it = jobs_.begin(); it != jobs_.end();)
+                if (it->second->Finished.load() && !it->second->State.value("persistence_error", false))
+                {
+                    finished.push_back(it->second);
+                    it = jobs_.erase(it);
+                }
+                else
+                    ++it;
+        }
+        for (auto &job : finished)
+            if (job->Thread.joinable())
+                job->Thread.join();
+    }
+
     Json Service::Call(const std::string &name, const Json &args)
     {
+        ReapJobs();
+        if (name == "hs2_search_assets")
+            throw std::invalid_argument("ASSET_SEARCH_REMOVED：成品素材搜索已停用；请使用 "
+                                        "hs2_get_schema、hs2_prepare_asset 和 hs2_build_asset 直接制作");
         if (name == "hs2_get_job" || name == "hs2_cancel_job")
         {
             auto id = args.at("job_id").get<std::string>();
@@ -251,12 +284,10 @@ namespace hs2::agent
     {
         if (name == "hs2_capabilities")
         {
-            Json result{{"game_path", Utf8(game_)},
-                        {"game_available", fs::is_directory(game_ / "abdata")},
-                        {"data_directory", Utf8(data_)},
-                        {"runtime", Utf8(runtime_)},
-                        {"max_iterations", config_.value("max_iterations", 24)},
-                        {"base_cards", Json::object()}};
+            Json result{{"game_path", Utf8(game_)},      {"game_available", fs::is_directory(game_ / "abdata")},
+                        {"data_directory", Utf8(data_)}, {"runtime", Utf8(runtime_)},
+                        {"max_iterations", nullptr},     {"max_asset_attempts", nullptr},
+                        {"asset_policy", "create_new"},  {"base_cards", Json::object()}};
             for (auto sex : {"male", "female"})
             {
                 auto base = config_.value("base_cards", Json::object()).value(sex, "");
@@ -269,6 +300,8 @@ namespace hs2::agent
                 {"available", true},
                 {"builder_version", asset::BuilderVersion},
                 {"schema_version", asset::SchemaVersion},
+                {"accepted_schema_versions", {2, 3}},
+                {"kinds", {"texture", "accessory", "hair", "clothes", "catalog_texture", "layout", "head"}},
                 {"input_formats", {"fbx", "obj", "glb", "gltf"}},
                 {"recipe", true},
                 {"requires_external_editors", false},
@@ -388,6 +421,11 @@ namespace hs2::agent
                                   {"display_scale", field.DisplayScale},
                                   {"value", value},
                                   {"choices", choices}});
+                if (field.Kind == CharacterFieldKind::Asset || field.Kind == CharacterFieldKind::Preset)
+                {
+                    fields.back()["creation"] = asset::CreationTarget(document, field.Path);
+                    fields.back()["creation"]["enabled"] = asset::TargetEnabled(document, field.Path);
+                }
             }
             return {{"revision", session["revision"]}, {"fields", fields}};
         }
@@ -407,8 +445,6 @@ namespace hs2::agent
             CheckRevision(session, args);
             if (!args.at("changes").is_array() || args.at("changes").empty() || args.at("changes").size() > 512)
                 throw std::invalid_argument("changes 必须包含 1 到 512 项修改");
-            if (session.at("iterations").get<int>() >= config_.value("max_iterations", 24))
-                throw std::runtime_error("ITERATION_LIMIT：已达修正上限，草稿保留");
             auto schema = CharacterEditSchema::Build(document, CharacterSliderLimits::Read(game_));
             std::unique_ptr<CharacterCatalog> catalog;
             for (auto &change : args.at("changes"))
@@ -424,13 +460,33 @@ namespace hs2::agent
                 auto value = change.at("value");
                 if (field->Kind == CharacterFieldKind::Asset || field->Kind == CharacterFieldKind::Preset)
                 {
+                    auto assetId = value.get<std::string>();
+                    std::string generatedGuid;
+                    for (const auto &record : session.value("assets", Json::array()))
+                        if (record.contains("guid") && record.contains("spec"))
+                        {
+                            const auto &spec = record.at("spec");
+                            if (spec.contains("category") && spec.contains("slot_id") &&
+                                std::to_string(spec.at("category").get<int>()) + ":" +
+                                        record.at("guid").get<std::string>() + ":" +
+                                        std::to_string(spec.at("slot_id").get<int>()) ==
+                                    assetId)
+                                generatedGuid = record.at("guid");
+                        }
+                    if (generatedGuid.empty())
+                        throw std::invalid_argument(
+                            "ASSET_CREATION_REQUIRED：素材须由本会话制作；布局请使用 kind:layout");
                     if (!catalog)
                     {
+                        auto context = session;
+                        context["resource_guids"] = Json::array();
+                        for (const auto &record : session.value("assets", Json::array()))
+                            if (record.contains("guid"))
+                                context["resource_guids"].push_back(record.at("guid"));
                         catalog = std::make_unique<CharacterCatalog>(game_, data_ / "Cache", runtime_ / "classdata.tpk",
-                                                                     Resources(session, token));
+                                                                     Resources(context, token));
                         catalog->Load({}, token);
                     }
-                    auto assetId = value.get<std::string>();
                     auto entry = std::find_if(
                         catalog->Entries().begin(), catalog->Entries().end(),
                         [&](const auto &e)
@@ -464,7 +520,7 @@ namespace hs2::agent
                     document = CharacterEditRules::SetValue(document, path, Scalar(value));
                 }
             }
-            session["iterations"] = session.at("iterations").get<int>() + 1;
+            session["iterations"] = session.at("iterations").get<std::int64_t>() + 1;
             session["analysis"] = args.value("analysis", session["analysis"]);
             SaveRevision(session, document, args);
             if (args.value("mark_best", false))
@@ -474,81 +530,6 @@ namespace hs2::agent
                 WriteJson(SessionPath(session.at("session_id")) / "session.json", session);
             }
             return session;
-        }
-        if (name == "hs2_search_assets")
-        {
-            if (args.at("category").get<int>() == -1)
-            {
-                Json textures = Json::array();
-                int offset = (std::max)(0, args.value("offset", 0));
-                int limit = (std::clamp)(args.value("limit", 20), 1, 50);
-                int total = 0;
-                for (auto &entry : fs::directory_iterator(data_ / "Assets"))
-                {
-                    CheckCancelled(token);
-                    if (entry.path().extension() != ".json")
-                        continue;
-                    auto record = ReadJson(entry.path());
-                    if (record.value("kind", "") != "texture" ||
-                        record.value("asset_key", "").find(args.value("query", "")) == std::string::npos)
-                        continue;
-                    if (total >= offset && total < offset + limit)
-                        textures.push_back(record);
-                    ++total;
-                }
-                return {{"items", textures}, {"total", total}, {"offset", offset}};
-            }
-            CharacterCatalog catalog(game_, data_ / "Cache", runtime_ / "classdata.tpk", Resources(session, token));
-            catalog.Load({}, token);
-            auto entries = catalog.Query(args.at("category"), args.value("query", ""), args.value("source", 0));
-            Json items = Json::array();
-            Json images = Json::array();
-            int offset = (std::max)(0, args.value("offset", 0));
-            int limit = (std::clamp)(args.value("limit", 20), 1, 50);
-            for (int i = offset; i < static_cast<int>(entries.size()) && i < offset + limit; ++i)
-            {
-                auto &e = entries[i];
-                items.push_back({{"asset_id", std::to_string(e.Category) + ":" + e.Guid + ":" + std::to_string(e.Id)},
-                                 {"name", e.Editable().Name},
-                                 {"category", e.Category},
-                                 {"guid", e.Guid},
-                                 {"id", e.Id},
-                                 {"source", e.Source}});
-                try
-                {
-                    CheckCancelled(token);
-                    if (auto reference = catalog.Thumbnail(e))
-                    {
-                        NativeGpuAssetReader reader(reference->Bundle, catalog.Database().get());
-                        auto pointer = reader.Find(reference->Asset, 28);
-                        auto texture = reader.Texture(pointer.PathId);
-                        GraphicsDevice graphics(true);
-                        GpuTexture input(graphics, texture);
-                        float scale = (std::min)(128.f / texture.Width, 128.f / texture.Height);
-                        int width = (std::max)(1, static_cast<int>(texture.Width * scale));
-                        int height = (std::max)(1, static_cast<int>(texture.Height * scale));
-                        GpuTexture output(graphics, width, height, true, DXGI_FORMAT_B8G8R8A8_UNORM, false);
-                        GpuCopyPass(graphics).Copy(input, output, true);
-                        auto pixels = graphics.Readback(output.Texture.Get());
-                        auto file = SessionPath(session.at("session_id")) / "Thumbnails" / Path(NewId() + ".png");
-                        fs::create_directories(file.parent_path());
-                        SavePng(file, width, height, pixels);
-                        Json image{
-                            {"path", Utf8(file)}, {"mime_type", "image/png"}, {"asset_id", items.back()["asset_id"]}};
-                        images.push_back(image);
-                        items.back()["thumbnail"] = image;
-                    }
-                }
-                catch (const Cancelled &)
-                {
-                    throw;
-                }
-                catch (const std::exception &e)
-                {
-                    items.back()["thumbnail_error"] = e.what();
-                }
-            }
-            return {{"items", items}, {"images", images}, {"total", entries.size()}, {"offset", offset}};
         }
         CheckRevision(session, args);
         if (name == "hs2_render")

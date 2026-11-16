@@ -5,6 +5,7 @@
 #include "Runtime/CharacterRuntime.h"
 #include "Images/ImageFiles.h"
 #include "Export/CardExport.h"
+#include "AssetTargets.h"
 #include <cmath>
 #include <set>
 
@@ -53,11 +54,43 @@ namespace hs2::agent
         auto resources = Resources(session, token);
         CardExportDependencies collector(game_, resources->Index, token, runtime_ / "classdata.tpk");
         auto dependencies = collector.Collect(card, CardExportLevel::WithResources);
+        Json creationIssues = Json::array();
+        for (const auto &target : asset::CreationTargets(doc))
+        {
+            if (!target.at("enabled").get<bool>())
+                continue;
+            auto path = target.at("target_path").get<std::string>();
+            auto reference = CharacterAssetReferences::Find(doc, path);
+            bool generated = false;
+            for (const auto &record : session.value("assets", Json::array()))
+            {
+                auto spec = record.value("spec", Json::object());
+                if (reference && record.value("guid", "") == reference->Guid &&
+                    spec.value("slot_id", -1) == reference->Slot && spec.value("category", -1) == reference->Category)
+                    generated |= path != "face.skinId" ||
+                                 spec.value("head_binding", Json::object()) == asset::FaceHeadBinding(doc);
+                if (!reference && record.value("target_path", "") == path && record.contains("layout"))
+                {
+                    bool matches = true;
+                    for (int i = 0; i < 4; ++i)
+                        matches &=
+                            std::abs(
+                                ScalarJson(doc.Node(path + "[" + std::to_string(i) + "]").ScalarValue).get<double>() -
+                                record.at("layout")[i].get<double>()) < 1e-6;
+                    generated |= matches;
+                }
+            }
+            if (!generated)
+                creationIssues.push_back(
+                    {{"target_path", path}, {"kind", target.at("kind")}, {"reason", "ASSET_CREATION_REQUIRED"}});
+        }
         Json result{{"revision", session["revision"]},
                     {"structure", card.Status == CardStatus::Valid},
                     {"dependencies", dependencies.Issues.empty()},
                     {"dependency_issues", dependencies.Issues},
                     {"warnings", dependencies.Warnings},
+                    {"created_assets", creationIssues.empty()},
+                    {"creation_issues", creationIssues},
                     {"native_render", session.value("render_revision", -1) == session.at("revision").get<int>()},
                     {"visual_assessment", CurrentReviewPassed(session) ? "passed" : "needs_review"},
                     {"review_requirements", ReviewRequirements(session)},
@@ -78,7 +111,7 @@ namespace hs2::agent
                     {"visual_review", session.value("visual_review", Json::object())}};
         auto validation = Validate(session, token);
         if (!validation.at("structure").get<bool>() || !validation.at("dependencies").get<bool>() ||
-            !validation.at("native_render").get<bool>())
+            !validation.at("native_render").get<bool>() || !validation.at("created_assets").get<bool>())
             return {{"status", "needs_work"}, {"validation", validation}, {"session", session}};
         if (!session.at("last_render").at("diagnostics").empty())
             return {

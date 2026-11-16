@@ -613,6 +613,10 @@ namespace hs2
             selectCategory("body." + key, "body." + key + "Id");
         for (std::string key : {"skin", "detail", "eyebrow", "eyelashes", "mole"})
             selectCategory("face." + key, "face." + key + "Id");
+        selectCategory("face.beard", "face.beardId");
+        for (size_t slot = 0; slot < hair.size() && slot < 4; ++slot)
+            selectCategory("hair." + std::to_string(slot) + ".mesh",
+                           "hair.parts[" + std::to_string(slot) + "].meshType");
         for (std::string key : {"eyeshadow", "cheek", "lip"})
             selectCategory("face." + key, "face.makeup." + key + "Id");
         for (int eye = 0; eye < 2; ++eye)
@@ -730,12 +734,12 @@ namespace hs2
             ReadCharacterShaders(game_, data_, catalog_, *assets, *definition, cancellation, resources_);
         for (auto &parameter : definition->Body.Children)
             if (parameter.Name == "paintInfo")
+            {
+                int paintSlot = 0;
                 for (auto &paint : parameter.Children)
                 {
-                    const NativeAssetEntry *layout = nullptr;
-                    for (auto &entry : catalog_.StockEntries())
-                        if (entry.Category == 8 && entry.Id == paint.Int("layoutId"))
-                            layout = &entry;
+                    auto layout =
+                        catalog_.Selected(document, "body.paintInfo[" + std::to_string(paintSlot++) + "].layoutId");
                     if (layout)
                     {
                         Parameter resolved;
@@ -758,6 +762,7 @@ namespace hs2
                         paint.Children.push_back(std::move(resolved));
                     }
                 }
+            }
         definition->BundlePaths = assets->Paths();
         if (progress)
             progress({0, 0, "组装角色网格与骨骼"});

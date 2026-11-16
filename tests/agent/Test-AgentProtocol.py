@@ -92,7 +92,7 @@ def main():
             )["protocolVersion"]
             == "2025-11-25"
         )
-        assert len(rpc("tools/list")["tools"]) == 17
+        assert len(rpc("tools/list")["tools"]) == 16
         rpc("ping")
         report["capabilities"] = call("hs2_capabilities", {})
         for sex in ("male", "female"):
@@ -140,7 +140,7 @@ def main():
                 prepared = job("hs2_prepare_asset", {"session_id": session["session_id"], "expected_revision": 2})
                 assert pathlib.Path(prepared["reference_model"]).is_file()
                 assert pathlib.Path(prepared["reference_scene"]).is_file()
-                assert prepared["schema_version"] == 2 and "blend" not in prepared
+                assert prepared["schema_version"] == 3 and "blend" not in prepared
                 assert prepared["images"] and prepared["bones"]
                 if args.build_fixture:
                     kind = args.build_fixture
@@ -197,7 +197,6 @@ def main():
                     current_revision = built["session"]["revision"]
             if args.render and sex == args.sex:
                 values = {"session_id": session["session_id"], "expected_revision": current_revision}
-                job("hs2_search_assets", {"session_id": session["session_id"], "category": 300, "limit": 2})
                 result = job("hs2_render", dict(values, views=["front", "side", "back", "face"]))
                 assert len(result["images"]) == 4
                 job("hs2_validate", values)

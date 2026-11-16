@@ -5,6 +5,5 @@
     "base_cards": {
         "male": "D:/Games/HS2/UserData/chara/male/base.png",
         "female": "D:/Games/HS2/UserData/chara/female/base.png"
-    },
-    "max_iterations": 24
+    }
 }

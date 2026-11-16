@@ -382,6 +382,12 @@ namespace hs2
         material.Set("_Gloss", Lerp(0, .8f, definition_.Body.Float("skinGlossPower")));
         material.Set("_Metallic", definition_.Body.Float("skinMetallicPower"));
         material.Set("_Texture4Scale", 0.f);
+        if (face && definition_.Sex == 0)
+        {
+            select("_Texture4", "face.beard.AddTex");
+            material.SetColor("_Color4", definition_.Face.Get("beardColor"), Black);
+            material.Set("_Texture4Scale", 1.f);
+        }
     }
 
     void GpuCharacterAppearance::Eye(GpuMaterialInstance &material, int index)
