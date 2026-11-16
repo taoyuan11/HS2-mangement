@@ -1041,10 +1041,18 @@ namespace hs2::ui
                 ClosePreview();
                 try
                 {
-                    double scale = root_.XamlRoot() ? root_.XamlRoot().RasterizationScale() : 1;
-                    auto size = window_.AppWindow().Size();
-                    settings_.WindowWidth = size.Width / scale;
-                    settings_.WindowHeight = size.Height / scale;
+                    WINDOWPLACEMENT placement{sizeof(placement)};
+                    if (GetWindowPlacement(Handle(), &placement))
+                    {
+                        // 最小化不覆盖此前的最大化状态；宽高始终记录还原后的窗口尺寸。
+                        settings_.WindowMaximized =
+                            placement.showCmd == SW_SHOWMAXIMIZED ||
+                            (placement.showCmd == SW_SHOWMINIMIZED && (placement.flags & WPF_RESTORETOMAXIMIZED) != 0);
+                        double scale = root_.XamlRoot() ? root_.XamlRoot().RasterizationScale() : 1;
+                        auto const &bounds = placement.rcNormalPosition;
+                        settings_.WindowWidth = (bounds.right - bounds.left) / scale;
+                        settings_.WindowHeight = (bounds.bottom - bounds.top) / scale;
+                    }
                     settings_.Save(dataDirectory_);
                 }
                 catch (std::exception const &e)

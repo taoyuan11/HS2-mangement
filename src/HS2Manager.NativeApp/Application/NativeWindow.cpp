@@ -445,6 +445,9 @@ namespace hs2::ui
             });
         ApplyTheme();
         Reload();
+        if (settings_.WindowMaximized)
+            if (auto presenter = appWindow.Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>())
+                presenter.Maximize();
         window_.Activate();
         InitializeUpdates();
     }

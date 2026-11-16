@@ -408,6 +408,7 @@ namespace hs2
         HS2_JSON_WRITE(Sort);
         HS2_JSON_WRITE(WindowWidth);
         HS2_JSON_WRITE(WindowHeight);
+        HS2_JSON_WRITE(WindowMaximized);
     }
 
     void from_json(const Json &j, AppSettings &v)
@@ -425,6 +426,7 @@ namespace hs2
         HS2_JSON_READ(Sort);
         HS2_JSON_READ(WindowWidth);
         HS2_JSON_READ(WindowHeight);
+        HS2_JSON_READ(WindowMaximized);
         if (int(v.LastCardExportLevel) < 1 || int(v.LastCardExportLevel) > 4)
             v.LastCardExportLevel = CardExportLevel::WithMods;
     }

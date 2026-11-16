@@ -624,19 +624,28 @@ namespace
         Check(Json::object().get<AppSettings>().AutoCheckUpdates &&
                   Json::object().get<AppSettings>().LastUpdateCheck == 0,
               "old settings default update preferences");
+        Check(!Json{{"WindowWidth", 1200}, {"WindowHeight", 800}}.get<AppSettings>().WindowMaximized,
+              "old settings default to a normal window");
         AppSettings settings;
         settings.AutoCheckUpdates = false;
         settings.LastUpdateCheck = 1794560000;
         settings.GamePath = Utf8(root);
         settings.ExtraRoots = {Utf8(folder)};
         settings.Theme = "Dark";
+        settings.WindowWidth = 1200;
+        settings.WindowHeight = 800;
+        settings.WindowMaximized = true;
         settings.LastCardExportLevel = CardExportLevel::WithResources;
         settings.Save(data);
         auto loaded = AppSettings::Load(data);
         Check(loaded.ExtraRoots == settings.ExtraRoots && loaded.LastCardExportLevel == settings.LastCardExportLevel &&
                   loaded.Theme == "Dark" && !loaded.AutoCheckUpdates &&
-                  loaded.LastUpdateCheck == settings.LastUpdateCheck,
+                  loaded.LastUpdateCheck == settings.LastUpdateCheck && loaded.WindowMaximized &&
+                  loaded.WindowWidth == settings.WindowWidth && loaded.WindowHeight == settings.WindowHeight,
               "settings compatible roundtrip");
+        loaded.WindowMaximized = false;
+        loaded.Save(data);
+        Check(!AppSettings::Load(data).WindowMaximized, "normal window replaces saved maximized state");
         CardLibraryService library(repository);
         auto scan = library.Scan({folder});
         Check(scan.Candidates == 3 && scan.Valid == 1 && scan.Invalid == 2, "scan classifications");

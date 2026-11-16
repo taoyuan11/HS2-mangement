@@ -138,6 +138,7 @@ namespace hs2
         int64_t LastUpdateCheck = 0;
         std::string Theme = "System", BlenderPath, UnrealEditorPath, Sort = "名称";
         double WindowWidth = 1440, WindowHeight = 900;
+        bool WindowMaximized = false;
         std::vector<fs::path> ScanRoots() const;
         static AppSettings Load(const fs::path &directory);
         void Save(const fs::path &directory) const;
